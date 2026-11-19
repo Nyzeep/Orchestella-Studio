@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.IntOffset
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3MotionTokens
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
@@ -159,13 +160,21 @@ fun Oe3Placeholder(
     bottomReserve: Dp = Oe3Spacing.contentBottom,
 ) {
     val colors = Oe3ThemeValues.colors
-    OeScaffold(title = title, modifier = modifier) {
+    val scrollState = rememberScrollState()
+    OeScaffold(
+        title = title,
+        modifier = modifier,
+        scrollOffsetPx = { scrollState.oeScrollOffsetPx() },
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = Oe3Spacing.pageInset)
-                .padding(top = Oe3Spacing.lg, bottom = bottomReserve),
+                .padding(
+                    top = LocalOe3PageTopPadding.current + Oe3Spacing.sm,
+                    bottom = bottomReserve,
+                ),
         ) {
             Oe3Card(modifier = Modifier.fillMaxWidth()) {
                 Text(

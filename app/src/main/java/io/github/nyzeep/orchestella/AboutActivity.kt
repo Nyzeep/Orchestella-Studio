@@ -6,24 +6,66 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.RectF
-import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Bundle
-import android.view.View
-import android.widget.ImageView
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.button.MaterialButton
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3BackButton
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
+import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
+import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3DialogEnterMotion
+import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
+import io.github.nyzeep.orchestella.ui.shell.setOe3HostContent
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.update.UpdateCenter
 import io.github.nyzeep.orchestella.update.UpdateCoordinator
@@ -33,12 +75,6 @@ import java.net.URL
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Secondary Activity: About Orchestella Studio & Author Profile.
- *
- * <p>Provides author profile (Nyzeep) with GitHub avatar, repository details,
- * license notice, and dynamic version display.
- */
 class AboutActivity : AppCompatActivity() {
 
     companion object {
@@ -53,208 +89,174 @@ class AboutActivity : AppCompatActivity() {
     private val avatarExecutor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "about-avatar-loader").apply { isDaemon = true }
     }
+    private val updateExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "about-update-check").apply { isDaemon = true }
+    }
     private val avatarLoadStarted = AtomicBoolean(false)
 
     private lateinit var updateCenter: UpdateCenter
-    private var cardVersionUpdate: View? = null
-    private var txtUpdateStatus: TextView? = null
-    private var txtUpdateChannel: TextView? = null
-    private var txtUpdateSummary: TextView? = null
-    private var btnUpdateCheck: MaterialButton? = null
-    private var btnUpdateRelease: MaterialButton? = null
+    private var avatarBitmap by mutableStateOf<ImageBitmap?>(null)
+    private var updateChecking by mutableStateOf(false)
+    private var checksEnabled by mutableStateOf(true)
+    private var pendingUpdate by mutableStateOf<UpdateCenter.Available?>(null)
+    private var noticesText by mutableStateOf<String?>(null)
+    private var failureReason by mutableStateOf<String?>(null)
+    private var failureDialogVisible by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeApplier.prepare(this)
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_about)
-
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
-
-        val rootCoordinator = findViewById<View>(R.id.about_root_coordinator)
-        ViewCompat.setOnApplyWindowInsetsListener(rootCoordinator) { v, insets ->
-            val statusBarInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars())
-            val navBarInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-            v.setPadding(
-                statusBarInsets.left,
-                statusBarInsets.top,
-                statusBarInsets.right,
-                navBarInsets.bottom
-            )
-            insets
-        }
-
-        val toolbar = findViewById<MaterialToolbar>(R.id.about_toolbar)
-        toolbar.setNavigationOnClickListener { finish() }
-
-        val txtVersion = findViewById<TextView>(R.id.txt_about_version)
-        txtVersion.text = "版本：v${BuildConfig.VERSION_NAME} · Phase 5.0"
 
         updateCenter = UpdateCoordinator.center(this)
-        cardVersionUpdate = findViewById(R.id.card_version_update)
-        txtUpdateStatus = findViewById(R.id.txt_update_status)
-        txtUpdateChannel = findViewById(R.id.txt_update_channel)
-        txtUpdateSummary = findViewById(R.id.txt_update_summary)
-        btnUpdateRelease = findViewById<MaterialButton>(R.id.btn_update_release).apply {
-            setOnClickListener {
-                updateCenter.pending(BuildConfig.VERSION_NAME)?.let { pending ->
-                    openUrl(pending.pageUrl())
+        refreshUpdateState()
+        UpdateCoordinator.checkInBackground(this, BuildConfig.VERSION_NAME) {
+            if (!isFinishing && !isDestroyed) refreshUpdateState()
+        }
+
+        val cached = File(filesDir, AVATAR_CACHE_FILE)
+        val decoded = if (cached.isFile) decodeAvatar(cached) else null
+        if (decoded != null) {
+            avatarBitmap = decoded.asImageBitmap()
+        } else {
+            loadAvatar()
+        }
+
+        setOe3HostContent {
+            AboutScreen(
+                avatar = avatarBitmap,
+                checksEnabled = checksEnabled,
+                checking = updateChecking,
+                pending = pendingUpdate,
+                onBack = ::finish,
+                onCheckUpdate = ::runManualUpdateCheck,
+                onOpenRelease = {
+                    pendingUpdate?.let { openUrl(it.pageUrl()) }
+                },
+                onOpenAuthor = { openUrl(AUTHOR_GITHUB_URL) },
+                onCopyAuthor = { copyToClipboard(AUTHOR_GITHUB_URL, getString(R.string.about_link_copied)) },
+                onOpenProject = { openUrl(PROJECT_REPO_URL) },
+                onCopyProject = { copyToClipboard(PROJECT_REPO_URL, getString(R.string.about_link_copied)) },
+                onOpenNotices = ::openThirdPartyNotices,
+            )
+
+            noticesText?.let { notice ->
+                Oe3DialogEnterMotion {
+                    AlertDialog(
+                        onDismissRequest = { noticesText = null },
+                        shape = RoundedCornerShape(OeShape.alert),
+                        title = {
+                            Text(
+                                text = stringResource(R.string.third_party_notices_title),
+                                style = Oe3Typography.style(Oe3TextRole.Section),
+                            )
+                        },
+                        text = {
+                            Text(
+                                text = notice,
+                                style = Oe3Typography.style(Oe3TextRole.Meta),
+                                modifier = Modifier.verticalScroll(rememberScrollState()),
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { noticesText = null }) {
+                                Text(stringResource(R.string.credentials_close))
+                            }
+                        },
+                    )
+                }
+            }
+
+            if (failureDialogVisible) {
+                Oe3DialogEnterMotion {
+                    AlertDialog(
+                        onDismissRequest = { failureDialogVisible = false },
+                        shape = RoundedCornerShape(OeShape.alert),
+                        title = {
+                            Text(
+                                text = stringResource(R.string.version_update_failed_title),
+                                style = Oe3Typography.style(Oe3TextRole.Section),
+                            )
+                        },
+                        text = {
+                            Text(
+                                text = failureReason ?: getString(R.string.version_update_hint),
+                                style = Oe3Typography.style(Oe3TextRole.Body),
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    failureDialogVisible = false
+                                    openUrl("$PROJECT_REPO_URL/releases")
+                                },
+                            ) {
+                                Text(stringResource(R.string.version_update_open_releases))
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { failureDialogVisible = false }) {
+                                Text(stringResource(R.string.version_update_dismiss))
+                            }
+                        },
+                    )
                 }
             }
         }
-        btnUpdateCheck = findViewById<MaterialButton>(R.id.btn_update_check).apply {
-            setOnClickListener { runManualUpdateCheck() }
-        }
-        renderVersionCard()
-        // Opening About is itself a signal of interest: refresh the cached answer when the
-        // automatic interval allows it. The badge on the main screen updates on return.
-        UpdateCoordinator.checkInBackground(this, BuildConfig.VERSION_NAME) {
-            if (!isFinishing && !isDestroyed) renderVersionCard()
-        }
-
-        val avatarView = findViewById<ImageView>(R.id.img_author_avatar)
-        val avatarPlaceholder = findViewById<TextView>(R.id.txt_avatar_placeholder)
-        ThemeApplier.setRole(avatarView, ThemeApplier.Role.PRESERVE)
-        ThemeApplier.setRole(avatarPlaceholder, ThemeApplier.Role.PRESERVE)
-        // Brand artwork: the mascot keeps its own colors and its original aspect ratio.
-        ThemeApplier.setRole(findViewById(R.id.img_about_mascot), ThemeApplier.Role.PRESERVE)
-        val cached = File(filesDir, AVATAR_CACHE_FILE)
-        val cachedBitmap = if (cached.isFile) decodeAvatar(cached) else null
-        if (cachedBitmap != null) {
-            showAvatar(avatarView, avatarPlaceholder, cachedBitmap)
-        } else {
-            loadAvatar(avatarView, avatarPlaceholder)
-        }
-        avatarView.setOnClickListener { openUrl(AUTHOR_GITHUB_URL) }
-
-        findViewById<View>(R.id.btn_visit_author_github).setOnClickListener {
-            openUrl(AUTHOR_GITHUB_URL)
-        }
-        findViewById<View>(R.id.txt_author_github_url).setOnClickListener {
-            openUrl(AUTHOR_GITHUB_URL)
-        }
-        findViewById<View>(R.id.btn_copy_author_github).setOnClickListener {
-            copyToClipboard(AUTHOR_GITHUB_URL, getString(R.string.about_link_copied))
-        }
-
-        findViewById<View>(R.id.btn_visit_project_repo).setOnClickListener {
-            openUrl(PROJECT_REPO_URL)
-        }
-        findViewById<View>(R.id.txt_project_url).setOnClickListener {
-            openUrl(PROJECT_REPO_URL)
-        }
-        findViewById<View>(R.id.btn_copy_project_repo).setOnClickListener {
-            copyToClipboard(PROJECT_REPO_URL, getString(R.string.about_link_copied))
-        }
-
-        findViewById<MaterialButton>(R.id.btn_third_party_notices).setOnClickListener {
-            val notice = try {
-                assets.open("third-party-notices.txt").bufferedReader(Charsets.UTF_8).use { it.readText() }
-            } catch (_: java.io.IOException) {
-                getString(R.string.third_party_notices_unavailable)
-            }
-            val text = TextView(this).apply {
-                this.text = notice
-                setTextIsSelectable(true)
-                val pad = (20 * resources.displayMetrics.density).toInt()
-                setPadding(pad, pad, pad, pad)
-            }
-            val scroll = android.widget.ScrollView(this).apply { addView(text) }
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle(R.string.third_party_notices_title)
-                .setView(scroll)
-                .setPositiveButton(R.string.credentials_close, null)
-                .show().also(ThemeApplier::apply)
-        }
-
-        ThemeApplier.bind(this)
     }
 
-    /**
-     * One card, three states: a newer release is known / nothing newer is known / checks are
-     * off. The card reports status and summarises the GitHub release notes only — it offers no
-     * download and no "ignore" action (docs/standards/APP-UPDATE.md).
-     */
-    private fun renderVersionCard() {
-        val checksEnabled = SettingsManager(this).isUpdateCheckEnabled()
-        val pending = updateCenter.pending(BuildConfig.VERSION_NAME)
-        txtUpdateChannel?.text = getString(
-            R.string.version_update_channel,
-            GitHubUpdateChecker.channelForVersion(BuildConfig.VERSION_NAME).label(),
-            BuildConfig.VERSION_NAME,
-        )
-        when {
-            !checksEnabled -> {
-                txtUpdateStatus?.setText(R.string.version_update_status_disabled)
-                txtUpdateSummary?.setText(R.string.update_disabled_msg)
-                btnUpdateCheck?.visibility = View.GONE
-                btnUpdateRelease?.visibility = View.GONE
-            }
-            pending == null -> {
-                txtUpdateStatus?.setText(R.string.version_update_status_none)
-                txtUpdateSummary?.setText(R.string.version_update_hint)
-                btnUpdateCheck?.visibility = View.VISIBLE
-                btnUpdateRelease?.visibility = View.GONE
-            }
-            else -> {
-                txtUpdateStatus?.text =
-                    getString(R.string.version_update_status_available, pending.version())
-                txtUpdateSummary?.text = pending.summary()
-                    .ifBlank { getString(R.string.version_update_notes_fallback) }
-                btnUpdateCheck?.visibility = View.VISIBLE
-                btnUpdateRelease?.visibility = View.VISIBLE
-            }
-        }
-        cardVersionUpdate?.let { ThemeApplier.apply(it) }
+    override fun onResume() {
+        super.onResume()
+        refreshUpdateState()
     }
 
-    /** Manual check: bypasses the interval, still respects the "check on start" setting. */
+    override fun onDestroy() {
+        avatarExecutor.shutdownNow()
+        updateExecutor.shutdownNow()
+        super.onDestroy()
+    }
+
+    private fun refreshUpdateState() {
+        checksEnabled = SettingsManager(this).isUpdateCheckEnabled()
+        pendingUpdate = updateCenter.pending(BuildConfig.VERSION_NAME)
+    }
+
+    private fun openThirdPartyNotices() {
+        noticesText = try {
+            assets.open("third-party-notices.txt").bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } catch (_: java.io.IOException) {
+            getString(R.string.third_party_notices_unavailable)
+        }
+    }
+
     private fun runManualUpdateCheck() {
-        val button = btnUpdateCheck ?: return
-        if (!button.isEnabled) {
-            return
-        }
-        button.isEnabled = false
-        button.setText(R.string.version_update_checking)
+        if (updateChecking || updateExecutor.isShutdown) return
+        updateChecking = true
         val checker = GitHubUpdateChecker(SettingsManager(this))
-        Executors.newSingleThreadExecutor().execute {
+        updateExecutor.execute {
             val result = checker.checkForUpdate(BuildConfig.VERSION_NAME, true)
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                button.isEnabled = true
-                button.setText(R.string.version_update_check_now)
+                updateChecking = false
                 updateCenter.record(result, System.currentTimeMillis())
-                renderVersionCard()
+                refreshUpdateState()
                 when (result.status()) {
-                    // The card itself is the announcement; no toast duplicates it.
                     GitHubUpdateChecker.Status.UPDATE_AVAILABLE -> Unit
                     GitHubUpdateChecker.Status.UP_TO_DATE -> Toast.makeText(
                         this,
                         getString(R.string.update_up_to_date, BuildConfig.VERSION_NAME),
                         Toast.LENGTH_SHORT,
                     ).show()
-                    else -> showUpdateFailure(result.errorMessage())
+                    else -> {
+                        failureReason = result.errorMessage()
+                        failureDialogVisible = true
+                    }
                 }
             }
         }
     }
 
-    private fun showUpdateFailure(reason: String?) {
-        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(R.string.version_update_failed_title)
-            .setMessage(reason ?: getString(R.string.version_update_hint))
-            .setPositiveButton(R.string.version_update_open_releases) { _, _ ->
-                openUrl("$PROJECT_REPO_URL/releases")
-            }
-            .setNegativeButton(R.string.version_update_dismiss, null)
-            .create()
-        dialog.show()
-        ThemeApplier.apply(dialog)
-    }
-
-    private fun loadAvatar(avatarView: ImageView, placeholder: TextView) {
-        if (!avatarLoadStarted.compareAndSet(false, true)) {
+    private fun loadAvatar() {
+        if (!avatarLoadStarted.compareAndSet(false, true) || avatarExecutor.isShutdown) {
             return
         }
         avatarExecutor.execute {
@@ -276,49 +278,26 @@ class AboutActivity : AppCompatActivity() {
                     val out = File(filesDir, AVATAR_CACHE_FILE)
                     out.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
                 } catch (_: Exception) {
-                    // Caching the avatar is best-effort polish: a failed PNG write only costs
-                    // the next cold start its cache hit; the avatar is already decoded above.
+                    // Best-effort avatar cache; decoded bitmap is already held in memory.
                 }
             }
             runOnUiThread {
                 if (bitmap != null && !isFinishing && !isDestroyed) {
-                    showAvatar(avatarView, placeholder, bitmap)
+                    avatarBitmap = bitmap.asImageBitmap()
                 }
             }
         }
     }
 
-    private fun decodeAvatar(file: File): Bitmap? {
-        return try {
-            BitmapFactory.decodeFile(file.absolutePath)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun showAvatar(avatarView: ImageView, placeholder: TextView, bitmap: Bitmap) {
-        placeholder.visibility = View.GONE
-        avatarView.setImageDrawable(BitmapDrawable(resources, circular(bitmap)))
-    }
-
-    private fun circular(source: Bitmap): Bitmap {
-        val size = minOf(source.width, source.height).coerceAtLeast(1)
-        val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(output)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val rect = RectF(0f, 0f, size.toFloat(), size.toFloat())
-        val clip = Path().apply { addOval(rect, Path.Direction.CW) }
-        canvas.clipPath(clip)
-        val left = (size - source.width) / 2f
-        val top = (size - source.height) / 2f
-        canvas.drawBitmap(source, left, top, paint)
-        return output
+    private fun decodeAvatar(file: File): Bitmap? = try {
+        BitmapFactory.decodeFile(file.absolutePath)
+    } catch (_: Exception) {
+        null
     }
 
     private fun openUrl(url: String) {
         try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-            startActivity(intent)
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         } catch (_: Exception) {
             copyToClipboard(url, "无法唤起浏览器，已将链接复制到剪贴板")
         }
@@ -326,8 +305,336 @@ class AboutActivity : AppCompatActivity() {
 
     private fun copyToClipboard(text: String, successMessage: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("URL", text)
-        clipboard.setPrimaryClip(clip)
+        clipboard.setPrimaryClip(ClipData.newPlainText("URL", text))
         Toast.makeText(this, successMessage, Toast.LENGTH_SHORT).show()
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AboutScreen(
+    avatar: ImageBitmap?,
+    checksEnabled: Boolean,
+    checking: Boolean,
+    pending: UpdateCenter.Available?,
+    onBack: () -> Unit,
+    onCheckUpdate: () -> Unit,
+    onOpenRelease: () -> Unit,
+    onOpenAuthor: () -> Unit,
+    onCopyAuthor: () -> Unit,
+    onOpenProject: () -> Unit,
+    onCopyProject: () -> Unit,
+    onOpenNotices: () -> Unit,
+) {
+    val colors = Oe3ThemeValues.colors
+    val scrollState = rememberScrollState()
+    val backDescription = stringResource(R.string.wizard_back_desc)
+
+    OeScaffold(
+        title = stringResource(R.string.about_title),
+        leading = {
+            Oe3BackButton(
+                onBack = onBack,
+                contentDescription = backDescription,
+            )
+        },
+        scrollOffsetPx = { scrollState.oeScrollOffsetPx() },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(
+                    start = Oe3Spacing.pageInset,
+                    end = Oe3Spacing.pageInset,
+                    top = LocalOe3PageTopPadding.current + Oe3Spacing.sm,
+                    bottom = Oe3Spacing.xxl,
+                ),
+            verticalArrangement = Arrangement.spacedBy(Oe3Spacing.lg),
+        ) {
+            // 1. App Introduction Card
+            Oe3Card {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.lg),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_sym_terminal),
+                        contentDescription = stringResource(R.string.app_name),
+                        tint = colors.primary.oe3Color(),
+                        modifier = Modifier.size(48.dp),
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(Oe3Spacing.xs)) {
+                        Text(
+                            text = "Orchestella Studio",
+                            style = Oe3Typography.style(Oe3TextRole.Brand),
+                            color = colors.onSurface.oe3Color(),
+                        )
+                        Text(
+                            text = "版本：v${BuildConfig.VERSION_NAME} · Phase 5.0",
+                            style = Oe3Typography.style(Oe3TextRole.Meta),
+                            color = colors.onSurfaceVariant.oe3Color(),
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.about_app_desc),
+                    style = Oe3Typography.style(Oe3TextRole.Body),
+                    color = colors.onSurfaceVariant.oe3Color(),
+                    modifier = Modifier.padding(top = Oe3Spacing.md),
+                )
+            }
+
+            // 2. Version & Update Card
+            Oe3Card {
+                Text(
+                    text = stringResource(R.string.version_update_title),
+                    style = Oe3Typography.style(Oe3TextRole.Section),
+                    color = colors.onSurface.oe3Color(),
+                )
+                val statusText = when {
+                    !checksEnabled -> stringResource(R.string.version_update_status_disabled)
+                    pending == null -> stringResource(R.string.version_update_status_none)
+                    else -> stringResource(R.string.version_update_status_available, pending.version())
+                }
+                Text(
+                    text = statusText,
+                    style = Oe3Typography.style(Oe3TextRole.BodyStrong),
+                    color = colors.primary.oe3Color(),
+                    modifier = Modifier.padding(top = Oe3Spacing.xs),
+                )
+                Text(
+                    text = stringResource(
+                        R.string.version_update_channel,
+                        GitHubUpdateChecker.channelForVersion(BuildConfig.VERSION_NAME).label(),
+                        BuildConfig.VERSION_NAME,
+                    ),
+                    style = Oe3Typography.style(Oe3TextRole.Caption),
+                    color = colors.onSurfaceVariant.oe3Color(),
+                    modifier = Modifier.padding(top = Oe3Spacing.xs),
+                )
+                val summaryText = when {
+                    !checksEnabled -> stringResource(R.string.update_disabled_msg)
+                    pending == null -> stringResource(R.string.version_update_hint)
+                    else -> pending.summary().ifBlank { stringResource(R.string.version_update_notes_fallback) }
+                }
+                Text(
+                    text = summaryText,
+                    style = Oe3Typography.style(Oe3TextRole.Meta),
+                    color = colors.onSurfaceVariant.oe3Color(),
+                    maxLines = 6,
+                    modifier = Modifier.padding(top = Oe3Spacing.sm),
+                )
+                if (checksEnabled) {
+                    FlowRow(
+                        modifier = Modifier.padding(top = Oe3Spacing.sm),
+                        horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.sm),
+                        verticalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+                    ) {
+                        Oe3Button(
+                            text = stringResource(
+                                if (checking) R.string.version_update_checking else R.string.version_update_check_now,
+                            ),
+                            onClick = onCheckUpdate,
+                            enabled = !checking,
+                            style = Oe3ButtonStyle.Text,
+                        )
+                        if (pending != null) {
+                            Oe3Button(
+                                text = stringResource(R.string.version_update_open_release),
+                                onClick = onOpenRelease,
+                                style = Oe3ButtonStyle.Text,
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 3. Mascot Original Artwork Card (zero crop)
+            Oe3Card {
+                Text(
+                    text = stringResource(R.string.about_mascot_title),
+                    style = Oe3Typography.style(Oe3TextRole.Section),
+                    color = colors.onSurface.oe3Color(),
+                )
+                Text(
+                    text = stringResource(R.string.about_mascot_caption),
+                    style = Oe3Typography.style(Oe3TextRole.Meta),
+                    color = colors.onSurfaceVariant.oe3Color(),
+                    modifier = Modifier.padding(top = Oe3Spacing.xs),
+                )
+                Image(
+                    painter = painterResource(R.drawable.mascot_original),
+                    contentDescription = stringResource(R.string.about_mascot_desc),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = Oe3Spacing.md),
+                )
+            }
+
+            // 4. Author Profile Card
+            Oe3Card {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.lg),
+                ) {
+                    val avatarDesc = stringResource(R.string.about_avatar_desc)
+                    Box(
+                        modifier = Modifier
+                            .size(76.dp)
+                            .clip(CircleShape)
+                            .background(colors.primary.oe3Color().copy(alpha = 0.25f))
+                            .clickable(
+                                role = Role.Button,
+                                onClickLabel = stringResource(R.string.about_btn_visit_github),
+                                onClick = onOpenAuthor,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (avatar != null) {
+                            Image(
+                                bitmap = avatar,
+                                contentDescription = avatarDesc,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(70.dp)
+                                    .clip(CircleShape),
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(
+                                                colors.primary.oe3Color(),
+                                                colors.accent.oe3Color(),
+                                            ),
+                                        ),
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "N",
+                                    style = Oe3Typography.style(Oe3TextRole.Brand),
+                                    color = colors.onPrimary.oe3Color(),
+                                )
+                            }
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(Oe3Spacing.xs)) {
+                        Text(
+                            text = stringResource(R.string.about_author_card_title),
+                            style = Oe3Typography.style(Oe3TextRole.Section),
+                            color = colors.onSurface.oe3Color(),
+                        )
+                        Text(
+                            text = stringResource(R.string.about_author_name),
+                            style = Oe3Typography.style(Oe3TextRole.Section),
+                            color = colors.primary.oe3Color(),
+                        )
+                    }
+                }
+                LinkBanner(
+                    url = stringResource(R.string.about_author_github_url),
+                    onClick = onOpenAuthor,
+                )
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = Oe3Spacing.md),
+                    horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(Oe3Spacing.sm),
+                ) {
+                    Oe3Button(
+                        text = stringResource(R.string.about_btn_visit_github),
+                        onClick = onOpenAuthor,
+                        style = Oe3ButtonStyle.Pill,
+                    )
+                    Oe3Button(
+                        text = stringResource(R.string.about_btn_copy_link),
+                        onClick = onCopyAuthor,
+                        style = Oe3ButtonStyle.Tonal,
+                    )
+                }
+            }
+
+            // 5. Project Repository Card
+            Oe3Card {
+                Text(
+                    text = stringResource(R.string.about_project_card_title),
+                    style = Oe3Typography.style(Oe3TextRole.Section),
+                    color = colors.onSurface.oe3Color(),
+                )
+                Text(
+                    text = stringResource(R.string.about_project_name),
+                    style = Oe3Typography.style(Oe3TextRole.Section),
+                    color = colors.primary.oe3Color(),
+                    modifier = Modifier.padding(top = Oe3Spacing.sm),
+                )
+                Text(
+                    text = "开源协议：GNU GPL v3.0 · 强开源保障",
+                    style = Oe3Typography.style(Oe3TextRole.Meta),
+                    color = colors.onSurfaceVariant.oe3Color(),
+                    modifier = Modifier.padding(top = Oe3Spacing.xs),
+                )
+                LinkBanner(
+                    url = stringResource(R.string.about_project_url),
+                    onClick = onOpenProject,
+                )
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = Oe3Spacing.md),
+                    horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(Oe3Spacing.sm),
+                ) {
+                    Oe3Button(
+                        text = stringResource(R.string.about_btn_visit_project),
+                        onClick = onOpenProject,
+                        style = Oe3ButtonStyle.Pill,
+                    )
+                    Oe3Button(
+                        text = stringResource(R.string.about_btn_copy_link),
+                        onClick = onCopyProject,
+                        style = Oe3ButtonStyle.Tonal,
+                    )
+                }
+                Spacer(Modifier.size(Oe3Spacing.sm))
+                Oe3Button(
+                    text = stringResource(R.string.third_party_notices_title),
+                    onClick = onOpenNotices,
+                    style = Oe3ButtonStyle.Tonal,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LinkBanner(
+    url: String,
+    onClick: () -> Unit,
+) {
+    val colors = Oe3ThemeValues.colors
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = Oe3Spacing.md)
+            .heightIn(min = Oe3Sizes.minTouchTarget)
+            .clip(RoundedCornerShape(Oe3Shapes.md))
+            .background(colors.surfaceHigh.oe3Color())
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = Oe3Spacing.sm, vertical = Oe3Spacing.xs),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text = url,
+            style = Oe3Typography.style(Oe3TextRole.Meta),
+            color = colors.primary.oe3Color(),
+        )
     }
 }

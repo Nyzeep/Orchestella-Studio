@@ -63,6 +63,7 @@ import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.terminal.TerminalScreenModel
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
@@ -361,7 +362,7 @@ private fun TerminalInputRow(
             decorationBox = { inner ->
                 Box(
                     modifier = Modifier
-                        .height(40.dp)
+                        .height(Oe3Sizes.minTouchTarget)
                         .fillMaxWidth(),
                     contentAlignment = Alignment.CenterStart,
                 ) {
@@ -385,7 +386,6 @@ private fun TerminalInputRow(
             onClick = onSubmit,
             style = Oe3ButtonStyle.Tonal,
             modifier = Modifier
-                .height(40.dp)
                 .widthIn(min = 64.dp)
                 .testTag("theme-terminal:send"),
         )

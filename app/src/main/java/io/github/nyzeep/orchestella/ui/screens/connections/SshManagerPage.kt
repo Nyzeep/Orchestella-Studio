@@ -34,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ssh.SshProfile
 import io.github.nyzeep.orchestella.ssh.SshProfileStore
@@ -51,6 +52,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 import io.github.nyzeep.orchestella.ui.shell.OeScaffoldAction
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 
 /**
  * Editable SSH profile fields, detached from storage so the form contract is
@@ -325,6 +327,7 @@ fun SshManagerContent(
     onDelete: (SshProfile) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scrollState = rememberScrollState()
     OeScaffold(
         title = stringResource(R.string.connections_ssh_title),
         modifier = modifier,
@@ -337,15 +340,16 @@ fun SshManagerContent(
                 testTag = "connections:ssh:new-action",
             ),
         ),
+        scrollOffsetPx = { scrollState.oeScrollOffsetPx() },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(
                     start = Oe3Spacing.pageInset,
                     end = Oe3Spacing.pageInset,
-                    top = Oe3Spacing.sm,
+                    top = LocalOe3PageTopPadding.current + Oe3Spacing.sm,
                     bottom = LocalOe3PageBottomPadding.current,
                 ),
             verticalArrangement = Arrangement.spacedBy(Oe3Spacing.sm),

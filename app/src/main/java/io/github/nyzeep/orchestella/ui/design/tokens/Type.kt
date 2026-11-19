@@ -8,8 +8,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 
-/** The eight text roles the design language allows. Anything else is a page-local style. */
-enum class OeTypeRole { Brand, PageTitle, Section, Body, BodyStrong, Caption, NavLabel, Mono }
+/** Semantic text roles shared by the design system. */
+enum class OeTypeRole { Brand, PageTitle, Section, Body, BodyStrong, Caption, NavLabel, Mono, Meta }
 
 @Immutable
 data class OeTypeSpec(
@@ -36,6 +36,7 @@ object OeType {
         OeTypeRole.Caption to OeTypeSpec(12f, 16f, FontWeight.Normal),
         OeTypeRole.NavLabel to OeTypeSpec(10f, 14.5f, FontWeight.Medium),
         OeTypeRole.Mono to OeTypeSpec(13f, 18f, FontWeight.Normal),
+        OeTypeRole.Meta to OeTypeSpec(13f, 18f, FontWeight.Normal),
     )
 
     fun spec(role: OeTypeRole): OeTypeSpec = specs.getValue(role)

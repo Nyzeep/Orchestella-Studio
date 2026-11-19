@@ -6,7 +6,6 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -18,6 +17,12 @@ import android.widget.Toast;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
+import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle;
+import io.github.nyzeep.orchestella.ui.design.tokens.OeTypeRole;
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3ColorTokens;
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors;
+import io.github.nyzeep.orchestella.ui.theme.AppTheme;
+import io.github.nyzeep.orchestella.ui.theme.ThemeStore;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -48,7 +53,7 @@ public class LogViewerActivity extends Activity {
     private String instanceId;
     private TextView logText;
     private File consoleLogFile;
-    private io.github.nyzeep.orchestella.ui.theme.AppTheme theme;
+    private Oe3ColorTokens colors;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -75,29 +80,31 @@ public class LogViewerActivity extends Activity {
 
         android.widget.LinearLayout root = new android.widget.LinearLayout(this);
         root.setOrientation(android.widget.LinearLayout.VERTICAL);
-        theme = new io.github.nyzeep.orchestella.ui.theme.ThemeStore(this).resolve();
-        root.setBackgroundColor(theme.getBackground());
-        root.setPadding(dp(8), 0, dp(8), 0);
+        ThemeStore store = new ThemeStore(this);
+        AppTheme theme = store.resolve();
+        colors = Oe3Colors.INSTANCE.resolve(theme, theme.isDark() && store.uiPureBlack());
+        root.setBackgroundColor(colors.getBackground());
+        int inset = getResources().getDimensionPixelSize(R.dimen.oe_space_xl);
+        root.setPadding(inset, 0, inset, 0);
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
-            v.setPadding(dp(8), insets.getInsets(WindowInsetsCompat.Type.statusBars()).top + dp(8),
-                    dp(8), insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom + dp(8));
+            androidx.core.graphics.Insets bars = insets.getInsets(
+                    WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
+            v.setPadding(inset + bars.left, bars.top + dp(8), inset + bars.right, bars.bottom + dp(8));
             return insets;
         });
 
         TextView titleView = new TextView(this);
         titleView.setText(title);
-        titleView.setTextSize(17f);
-        titleView.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        titleView.setTextColor(theme.getText());
-        titleView.setPadding(dp(8), dp(8), dp(8), dp(8));
+        OeLegacyViewStyle.text(titleView, OeTypeRole.Brand);
+        titleView.setTextColor(colors.getOnSurface());
+        titleView.setPadding(0, dp(8), 0, dp(8));
         root.addView(titleView);
 
         logText = new TextView(this);
-        logText.setTypeface(Typeface.MONOSPACE);
-        logText.setTextSize(11f);
-        logText.setTextColor(theme.getText());
+        OeLegacyViewStyle.text(logText, OeTypeRole.Mono);
+        logText.setTextColor(colors.getOnSurface());
         logText.setTextIsSelectable(true);
-        logText.setPadding(dp(8), dp(4), dp(8), dp(16));
+        logText.setPadding(0, dp(4), 0, dp(16));
 
         HorizontalScrollView horizontal = new HorizontalScrollView(this);
         horizontal.addView(logText);
@@ -130,15 +137,12 @@ public class LogViewerActivity extends Activity {
     private Button makeActionButton(String label, View.OnClickListener listener) {
         Button button = new Button(this, null, android.R.attr.buttonStyleSmall);
         button.setText(label);
-        button.setTextSize(12f);
-        button.setTypeface(Typeface.MONOSPACE);
-        button.setTextColor(theme.getAccent());
-        button.setPadding(dp(14), dp(6), dp(14), dp(6));
+        OeLegacyViewStyle.action(button);
+        button.setTextColor(colors.getPrimary());
         button.setOnClickListener(listener);
         android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(dp(6), 0, dp(6), 0);
+                0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(dp(2), 0, dp(2), 0);
         button.setLayoutParams(lp);
         return button;
     }

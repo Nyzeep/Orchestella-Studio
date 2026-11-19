@@ -5,21 +5,21 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
-import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
+import io.github.nyzeep.orchestella.ui.shell.LocalOeSurfaceAlpha
 
 /**
- * Grouped-list container (UI-04): one clipped 24dp surface holding square
- * rows. The outer radius ([Oe3Shapes.groupedOuter]) belongs to the container,
+ * Grouped-list container (UI-04): one clipped surface holding square
+ * rows. The current card radius belongs to the container,
  * so the first row exposes the top corners, the last row the bottom corners
  * and the middle rows stay straight — the shape.md grouped rule; rows never
  * carry their own radius. Compose the rows with [OeListGroupRow] (its 10dp
@@ -31,11 +31,11 @@ fun OeListGroup(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val colors = Oe3ThemeValues.colors
+    val surface = Oe3ThemeValues.colors.surface.oe3Color()
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(Oe3Shapes.groupedOuter))
-            .background(colors.surface.oe3Color()),
+            .clip(Oe3CardSpec.cornerShape(LocalOe3CornerRadius.current))
+            .background(surface.copy(alpha = surface.alpha * LocalOeSurfaceAlpha.current)),
         content = content,
     )
 }

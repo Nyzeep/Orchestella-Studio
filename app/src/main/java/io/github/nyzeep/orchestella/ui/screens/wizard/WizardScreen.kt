@@ -12,7 +12,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,9 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,7 +41,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,18 +49,19 @@ import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.InstanceCreationWizardModel
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3BackButton
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
-import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
-import io.github.nyzeep.orchestella.ui.screens.common.OeChevron
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 
 /**
  * 新建实例向导（UI-12）：壳内二级页，`OeScaffold` 单标题「新建实例」+ 返回。
@@ -118,11 +115,21 @@ fun WizardScreen(
         controller.onSharedDirPicked(uri)
     }
     val launchPicker: () -> Unit = { pickSharedDir.launch(null) }
+    val stepScrollStates = InstanceCreationWizardModel.CreationStep.entries.associateWith {
+        rememberScrollState()
+    }
 
     OeScaffold(
         title = stringResource(R.string.wizard_page_title),
         modifier = modifier,
-        leading = { WizardBackButton(onBack = requestExit) },
+        leading = {
+            Oe3BackButton(
+                onBack = requestExit,
+                contentDescription = stringResource(R.string.wizard_back_desc),
+                testTag = "wizard:back",
+            )
+        },
+        scrollOffsetPx = { stepScrollStates.getValue(state.step).oeScrollOffsetPx() },
     ) {
         Column(Modifier.fillMaxSize()) {
             WizardStepIndicator(
@@ -134,7 +141,7 @@ fun WizardScreen(
                     .padding(
                         start = Oe3Spacing.pageInset,
                         end = Oe3Spacing.pageInset,
-                        top = Oe3Spacing.sm,
+                        top = LocalOe3PageTopPadding.current + Oe3Spacing.xs,
                     ),
             )
 
@@ -175,7 +182,7 @@ fun WizardScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(stepScrollStates.getValue(step))
                             .padding(
                                 start = Oe3Spacing.pageInset,
                                 end = Oe3Spacing.pageInset,
@@ -298,24 +305,8 @@ fun WizardScreen(
 }
 
 // ---------------------------------------------------------------------------
-// 顶栏返回 + 步骤指示器
+// 步骤指示器
 // ---------------------------------------------------------------------------
-
-/** 44dp 视觉 / 48dp 命中的圆形返回位；同 ConfigBackButton 词汇。 */
-@Composable
-private fun WizardBackButton(onBack: () -> Unit) {
-    val back = stringResource(R.string.wizard_back_desc)
-    Box(
-        modifier = Modifier
-            .size(Oe3Sizes.interactiveVisual)
-            .testTag("wizard:back")
-            .clickable(role = Role.Button, onClick = onBack)
-            .semantics { contentDescription = back },
-        contentAlignment = Alignment.Center,
-    ) {
-        OeChevron(color = Oe3ThemeValues.colors.onSurface.oe3Color(), pointsLeft = true)
-    }
-}
 
 /**
  * 步骤指示器：4 段胶囊（当前步 `primary`、已完成步 `primaryContainer`、

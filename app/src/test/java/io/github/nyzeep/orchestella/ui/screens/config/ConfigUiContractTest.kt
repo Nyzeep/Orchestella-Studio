@@ -66,16 +66,12 @@ class ConfigUiContractTest {
     }
 
     @Test
-    fun metaInfoTextUsesTheThirteenEighteenPageLocalStyle() {
+    fun metaInfoTextUsesTheSharedMetaRole() {
         val text = source("src/main/java/io/github/nyzeep/orchestella/ui/screens/config/ConfigScreen.kt")
-        assertTrue(
-            "MetaTextStyle must be the 13/18 page-local style (spec §2.3), not the mono role",
-            text.contains("private val MetaTextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)"),
-        )
         assertEquals(
             "four meta positions pinned to 13/18: page meta, update badge, options label, choice row value",
             4,
-            Regex("style = MetaTextStyle").findAll(text).count(),
+            text.split("style = Oe3Typography.style(Oe3TextRole.Meta)").size - 1,
         )
         assertFalse(
             "ConfigScreen keeps no Caption: all four Caption usages were meta info and got upgraded",

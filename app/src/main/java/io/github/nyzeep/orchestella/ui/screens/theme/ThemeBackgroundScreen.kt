@@ -1,20 +1,20 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -28,11 +28,13 @@ import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 import kotlin.math.roundToInt
 
 /**
@@ -47,17 +49,19 @@ fun ThemeBackgroundScreen(
     modifier: Modifier = Modifier,
     onPickBackground: (() -> Unit)? = null,
 ) {
+    val scrollState = rememberScrollState()
     OeScaffold(
         title = stringResource(R.string.ui3_theme_page_background),
         modifier = modifier.testTag("theme-background:screen"),
         leading = { ThemeBackButton(onBack = onBack) },
+        scrollOffsetPx = { scrollState.oeScrollOffsetPx() },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = Oe3Spacing.pageInset)
-                .padding(top = Oe3Spacing.xs, bottom = LocalOe3PageBottomPadding.current),
+                .padding(top = LocalOe3PageTopPadding.current + Oe3Spacing.xs, bottom = LocalOe3PageBottomPadding.current),
         ) {
             ThemeSectionHeader(
                 key = "wallpaper",
@@ -135,34 +139,38 @@ private fun WallpaperCard(
         contentPadding = PaddingValues(12.dp),
         shape = RoundedCornerShape(radius),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.ui3_theme_wallpaper_title),
-                    style = Oe3Typography.style(Oe3TextRole.BodyStrong),
-                    color = colors.onSurface.oe3Color(),
+        Column(Modifier.fillMaxWidth()) {
+            Text(
+                text = stringResource(R.string.ui3_theme_wallpaper_title),
+                style = Oe3Typography.style(Oe3TextRole.BodyStrong),
+                color = colors.onSurface.oe3Color(),
+            )
+            Text(
+                text = wallpaper,
+                style = Oe3Typography.style(Oe3TextRole.Meta),
+                color = colors.onSurfaceVariant.oe3Color(),
+            )
+            Spacer(Modifier.height(Oe3Spacing.xs))
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+            ) {
+                Oe3Button(
+                    text = stringResource(R.string.ui3_theme_wallpaper_pick),
+                    onClick = { onPickBackground?.invoke() },
+                    enabled = onPickBackground != null,
+                    style = Oe3ButtonStyle.Tonal,
+                    modifier = Modifier.testTag("theme-wallpaper:pick"),
                 )
-                Text(
-                    text = wallpaper,
-                    style = MetaTextStyle,
-                    color = colors.onSurfaceVariant.oe3Color(),
+                Oe3Button(
+                    text = stringResource(R.string.ui3_theme_wallpaper_clear),
+                    onClick = { onEvent(ThemeStudioEvent.ClearBackground) },
+                    enabled = state.backgroundUri != null,
+                    style = Oe3ButtonStyle.Text,
+                    modifier = Modifier.testTag("theme-wallpaper:clear"),
                 )
             }
-            Oe3Button(
-                text = stringResource(R.string.ui3_theme_wallpaper_pick),
-                onClick = { onPickBackground?.invoke() },
-                enabled = onPickBackground != null,
-                style = Oe3ButtonStyle.Tonal,
-                modifier = Modifier.testTag("theme-wallpaper:pick"),
-            )
-            Spacer(Modifier.width(4.dp))
-            Oe3Button(
-                text = stringResource(R.string.ui3_theme_wallpaper_clear),
-                onClick = { onEvent(ThemeStudioEvent.ClearBackground) },
-                enabled = state.backgroundUri != null,
-                style = Oe3ButtonStyle.Text,
-                modifier = Modifier.testTag("theme-wallpaper:clear"),
-            )
         }
         Text(
             text = stringResource(R.string.ui3_theme_opacity),
@@ -179,7 +187,7 @@ private fun WallpaperCard(
         )
         Text(
             text = opacityText,
-            style = MetaTextStyle,
+            style = Oe3Typography.style(Oe3TextRole.Meta),
             color = colors.onSurfaceVariant.oe3Color(),
         )
     }

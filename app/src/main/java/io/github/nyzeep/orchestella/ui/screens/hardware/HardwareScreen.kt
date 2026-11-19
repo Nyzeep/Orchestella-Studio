@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Divider
@@ -60,6 +61,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 import io.github.nyzeep.orchestella.ui.shell.oeCardShape
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 
 /** 页面级几何常量；语义与命中区断言直接读这里。 */
 object HardwareSpec {
@@ -95,18 +97,23 @@ fun HardwareScreen(
 ) {
     val colors = Oe3ThemeValues.colors
     var showDetails by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
 
     OeScaffold(
         title = stringResource(R.string.ui3_hardware_title),
         modifier = modifier,
+        scrollOffsetPx = { scrollState.oeScrollOffsetPx() },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .testTag("hardware:screen")
+                .verticalScroll(scrollState)
                 .padding(horizontal = Oe3Spacing.pageInset)
-                .padding(top = Oe3Spacing.xl, bottom = LocalOe3PageBottomPadding.current)
-                .testTag("hardware:screen"),
+                .padding(
+                    top = LocalOe3PageTopPadding.current + Oe3Spacing.sm,
+                    bottom = LocalOe3PageBottomPadding.current,
+                ),
         ) {
             when (state) {
                 is HardwareUiState.Ready -> HardwareContent(

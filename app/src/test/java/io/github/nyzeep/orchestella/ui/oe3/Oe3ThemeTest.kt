@@ -75,13 +75,14 @@ class Oe3ThemeTest {
 
     @Test
     fun glassLevelsResolveToTheSpecifiedBlurAndTint() {
+        val floating = io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors.resolve(theme).surfaceFloating
         val none = Oe3Glass.resolve(theme, Oe3GlassLevel.None)
-        assertEquals(theme.surface, none.tint)
+        assertEquals(floating, none.tint)
         assertEquals(0.dp, none.blurRadius)
         assertEquals(1f, none.tintAlpha, 0.001f)
 
         val standard = Oe3Glass.resolve(theme, Oe3GlassLevel.Standard)
-        assertEquals(theme.surfaceTranslucent or 0xFF000000.toInt(), standard.tint)
+        assertEquals(floating, standard.tint)
         assertEquals(16.dp, standard.blurRadius)
         assertEquals(0.72f, standard.tintAlpha, 0.001f)
         assertEquals(0xF5, standard.fallbackTint ushr 24)
@@ -90,13 +91,13 @@ class Oe3ThemeTest {
         assertEquals(28.dp, ultra.blurRadius)
         assertEquals(0.55f, ultra.tintAlpha, 0.001f)
         assertEquals(0xF5, ultra.fallbackTint ushr 24)
-        assertEquals(theme.surface and 0x00FFFFFF, ultra.fallbackTint and 0x00FFFFFF)
+        assertEquals(floating and 0x00FFFFFF, ultra.fallbackTint and 0x00FFFFFF)
     }
 
     @Test
-    fun pureBlackGlassUsesTheBlackSurfaceInsteadOfThePaletteSurface() {
+    fun pureBlackGlassUsesTheBlackFloatingSurfaceInsteadOfTheCardSurface() {
         val glass = Oe3Glass.resolve(theme, Oe3GlassLevel.Standard, pureBlack = true)
-        assertEquals(0x0B0B0C, glass.tint and 0x00FFFFFF)
-        assertEquals(0x0B0B0C, glass.fallbackTint and 0x00FFFFFF)
+        assertEquals(0x1A1A1C, glass.tint and 0x00FFFFFF)
+        assertEquals(0x1A1A1C, glass.fallbackTint and 0x00FFFFFF)
     }
 }

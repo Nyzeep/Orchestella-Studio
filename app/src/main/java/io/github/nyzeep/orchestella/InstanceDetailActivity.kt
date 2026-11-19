@@ -5,7 +5,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -212,6 +211,7 @@ class InstanceDetailActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        ThemeApplier.prepare(this)
         super.onCreate(savedInstanceState)
         pendingExportInstanceId = savedInstanceState?.getString(PENDING_EXPORT_ID)
         setContentView(R.layout.activity_instance_detail)
@@ -235,7 +235,7 @@ class InstanceDetailActivity : AppCompatActivity() {
         }
 
         bindViews()
-        applyTheme()
+        ThemeApplier.bind(this)
 
         toolbar.setNavigationOnClickListener { finish() }
 
@@ -1056,83 +1056,6 @@ class InstanceDetailActivity : AppCompatActivity() {
             String.format(Locale.US, "%.1f GB", mb / 1024.0)
         } else {
             String.format(Locale.US, "%.0f MB", mb)
-        }
-    }
-
-    private fun applyTheme() {
-        try {
-            val themeStore = io.github.nyzeep.orchestella.ui.theme.ThemeStore(this)
-            val theme = themeStore.resolve()
-            // Session 19 (T-B.2): the detail cards are surfaces too; paint them with the
-            // same opacity token the dashboard and terminal chrome already consume.
-            val surfaceFill = io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity.resolveSurfaceColor(
-                theme.surface,
-                theme.background,
-                theme.text,
-                themeStore.surfaceOpacityPercent(),
-                themeStore.backgroundUri() != null,
-            )
-            findViewById<View>(R.id.detail_root)?.setBackgroundColor(theme.background)
-            toolbar.setTitleTextColor(theme.text)
-            toolbar.navigationIcon?.setTint(theme.text)
-
-            // Distro Title & ID
-            findViewById<TextView>(R.id.detail_instance_title)?.setTextColor(theme.text)
-            findViewById<TextView>(R.id.detail_instance_id)?.setTextColor(theme.textDim)
-
-            // Frosted Cards with delicate hairline stroke
-            val cardIds = listOf(
-                R.id.card_header_dashboard,
-                R.id.card_detail_ssh_connect,
-                R.id.card_hardware_specs_editor,
-                R.id.card_network_port_forwarding,
-                R.id.card_storage_manager
-            )
-            cardIds.forEach { id ->
-                findViewById<com.google.android.material.card.MaterialCardView>(id)?.let { card ->
-                    card.setCardBackgroundColor(surfaceFill)
-                    card.strokeColor = (theme.glow and 0x00FFFFFF) or 0x33000000
-                    card.strokeWidth = (1 * resources.displayMetrics.density).toInt()
-                }
-            }
-
-            // Navigation Tab Button Styling
-            listOf(
-                R.id.tab_detail_overview,
-                R.id.tab_detail_hardware,
-                R.id.tab_detail_storage,
-                R.id.tab_detail_network,
-                R.id.tab_detail_maintenance
-            ).forEach { tabId ->
-                findViewById<MaterialButton>(tabId)?.let { tabBtn ->
-                    tabBtn.strokeColor = ColorStateList.valueOf((theme.glow and 0x00FFFFFF) or 0x33000000)
-                    // A flat ink ignored the checked state: the selected tab painted dark
-                    // text on the primary fill (unreadable on the lavender flagship).
-                    tabBtn.setTextColor(
-                        ColorStateList(
-                            arrayOf(
-                                intArrayOf(-android.R.attr.state_enabled),
-                                intArrayOf(android.R.attr.state_checked),
-                                intArrayOf(),
-                            ),
-                            intArrayOf(
-                                io.github.nyzeep.orchestella.ui.theme.ThemeColors.disabledInk(theme),
-                                io.github.nyzeep.orchestella.ui.theme.ThemeColors.onColor(theme.primary),
-                                theme.text,
-                            ),
-                        )
-                    )
-                }
-            }
-
-            // Danger Zone Card with subtle red stroke
-            findViewById<com.google.android.material.card.MaterialCardView>(R.id.card_danger_zone)?.let { card ->
-                card.setCardBackgroundColor(surfaceFill)
-                card.strokeColor = 0x40EF4444.toInt()
-                card.strokeWidth = (1 * resources.displayMetrics.density).toInt()
-            }
-        } catch (e: Exception) {
-            android.util.Log.w("InstanceDetailActivity", "Theme apply failed", e)
         }
     }
 }

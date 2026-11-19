@@ -50,6 +50,8 @@ import com.google.android.material.navigation.NavigationView
 import com.google.android.material.progressindicator.BaseProgressIndicator
 import com.google.android.material.shape.MaterialShapeDrawable
 import com.google.android.material.textfield.TextInputLayout
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import java.util.concurrent.Executors
@@ -74,7 +76,9 @@ object ThemeApplier {
     @JvmStatic
     internal fun isComposeOnlyHost(activity: Activity): Boolean =
         activity is io.github.nyzeep.orchestella.MainActivity ||
-            activity is io.github.nyzeep.orchestella.ConnectionPagesActivity
+            activity is io.github.nyzeep.orchestella.ConnectionPagesActivity ||
+            activity is io.github.nyzeep.orchestella.AboutActivity ||
+            activity is io.github.nyzeep.orchestella.GuestFeaturesActivity
 
     /** Safe to call repeatedly. Uses only application context and existing appearance preferences. */
     @JvmStatic
@@ -222,7 +226,15 @@ object ThemeApplier {
                 activities[activity] = it
                 val weakRoot = it.root
                 val layoutListener = ViewTreeObserver.OnGlobalLayoutListener {
-                    weakRoot.get()?.let { root -> walk(root, it.theme, force = false) }
+                    weakRoot.get()?.let { root ->
+                        walk(
+                            root,
+                            it.theme,
+                            force = false,
+                            surfacePct = it.surfaceOpacity,
+                            hasBackdrop = it.wallpaper != null,
+                        )
+                    }
                 }
                 it.listener = layoutListener
                 content.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
@@ -361,6 +373,7 @@ object ThemeApplier {
         if (view is ViewGroup) {
             val childFill = when {
                 roles[view] == Role.NAVIGATION -> if (selected) theme.primary else theme.surface
+                view is MaterialCardView && view.strokeWidth == 0 -> view.cardBackgroundColor.defaultColor
                 currentBackground != null && Color.alpha(currentBackground) > 200 &&
                     state.backgroundRole in setOf(ColorRole.PRIMARY, ColorRole.ACCENT, ColorRole.TEXT) ->
                     ThemeColors.color(theme, state.backgroundRole)
@@ -384,27 +397,29 @@ object ThemeApplier {
         val normalInk = ThemeColors.readable(theme.text, containerFill ?: theme.surface)
         when (view) {
             is MaterialCardView -> {
-                // Registered tier decides the fill (registry or explicit setSurfaceTier);
-                // an unregistered card gets the plain surface — byte-identical to the
-                // pre-registry single-tier behavior.
-                view.setCardBackgroundColor(ThemeColors.cardSurfaceFill(binding.surfaceTier, theme, effectiveSurface))
-                // Card edges use the on-palette hairline (a faint ink step over the
-                // surface) instead of the old full-strength grey outline band. The
-                // danger zone's red ring is semantic and survives the normalization.
-                if (!ThemeColors.isSemanticStrokeName(name)) {
-                    view.strokeColor = hairline
-                    view.strokeWidth = view.resources.displayMetrics.density.toInt().coerceAtLeast(1)
-                }
-                // Corner radius is the one deliberate geometry override: 0 keeps the XML look.
-                val radiusPx = cornerRadiusPx(view)
-                if (radiusPx > 0f) {
+                val fill = if (view.strokeWidth == 0) {
+                    val store = ThemeStore(view.context)
+                    val colors = Oe3Colors.resolve(theme, pureBlack = theme.isDark && store.uiPureBlack())
+                    val radius = (store.cornerRadiusDpOrNull()?.toFloat() ?: Oe3Shapes.xl.value) *
+                        view.resources.displayMetrics.density
+                    if (view.radius != radius) view.radius = radius
+                    SurfaceOpacity.resolveSurfaceColor(
+                        colors.surface, colors.background, colors.onSurface, surfacePct, hasBackdrop,
+                    )
+                } else {
+                    if (!ThemeColors.isSemanticStrokeName(name)) {
+                        view.strokeColor = hairline
+                        view.strokeWidth = view.resources.displayMetrics.density.toInt().coerceAtLeast(1)
+                    }
                     val existing = existingCardCornerPx(view)
-                    val target = ThemeColors.clampCornerRadius(existing, radiusPx)
+                    val target = ThemeColors.clampCornerRadius(existing, cornerRadiusPx(view))
                     if (target > existing) {
                         view.shapeAppearanceModel = view.shapeAppearanceModel.toBuilder()
                             .setAllCornerSizes(target).build()
                     }
+                    effectiveSurface
                 }
+                view.setCardBackgroundColor(ThemeColors.cardSurfaceFill(binding.surfaceTier, theme, fill))
             }
             is MaterialButton -> {
                 val secondary = binding.buttonRole == Role.SECONDARY_ACTION
@@ -427,14 +442,19 @@ object ThemeApplier {
                 if (radiusPx > 0f && target > view.cornerRadius) view.cornerRadius = target.toInt()
             }
             is MaterialToolbar -> {
-                view.setBackgroundColor(theme.background)
-                view.setTitleTextColor(normalInk)
-                view.setSubtitleTextColor(muted)
-                view.navigationIcon = view.navigationIcon?.mutate()?.apply { setTint(normalInk) }
-                view.overflowIcon = view.overflowIcon?.mutate()?.apply { setTint(normalInk) }
+                val ink = if (backgroundColor(view) == Color.TRANSPARENT) {
+                    ThemeColors.readable(theme.text, theme.background)
+                } else {
+                    view.setBackgroundColor(theme.background)
+                    normalInk
+                }
+                view.setTitleTextColor(ink)
+                view.setSubtitleTextColor(ThemeColors.readable(theme.textDim, theme.background))
+                view.navigationIcon = view.navigationIcon?.mutate()?.apply { setTint(ink) }
+                view.overflowIcon = view.overflowIcon?.mutate()?.apply { setTint(ink) }
                 for (index in 0 until view.menu.size()) {
                     val item = view.menu.getItem(index)
-                    item.icon = item.icon?.mutate()?.apply { setTint(normalInk) }
+                    item.icon = item.icon?.mutate()?.apply { setTint(ink) }
                 }
             }
             is NavigationBarView -> {

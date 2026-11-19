@@ -45,7 +45,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
@@ -53,6 +59,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -61,6 +68,8 @@ import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassSurface
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Glass
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3MotionTokens
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
@@ -68,6 +77,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.Oe3NavStyle
 import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
+import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 
 /**
  * Selected-pill geometry and motion (spec §2.5, ticket UI3-10).
@@ -122,7 +132,7 @@ object Oe3NavPillSpec {
 /**
  * 浮动坞的两层投影（v4 spec §1.3 / 工单 UI-03）：black@0.08 blur24 y8 +
  * black@0.04 blur3 y1。坞与卡片的辨识度三要素「高一个色阶 + 阴影 +
- * 外露 21dp」中，阴影由这里给出数值真源；固定坞贴边，无投影。
+ * 外露 21dp」中，阴影由这里给出数值真源；固定坞保留贴边向上淡影，与列表卡片分层。
  *
  * 硬件画布自 API 28 起支持 `BlurMaskFilter`；26/27 上直接跳过投影，
  * 不画硬边黑块。
@@ -137,8 +147,17 @@ object Oe3NavShadowSpec {
         Layer(alpha = 0.04f, blur = 3.dp, offsetY = 1.dp),
     )
 
-    /** 投影只属于浮动形态。 */
-    fun appliesTo(style: Oe3NavStyle): Boolean = style == Oe3NavStyle.Floating
+    private val fixedLayers: List<Layer> = listOf(
+        Layer(alpha = 0.10f, blur = 12.dp, offsetY = (-2).dp),
+    )
+
+    fun layersFor(style: Oe3NavStyle): List<Layer> = when (style) {
+        Oe3NavStyle.Floating -> layers
+        Oe3NavStyle.Fixed -> fixedLayers
+    }
+
+    /** 浮动与固定底栏均有各自的分层投影。 */
+    fun appliesTo(style: Oe3NavStyle): Boolean = true
 }
 
 /** Top corners of the docked (fixed) bar; the bottom edge stays square. */
@@ -146,6 +165,22 @@ private val FixedBarShape = RoundedCornerShape(
     topStart = Oe3Shapes.md,
     topEnd = Oe3Shapes.md,
 )
+
+/** The dock surface clips the outer half of the stroke to its silhouette. */
+private fun Modifier.navRim(shape: Shape, isDark: Boolean): Modifier = drawWithCache {
+    val outline = shape.createOutline(size, layoutDirection, this)
+    val highlight = if (isDark) Oe3Glass.DARK_RIM_HIGHLIGHT_ALPHA else Oe3Glass.LIGHT_RIM_HIGHLIGHT_ALPHA
+    val shade = if (isDark) Oe3Glass.DARK_RIM_SHADE_ALPHA else Oe3Glass.LIGHT_RIM_SHADE_ALPHA
+    val brush = Brush.linearGradient(
+        0f to Color.White.copy(alpha = highlight),
+        0.5f to Color.Transparent,
+        1f to Color.Black.copy(alpha = shade),
+        start = Offset.Zero,
+        end = Offset(size.width, size.height),
+    )
+    val stroke = Stroke(width = Oe3Glass.rimWidth.toPx() * 2f)
+    onDrawBehind { drawOutline(outline = outline, brush = brush, style = stroke) }
+}
 
 /**
  * Bottom navigation bar (spec §2.3, Theme Studio 底栏样式).
@@ -181,13 +216,19 @@ fun Oe3NavBar(
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val density = LocalDensity.current
     val fixed = style == Oe3NavStyle.Fixed
+    val barShape = if (fixed) FixedBarShape else Oe3Shapes.pill
+    val selectionFill = remember(colors, info.isDark) { Oe3Colors.navigationSelection(colors, info.isDark) }
+    val selectedInk = remember(colors.primary, selectionFill) {
+        Color(ThemeColors.readable(colors.primary, selectionFill))
+    }
+    val inactiveInk = remember(colors.onSurfaceVariant, colors.surfaceFloating) {
+        Color(ThemeColors.readable(colors.onSurfaceVariant, colors.surfaceFloating))
+    }
 
-    // 浮动坞的双层投影：画在本节点的盒子后面（blur 会越出边界，宿主不裁剪）。
-    // 数值来自 [Oe3NavShadowSpec]；API < 28 的硬件画布不支持 BlurMaskFilter，
-    // 直接不画，避免硬边黑块冒充阴影。
+    // 分层投影：浮动坞双层外投影，固定坞上缘 2dp 分离投影；API < 28 跳过 BlurMaskFilter。
     val drawShadow = Oe3NavShadowSpec.appliesTo(style) && Build.VERSION.SDK_INT >= 28
-    val shadowPaints = remember(drawShadow, density) {
-        Oe3NavShadowSpec.layers.map { layer ->
+    val shadowPaints = remember(drawShadow, style, density) {
+        Oe3NavShadowSpec.layersFor(style).map { layer ->
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = android.graphics.Color.argb((layer.alpha * 255).toInt(), 0, 0, 0)
                 maskFilter = BlurMaskFilter(
@@ -199,6 +240,7 @@ fun Oe3NavBar(
         }
     }
     val shadowRect = remember { RectF() }
+    val fixedCornerPx = with(density) { Oe3Shapes.md.toPx() }
 
     BoxWithConstraints(
         modifier = modifier
@@ -210,19 +252,19 @@ fun Oe3NavBar(
                     Modifier
                         .padding(horizontal = Oe3Sizes.navSideMargin)
                         .padding(bottom = Oe3Sizes.navBottomInset(systemBottom))
-                        .drawBehind {
-                            if (!drawShadow) return@drawBehind
-                            drawIntoCanvas { canvas ->
-                                val native = canvas.nativeCanvas
-                                val radius = size.height / 2f
-                                shadowPaints.forEach { (paint, dy) ->
-                                    shadowRect.set(0f, dy, size.width, size.height + dy)
-                                    native.drawRoundRect(shadowRect, radius, radius, paint)
-                                }
-                            }
-                        }
                 },
             )
+            .drawBehind {
+                if (!drawShadow) return@drawBehind
+                drawIntoCanvas { canvas ->
+                    val native = canvas.nativeCanvas
+                    val radius = if (fixed) fixedCornerPx else size.height / 2f
+                    shadowPaints.forEach { (paint, dy) ->
+                        shadowRect.set(0f, dy, size.width, size.height + dy)
+                        native.drawRoundRect(shadowRect, radius, radius, paint)
+                    }
+                }
+            }
             .height(if (fixed) Oe3Sizes.navBar + systemBottom else Oe3Sizes.navBar),
     ) {
         val cellWidth = (maxWidth - Oe3Sizes.navPadding * 2) / Oe3Tab.entries.size
@@ -255,8 +297,8 @@ fun Oe3NavBar(
                 .fillMaxSize()
                 // 测试锚点挂在玻璃背板（视觉坞体）上：语义边界即坞体几何，
                 // 不含悬浮形态的外边距（透传测试量 21dp 边距时依赖这一点）。
-                .testTag("shell:nav-bar")
-                .clip(if (fixed) FixedBarShape else Oe3Shapes.pill),
+                .testTag("shell:nav-bar"),
+            shape = barShape,
             state = glassState,
         ) {
             Row(
@@ -305,18 +347,20 @@ fun Oe3NavBar(
                                     .requiredWidth(Oe3NavPillSpec.width(cellWidth))
                                     .height(Oe3Sizes.navPill)
                                     .clip(Oe3Shapes.pill)
-                                    .background(Color(colors.surfaceHigh)),
+                                    .background(Color(selectionFill)),
                             )
                         }
                         Oe3NavItemContent(
                             tab = tab,
                             isSelected = isSelected,
                             pressed = pressed,
+                            ink = if (isSelected) selectedInk else inactiveInk,
                             motion = motion,
                         )
                     }
                 }
             }
+            Box(Modifier.matchParentSize().navRim(barShape, info.isDark))
         }
     }
 }
@@ -327,16 +371,16 @@ private fun Oe3NavItemContent(
     tab: Oe3Tab,
     isSelected: Boolean,
     pressed: Boolean,
+    ink: Color,
     motion: Oe3MotionTokens,
 ) {
-    val colors = Oe3ThemeValues.colors
     val pressScale by animateFloatAsState(
         targetValue = if (pressed) Oe3NavPillSpec.PRESS_SCALE else Oe3NavPillSpec.REST_SCALE,
         animationSpec = Oe3NavPillSpec.pressSpring(motion),
         label = "oe3NavPress",
     )
     val labelColor by animateColorAsState(
-        targetValue = Color(if (isSelected) colors.primary else colors.onSurfaceVariant),
+        targetValue = ink,
         animationSpec = Oe3NavPillSpec.colorTransition(motion),
         label = "oe3NavLabel",
     )
@@ -358,8 +402,10 @@ private fun Oe3NavItemContent(
         Spacer(Modifier.height(Oe3Sizes.navIconLabelGap))
         Text(
             text = tab.label,
+            modifier = Modifier.fillMaxWidth(),
             style = Oe3Typography.style(Oe3TextRole.NavLabel),
             color = labelColor,
+            textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

@@ -1,7 +1,6 @@
 package io.github.nyzeep.orchestella;
 
 import android.content.Intent;
-import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -21,6 +20,10 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.orchestella.ui.design.components.OeDialogs;
+import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle;
+import io.github.nyzeep.orchestella.ui.design.tokens.OeTypeRole;
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3ColorTokens;
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors;
 import io.github.nyzeep.orchestella.ui.theme.AppTheme;
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity;
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore;
@@ -55,6 +58,7 @@ public class TerminalActivity extends ComponentActivity {
     private ModernTerminalView terminalView;
     private FrameLayout contentArea;
     private View offlineCardView;
+    private View offlineCardSurface;
     private TextView tvOfflineTitle;
     private TextView tvOfflineMessage;
     private Button btnOfflineAction;
@@ -189,14 +193,11 @@ public class TerminalActivity extends ComponentActivity {
         // floating chip laid over the top-right corner of the viewport, so the VT grid
         // gets the whole height instead of losing 40dp to chrome.
         floatingSessionChip = new TextView(this);
-        floatingSessionChip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-        floatingSessionChip.setTextColor(themeStore.resolve().getTerminalForeground());
-        floatingSessionChip.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        OeLegacyViewStyle.text(floatingSessionChip, OeTypeRole.Caption);
         floatingSessionChip.setSingleLine(true);
         floatingSessionChip.setGravity(Gravity.CENTER);
         floatingSessionChip.setPadding(dpToPx(10), dpToPx(4), dpToPx(10), dpToPx(4));
-        floatingSessionChip.setBackground(createPillBackground(
-                effectiveSurface(themeStore.resolve()), themeStore.resolve().getGlow(), 8f));
+        applyChromeColors(themeStore.resolve());
         floatingSessionChip.setOnClickListener(v -> {
             if (drawerLayout != null) {
                 if (drawerLayout.isDrawerOpen(GravityCompat.END)) {
@@ -479,9 +480,6 @@ public class TerminalActivity extends ComponentActivity {
                 terminalView.setCursorBlinkEnabled(settingsManager == null || settingsManager.isTerminalCursorBlinkEnabled());
                 applyTerminalBackground(store, theme);
             }
-            if (offlineCardView != null) {
-                offlineCardView.setBackgroundColor(theme.getBackground());
-            }
             applyChromeColors(theme);
             if (auxiliaryKeyBar != null) auxiliaryKeyBar.applyTheme(theme);
             if (drawerPanel != null) drawerPanel.applyTheme(theme);
@@ -492,19 +490,30 @@ public class TerminalActivity extends ComponentActivity {
 
     /** Repaints the session header, drawer handle and offline card with the active theme. */
     private void applyChromeColors(AppTheme theme) {
+        Oe3ColorTokens colors = Oe3Colors.INSTANCE.resolve(theme, theme.isDark() && themeStore.uiPureBlack());
+        float pillRadius = getResources().getDimension(R.dimen.oe_btn_pill_radius);
         if (floatingSessionChip != null) {
-            floatingSessionChip.setTextColor(theme.getTerminalForeground());
-            floatingSessionChip.setBackground(createPillBackground(effectiveSurface(theme), theme.getGlow(), 8f));
+            floatingSessionChip.setTextColor(colors.getOnSurface());
+            floatingSessionChip.setBackground(chromeSurface(colors.getSurfaceRaised(), pillRadius));
         }
-        if (tvOfflineTitle != null) tvOfflineTitle.setTextColor(theme.getPrimary());
-        if (tvOfflineMessage != null) tvOfflineMessage.setTextColor(theme.getText());
+        if (offlineCardView != null) offlineCardView.setBackgroundColor(colors.getBackground());
+        if (offlineCardSurface != null) {
+            Integer preference = themeStore.cornerRadiusDpOrNull();
+            float cardRadius = preference == null ? getResources().getDimension(R.dimen.oe_corner_card) : dpToPx(preference);
+            int fill = SurfaceOpacity.INSTANCE.resolveSurfaceColor(
+                    colors.getSurface(), colors.getBackground(), colors.getOnSurface(),
+                    themeStore.surfaceOpacityPercent(), false);
+            offlineCardSurface.setBackground(chromeSurface(fill, cardRadius));
+        }
+        if (tvOfflineTitle != null) tvOfflineTitle.setTextColor(colors.getOnSurface());
+        if (tvOfflineMessage != null) tvOfflineMessage.setTextColor(colors.getOnSurfaceVariant());
         if (btnOfflineAction != null) {
-            btnOfflineAction.setTextColor(theme.getText());
-            btnOfflineAction.setBackground(createPillBackground(theme.getPrimary(), theme.getPrimary(), 12f));
+            btnOfflineAction.setTextColor(colors.getOnPrimary());
+            btnOfflineAction.setBackground(chromeSurface(colors.getPrimary(), pillRadius));
         }
         if (btnOfflineBack != null) {
-            btnOfflineBack.setTextColor(theme.getTextDim());
-            btnOfflineBack.setBackground(createPillBackground(effectiveSurface(theme), theme.getGlow(), 10f));
+            btnOfflineBack.setTextColor(colors.getOnSurface());
+            btnOfflineBack.setBackground(chromeSurface(colors.getSurfaceHigh(), pillRadius));
         }
     }
 
@@ -968,29 +977,25 @@ public class TerminalActivity extends ComponentActivity {
     }
 
     private View buildOfflineCardView() {
-        AppTheme theme = themeStore.resolve();
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
         container.setGravity(Gravity.CENTER);
         container.setPadding(dpToPx(24), dpToPx(24), dpToPx(24), dpToPx(24));
-        container.setBackgroundColor(theme.getBackground());
 
         LinearLayout card = new LinearLayout(this);
+        offlineCardSurface = card;
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
-        card.setPadding(dpToPx(24), dpToPx(24), dpToPx(24), dpToPx(24));
-        card.setBackground(createPillBackground(effectiveSurface(theme), theme.getGlow(), 16f));
+        int cardPadding = getResources().getDimensionPixelSize(R.dimen.oe_space_xl);
+        card.setPadding(cardPadding, cardPadding, cardPadding, cardPadding);
 
         tvOfflineTitle = new TextView(this);
-        tvOfflineTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        tvOfflineTitle.setTextColor(theme.getPrimary());
-        tvOfflineTitle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        OeLegacyViewStyle.text(tvOfflineTitle, OeTypeRole.Section);
         tvOfflineTitle.setGravity(Gravity.CENTER);
         card.addView(tvOfflineTitle);
 
         tvOfflineMessage = new TextView(this);
-        tvOfflineMessage.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        tvOfflineMessage.setTextColor(theme.getText());
+        OeLegacyViewStyle.text(tvOfflineMessage, OeTypeRole.Meta);
         tvOfflineMessage.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams msgLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -998,19 +1003,13 @@ public class TerminalActivity extends ComponentActivity {
         card.addView(tvOfflineMessage, msgLp);
 
         btnOfflineAction = new Button(this, null, android.R.attr.buttonStyleSmall);
-        btnOfflineAction.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        btnOfflineAction.setTextColor(theme.getText());
-        btnOfflineAction.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        btnOfflineAction.setBackground(createPillBackground(theme.getPrimary(), theme.getPrimary(), 12f));
-        btnOfflineAction.setPadding(dpToPx(20), dpToPx(10), dpToPx(20), dpToPx(10));
+        OeLegacyViewStyle.action(btnOfflineAction);
+        btnOfflineAction.setPadding(cardPadding, dpToPx(10), cardPadding, dpToPx(10));
         card.addView(btnOfflineAction);
 
         btnOfflineBack = new Button(this, null, android.R.attr.buttonStyleSmall);
         btnOfflineBack.setText("返回实例列表");
-        btnOfflineBack.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        btnOfflineBack.setTextColor(theme.getTextDim());
-        btnOfflineBack.setTypeface(Typeface.MONOSPACE);
-        btnOfflineBack.setBackground(createPillBackground(effectiveSurface(theme), theme.getGlow(), 10f));
+        OeLegacyViewStyle.action(btnOfflineBack);
         btnOfflineBack.setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8));
         LinearLayout.LayoutParams backLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -1343,24 +1342,12 @@ public class TerminalActivity extends ComponentActivity {
                 TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
     }
 
-    /** Surface token composited to the user's chosen UI surface opacity (W-C.2). */
-    private int effectiveSurface(AppTheme theme) {
-        int percent = themeStore != null
-                ? themeStore.surfaceOpacityPercent()
-                : new ThemeStore(this).surfaceOpacityPercent();
-        return SurfaceOpacity.INSTANCE.applyOpacity(theme.getSurface(), percent);
-    }
-
-    private android.graphics.drawable.GradientDrawable createPillBackground(
-            int fillColor, int strokeColor, float cornerRadiusDp) {
+    private android.graphics.drawable.GradientDrawable chromeSurface(int fillColor, float radiusPx) {
         android.graphics.drawable.GradientDrawable gd =
                 new android.graphics.drawable.GradientDrawable();
         gd.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
         gd.setColor(fillColor);
-        // The cornerRadiusDp parameter is legacy: the global token now decides the rounding.
-        gd.setCornerRadius((themeStore != null ? themeStore : new ThemeStore(this)).cornerRadiusDp()
-                * getResources().getDisplayMetrics().density);
-        gd.setStroke(2, strokeColor);
+        gd.setCornerRadius(radiusPx);
         return gd;
     }
 

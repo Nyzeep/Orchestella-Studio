@@ -26,38 +26,41 @@ data class Oe3GlassTokens(
 object Oe3Glass {
 
     private const val FALLBACK_ALPHA = 245 // 96% of 255
+    val rimWidth: Dp = 1.25.dp
+    const val DARK_RIM_HIGHLIGHT_ALPHA = 0.26f
+    const val LIGHT_RIM_HIGHLIGHT_ALPHA = 0.64f
+    const val DARK_RIM_SHADE_ALPHA = 0.18f
+    const val LIGHT_RIM_SHADE_ALPHA = 0.10f
 
     fun resolve(
         theme: AppTheme,
         level: Oe3GlassLevel,
         pureBlack: Boolean = false,
+    ): Oe3GlassTokens = resolve(Oe3Colors.resolve(theme, pureBlack).surfaceFloating, level)
+
+    internal fun resolve(
+        surfaceFloating: Int,
+        level: Oe3GlassLevel,
     ): Oe3GlassTokens {
-        val surface = if (pureBlack && theme.isDark) {
-            Oe3Colors.resolve(theme, pureBlack = true).surface
-        } else {
-            theme.surface
-        }
-        val translucent = if (pureBlack && theme.isDark) surface else theme.surfaceTranslucent
-        val fallback = (surface and 0x00FFFFFF) or (FALLBACK_ALPHA shl 24)
-        val glassTint = (translucent and 0x00FFFFFF) or (0xFF shl 24)
+        val fallback = (surfaceFloating and 0x00FFFFFF) or (FALLBACK_ALPHA shl 24)
         return when (level) {
             Oe3GlassLevel.None -> Oe3GlassTokens(
                 level = level,
-                tint = surface,
+                tint = surfaceFloating,
                 tintAlpha = 1f,
                 blurRadius = 0.dp,
-                fallbackTint = surface,
+                fallbackTint = surfaceFloating,
             )
             Oe3GlassLevel.Standard -> Oe3GlassTokens(
                 level = level,
-                tint = glassTint,
+                tint = surfaceFloating,
                 tintAlpha = 0.72f,
                 blurRadius = 16.dp,
                 fallbackTint = fallback,
             )
             Oe3GlassLevel.Ultra -> Oe3GlassTokens(
                 level = level,
-                tint = glassTint,
+                tint = surfaceFloating,
                 tintAlpha = 0.55f,
                 blurRadius = 28.dp,
                 fallbackTint = fallback,

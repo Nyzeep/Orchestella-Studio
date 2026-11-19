@@ -14,8 +14,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 
 /**
  * 强调色页（spec §2.2）：8 色板 + 跟随主题 + 自定义槽位编辑入口。
@@ -28,17 +30,19 @@ fun ThemeAccentScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scrollState = rememberScrollState()
     OeScaffold(
         title = stringResource(R.string.ui3_theme_page_accent),
         modifier = modifier.testTag("theme-accent:screen"),
         leading = { ThemeBackButton(onBack = onBack) },
+        scrollOffsetPx = { scrollState.oeScrollOffsetPx() },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = Oe3Spacing.pageInset)
-                .padding(top = Oe3Spacing.xs, bottom = LocalOe3PageBottomPadding.current),
+                .padding(top = LocalOe3PageTopPadding.current + Oe3Spacing.xs, bottom = LocalOe3PageBottomPadding.current),
         ) {
             // AccentSection 自带「当前强调色」标题与激活态（跟随主题 chip /
             // 色板勾选），页头再加一个同名分区会与顶栏标题三重重复（code-review）。

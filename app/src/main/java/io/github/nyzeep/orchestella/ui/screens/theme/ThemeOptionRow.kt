@@ -1,9 +1,7 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,12 +26,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.ui.design.tokens.OeSpacing
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3BackButton
@@ -48,9 +43,6 @@ import io.github.nyzeep.orchestella.ui.screens.common.OeChevron
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
-
-/** 页面标题下的元信息与内联「当前值」读数（spec §2.3：13/18）。 */
-internal val MetaTextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
 
 /**
  * One radio-style option row: ≥48dp, a 30dp sketch, a selected check and one
@@ -219,7 +211,7 @@ fun ThemeEntryRow(
                     Text(
                         text = value,
                         modifier = valueTag?.let { Modifier.testTag(it) } ?: Modifier,
-                        style = MetaTextStyle,
+                        style = Oe3Typography.style(Oe3TextRole.Meta),
                         color = colors.onSurfaceVariant.oe3Color(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

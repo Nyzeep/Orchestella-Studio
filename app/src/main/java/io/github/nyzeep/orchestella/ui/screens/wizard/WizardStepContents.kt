@@ -312,7 +312,11 @@ private fun StorageQuotaCard(state: WizardUiState, controller: WizardScreenModel
             color = colors.onSurface.oe3Color(),
         )
         Spacer(Modifier.height(Oe3Spacing.xs))
-        Row(horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs)) {
+        @OptIn(ExperimentalLayoutApi::class)
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+        ) {
             state.storage.presets.forEach { preset ->
                 Oe3Chip(
                     label = "$preset GB",

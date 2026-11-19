@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.ui.shell
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -7,19 +8,25 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -30,7 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -42,6 +52,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import io.github.nyzeep.orchestella.R
@@ -50,6 +61,7 @@ import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
@@ -109,18 +121,19 @@ object OeScaffoldSpec {
         (offsetPx - availablePx).coerceIn(0f, collapsePx.coerceAtLeast(0f))
 }
 
+internal fun LazyListState.oeScrollOffsetPx(): Int =
+    if (firstVisibleItemIndex == 0) firstVisibleItemScrollOffset else Int.MAX_VALUE
+
+internal fun LazyGridState.oeScrollOffsetPx(): Int =
+    if (firstVisibleItemIndex == 0) firstVisibleItemScrollOffset else Int.MAX_VALUE
+
+internal fun ScrollState.oeScrollOffsetPx(): Int = value
+
 /**
- * 统一页面壳：**单标题栏 + 右上动作槽**，页面内容在栏下滚动。
+ * 统一页面壳：**单标题栏 + 右上动作槽**，叠加在全出血滚动内容之上（R4 顶栏融合）。
  *
- * 这是 v4 对 UI3 顶栏的替代（spec §0.1）：栏里只放当前页功能名，
- * 禁止拼接产品名；页内 30sp `PageTitle` 因此删除，全屏只留一个标题。
- *
- * 滚动联动走嵌套滚动，而不是让页面把 `ScrollState`/`LazyListState` 传上来：
- * 竖向 `verticalScroll`、`LazyColumn`、`LazyVerticalGrid` 与
- * `PullToRefreshBox` 都会把位移派发到本组件，页面无需知道自己被壳包住。
- *
- * 栏背景 alpha 0→1 的阈值是 [Oe3Spacing.sm]（12dp，spec §1.2 "位移 12dp
- * 起算"），标题不折叠、不缩放 —— 只有底色渐变。
+ * 标题直接悬浮在背景层之上；内容通过 [LocalOe3PageTopPadding] 预留初始顶部留白并从栏下滚过。
+ * 传 [scrollOffsetPx] 时直接从列表/滚动状态同步位移，保证程序化 `scrollToItem(0)` 后立即归零。
  */
 @Composable
 fun OeScaffold(
@@ -128,36 +141,47 @@ fun OeScaffold(
     modifier: Modifier = Modifier,
     leading: (@Composable () -> Unit)? = null,
     actions: List<OeScaffoldAction> = emptyList(),
+    scrollOffsetPx: (() -> Int)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val collapsePx = with(LocalDensity.current) { Oe3Spacing.sm.toPx() }
     var offset by rememberSaveable { mutableFloatStateOf(0f) }
     val scrollConnection = remember(collapsePx) {
         object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                offset = OeScaffoldSpec.advance(offset, available.y, collapsePx)
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                offset = if (available.y > 0f && consumed.y == 0f) {
+                    0f
+                } else {
+                    OeScaffoldSpec.advance(offset, consumed.y, collapsePx)
+                }
                 return Offset.Zero
             }
         }
     }
-    val alpha = OeScaffoldSpec.barAlpha(offset, collapsePx)
+    val alpha = OeScaffoldSpec.barAlpha(scrollOffsetPx?.invoke()?.toFloat() ?: offset, collapsePx)
+    val topPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + Oe3Sizes.topBar
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .nestedScroll(scrollConnection),
+            .then(if (scrollOffsetPx == null) Modifier.nestedScroll(scrollConnection) else Modifier),
     ) {
+        CompositionLocalProvider(LocalOe3PageTopPadding provides topPadding) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                content = content,
+            )
+        }
         OeScaffoldBar(
             title = title,
             alpha = alpha,
             leading = leading,
             actions = actions,
-        )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            content = content,
+            modifier = Modifier.align(Alignment.TopCenter),
         )
     }
 }
@@ -180,9 +204,25 @@ fun OeScaffoldBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .drawWithCache {
+                val featherPx = Oe3Spacing.sm.toPx()
+                val fadeHeight = size.height + featherPx
+                val base = Color(colors.background)
+                val fade = Brush.verticalGradient(
+                    0f to base.copy(alpha = 0.85f),
+                    0.55f to base.copy(alpha = 0.45f),
+                    1f to Color.Transparent,
+                    startY = 0f,
+                    endY = fadeHeight,
+                )
+                onDrawBehind {
+                    if (alpha > 0f) {
+                        drawRect(brush = fade, alpha = alpha, size = Size(size.width, fadeHeight))
+                    }
+                }
+            }
             .statusBarsPadding()
             .height(Oe3Sizes.topBar)
-            .background(Color(colors.surface).copy(alpha = alpha))
             .padding(start = Oe3Spacing.md, end = Oe3Spacing.pageInset),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -204,7 +244,9 @@ fun OeScaffoldBar(
             color = Color(colors.onSurface),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .semantics { heading() },
         )
         val direct = OeScaffoldSpec.directCount(actions.size)
         actions.take(direct).forEach { action ->

@@ -78,14 +78,15 @@ class DistrosScreenContractTest {
     }
 
     @Test
-    fun gridCardKeepsThePinnedGeometry() {
+    fun gridCardKeepsTheCompactInsetAndInheritsTheSharedCorner() {
         val source = File(
             "src/main/java/io/github/nyzeep/orchestella/ui/oe3/components/Oe3Surfaces.kt",
         ).readText()
 
-        val gridCardBody = source.substringAfter("fun Oe3GridCard(").substringBefore("@Composable\nfun Oe3SectionHeader")
+        val gridCardBody = source.substringAfter("fun Oe3GridCard(").substringBefore("\n/**")
         assertTrue("Oe3GridCard must keep 12dp padding", gridCardBody.contains("Oe3Spacing.sm"))
-        assertTrue("Oe3GridCard must keep 20dp corners", gridCardBody.contains("Oe3Shapes.lg"))
+        assertTrue("Oe3GridCard must use the shared card surface", gridCardBody.contains("Oe3Card("))
+        assertFalse("Oe3GridCard must inherit the preferred card corner", gridCardBody.contains("shape ="))
     }
 
     @Test

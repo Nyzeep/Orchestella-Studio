@@ -63,7 +63,7 @@ class DesignTokensContractTest {
 
     @Test
     fun typeScaleIsTheDocumentedEightRoleTable() {
-        assertEquals(8, OeTypeRole.entries.size)
+        assertEquals(9, OeTypeRole.entries.size)
         fun spec(role: OeTypeRole, size: Float, lineHeight: Float, weight: FontWeight) {
             val actual = OeType.spec(role)
             assertEquals("$role size", size, actual.sizeSp, 0.001f)

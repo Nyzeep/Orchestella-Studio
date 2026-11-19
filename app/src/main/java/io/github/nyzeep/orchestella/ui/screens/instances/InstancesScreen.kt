@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -60,6 +63,7 @@ import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SectionHeader
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3DistroIcons
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3IconTint
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
@@ -73,6 +77,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 import io.github.nyzeep.orchestella.ui.shell.oeCardShape
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 
 /** 页面级几何常量；语义与命中区断言直接读这里。 */
 object InstancesSpec {
@@ -90,9 +95,6 @@ object InstancesSpec {
 
     val progressBarHeight = 4.dp
 }
-
-/** 页面标题下的元信息（spec §2.3：13/18）。 */
-private val MetaTextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
 
 /** 实例 id / IP 行；票面要求 mono 12，不在八级 token 内，属于页面局部样式。 */
 private val MonoCaptionStyle = TextStyle(
@@ -124,10 +126,12 @@ fun InstancesScreen(
             .flatMap { it.items.asSequence() }
             .firstOrNull { it.id == id }
     }
+    val listState = rememberLazyListState()
 
     OeScaffold(
         title = stringResource(R.string.ui3_instances_title),
         modifier = modifier,
+        scrollOffsetPx = { listState.oeScrollOffsetPx() },
     ) {
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
@@ -135,13 +139,14 @@ fun InstancesScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .testTag("instances-list"),
                 contentPadding = PaddingValues(
                     start = Oe3Spacing.pageInset,
                     end = Oe3Spacing.pageInset,
-                    top = Oe3Spacing.xl,
+                    top = LocalOe3PageTopPadding.current + Oe3Spacing.sm,
                     bottom = LocalOe3PageBottomPadding.current,
                 ),
             ) {
@@ -211,13 +216,15 @@ fun InstancesScreen(
  * `instances-import` 是既有语义用例的锚点，移到栏外会让
  * `performScrollToNode` 失真；顶栏动作槽留给后续页面级动作。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PageHeader(actions: InstancesActions) {
-    Row(
+    FlowRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = Oe3Spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+        verticalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
     ) {
         Oe3Button(
             text = stringResource(R.string.ui3_instances_create),
@@ -226,7 +233,6 @@ private fun PageHeader(actions: InstancesActions) {
                 .heightIn(min = InstancesSpec.headerActionHeight)
                 .testTag("instances-create"),
         )
-        Spacer(Modifier.width(Oe3Spacing.xs))
         Oe3Button(
             text = stringResource(R.string.ui3_instances_import),
             onClick = actions.importArchive,
@@ -251,7 +257,7 @@ private fun MetaLine(state: InstancesUiState) {
         } else {
             stringResource(R.string.ui3_instances_meta_empty)
         },
-        style = MetaTextStyle,
+        style = Oe3Typography.style(Oe3TextRole.Meta),
         color = colors.onSurfaceVariant.oe3Color(),
         modifier = Modifier.padding(top = Oe3Spacing.xxs, bottom = Oe3Spacing.sm),
     )

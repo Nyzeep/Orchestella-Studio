@@ -1,7 +1,10 @@
 package io.github.nyzeep.orchestella.ui.oe3.components
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -9,10 +12,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,8 +94,8 @@ enum class Oe3ButtonStyle { Pill, Tonal, Text }
 /**
  * The three action weights. Pill is the single primary action on a page,
  * Tonal is a secondary action, Text is a low-emphasis inline action. All
- * three meet the 48dp interactive floor; Pill and Tonal are full capsules,
- * Text uses the 12dp inline radius.
+ * three reserve a 48dp hit area. The capsules paint a 44dp surface and the
+ * inline action reserves 36dp for its text and feedback.
  */
 @Composable
 fun Oe3Button(
@@ -102,16 +107,26 @@ fun Oe3Button(
     leading: (@Composable () -> Unit)? = null,
 ) {
     val paint = buttonPaint(style, Oe3ThemeValues.colors)
+    val visualHeight = if (style == Oe3ButtonStyle.Text) Oe3Sizes.sectionActionVisual else Oe3Sizes.interactiveVisual
+    val interaction = remember { MutableInteractionSource() }
 
     Row(
         modifier = modifier
-            .minimumInteractiveComponentSize()
+            .widthIn(min = Oe3Sizes.minTouchTarget)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .padding(vertical = (Oe3Sizes.button - visualHeight) / 2)
             .clip(paint.shape)
             .background(
                 paint.fill.copy(alpha = if (enabled) paint.fill.alpha else paint.fill.alpha * 0.4f),
             )
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .heightIn(min = Oe3Sizes.interactiveMinHeight(Oe3Sizes.button))
+            .indication(interaction, LocalIndication.current)
+            .heightIn(min = visualHeight)
             .padding(paint.padding),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,

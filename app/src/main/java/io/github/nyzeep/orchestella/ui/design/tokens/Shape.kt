@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella.ui.design.tokens
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
@@ -25,6 +26,8 @@ object OeShape {
 
     val groupedOuter = xl
     val groupedInner = 0.dp
+
+    fun insetRadius(outerRadius: Dp, inset: Dp): Dp = (outerRadius - inset).coerceAtLeast(0.dp)
 
     /** A true capsule for the floating bar, action bubbles and switches. */
     val pill: Shape = RoundedCornerShape(percent = 50)

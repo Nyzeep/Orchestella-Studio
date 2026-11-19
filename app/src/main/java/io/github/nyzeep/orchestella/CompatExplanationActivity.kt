@@ -1,13 +1,14 @@
 package io.github.nyzeep.orchestella
 
-import android.graphics.Typeface
 import android.os.Bundle
-import android.util.TypedValue
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle
+import io.github.nyzeep.orchestella.ui.design.tokens.OeTypeRole
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 
 /**
@@ -24,15 +25,16 @@ class CompatExplanationActivity : AppCompatActivity() {
         val density = resources.displayMetrics.density
         fun dp(value: Int): Int = (value * density).toInt()
 
+        val inset = resources.getDimensionPixelSize(R.dimen.oe_space_xl)
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(24), dp(24), dp(24))
+            setPadding(inset, inset, inset, inset)
         }
 
         val title = TextView(this).apply {
             text = getString(R.string.compat_title)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-            setTypeface(Typeface.DEFAULT_BOLD)
+            OeLegacyViewStyle.text(this, OeTypeRole.Brand)
+            ViewCompat.setAccessibilityHeading(this, true)
             gravity = Gravity.CENTER_VERTICAL
         }
         content.addView(title, LinearLayout.LayoutParams(
@@ -47,8 +49,7 @@ class CompatExplanationActivity : AppCompatActivity() {
         )) {
             val paragraph = TextView(this).apply {
                 text = getString(res)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setLineSpacing(dp(2).toFloat(), 1f)
+                OeLegacyViewStyle.text(this, OeTypeRole.Body)
             }
             content.addView(paragraph, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -58,7 +59,7 @@ class CompatExplanationActivity : AppCompatActivity() {
 
         val footer = TextView(this).apply {
             text = getString(R.string.compat_footer_note)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            OeLegacyViewStyle.text(this, OeTypeRole.Caption)
         }
         content.addView(footer, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {

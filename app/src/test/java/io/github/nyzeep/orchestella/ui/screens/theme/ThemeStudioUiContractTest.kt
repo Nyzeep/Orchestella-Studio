@@ -71,20 +71,19 @@ class ThemeStudioUiContractTest {
     }
 
     @Test
-    fun metaStyleHasOneDefinitionAndPagesConsumeIt() {
-        val shared = themeSource("ThemeOptionRow.kt")
-        assertTrue(
-            "MetaTextStyle must be the shared 13/18 style (spec §2.3)",
-            shared.contains("internal val MetaTextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)"),
-        )
+    fun pagesConsumeTheSharedMetaRole() {
         listOf(
+            "ThemeOptionRow.kt",
             "ThemeStudioScreen.kt",
             "ThemePresetScreen.kt",
             "ThemeBackgroundScreen.kt",
             "ThemeTerminalScreen.kt",
             "ThemeAccentComponents.kt",
         ).forEach { name ->
-            assertTrue("$name must consume the shared 13/18 meta style", themeSource(name).contains("style = MetaTextStyle"))
+            assertTrue(
+                "$name must consume the shared 13/18 meta style",
+                themeSource(name).contains("style = Oe3Typography.style(Oe3TextRole.Meta)"),
+            )
         }
     }
 

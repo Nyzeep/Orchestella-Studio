@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -13,22 +14,24 @@ class HomePreviewColorsTest {
 
     @Test
     fun darkThemeMapsEveryRoleFromTheResolvedPalette() {
+        val resolved = Oe3Colors.resolve(dark)
         val colors = homePreviewColors(dark)
-        assertEquals(dark.background, colors.background)
-        assertEquals(dark.surface, colors.surface)
-        assertEquals(dark.primary, colors.primary)
-        assertEquals(dark.text, colors.onSurface)
-        assertEquals(dark.accent, colors.accent)
-        assertEquals(io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors.resolve(dark).surfaceHigh, colors.ringTrack)
+        assertEquals(resolved.background, colors.background)
+        assertEquals(resolved.surface, colors.surface)
+        assertEquals(resolved.primary, colors.primary)
+        assertEquals(resolved.onSurface, colors.onSurface)
+        assertEquals(resolved.accent, colors.accent)
+        assertEquals(resolved.surfaceHigh, colors.ringTrack)
     }
 
     @Test
     fun lightThemeMapsEveryRoleFromTheResolvedPalette() {
+        val resolved = Oe3Colors.resolve(light)
         val colors = homePreviewColors(light)
-        assertEquals(light.background, colors.background)
-        assertEquals(light.surface, colors.surface)
-        assertEquals(light.primary, colors.primary)
-        assertEquals(light.text, colors.onSurface)
+        assertEquals(resolved.background, colors.background)
+        assertEquals(resolved.surface, colors.surface)
+        assertEquals(resolved.primary, colors.primary)
+        assertEquals(resolved.onSurface, colors.onSurface)
     }
 
     @Test
@@ -48,10 +51,11 @@ class HomePreviewColorsTest {
 
     @Test
     fun surfaceOpacityChangesOnlyTheSurfaceRoleAlpha() {
+        val resolved = Oe3Colors.resolve(dark)
         val colors = homePreviewColors(dark, opacityPercent = 55)
         assertEquals(140, colors.surface ushr 24)
-        assertEquals(dark.surface and 0x00FFFFFF, colors.surface and 0x00FFFFFF)
-        assertEquals(dark.background, colors.background)
+        assertEquals(resolved.surface and 0x00FFFFFF, colors.surface and 0x00FFFFFF)
+        assertEquals(resolved.background, colors.background)
     }
 
     @Test

@@ -1,7 +1,10 @@
 package io.github.nyzeep.orchestella.ui.oe3
 
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors
+import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
+import kotlin.math.cbrt
+import kotlin.math.pow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -44,37 +47,46 @@ class Oe3ColorsTest {
         textDim = 0xFF5F646D.toInt(),
     )
 
-    private fun brightness(argb: Int): Int =
-        (argb ushr 16 and 0xFF) + (argb ushr 8 and 0xFF) + (argb and 0xFF)
+    private fun lightness(argb: Int): Double {
+        fun channel(shift: Int): Double {
+            val value = (argb ushr shift and 255) / 255.0
+            return if (value <= 0.04045) value / 12.92 else ((value + 0.055) / 1.055).pow(2.4)
+        }
+        val y = 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+        return if (y <= 216.0 / 24389.0) y * (24389.0 / 27.0) else 116.0 * cbrt(y) - 16.0
+    }
 
     @Test
     fun darkRolesConsumeTheResolvedAppTheme() {
-        val tokens = Oe3Colors.resolve(dark)
-        assertEquals(dark.background, tokens.background)
-        assertEquals(dark.surface, tokens.surface)
-        assertEquals(dark.text, tokens.onSurface)
-        assertEquals(dark.primary, tokens.primary)
-        assertEquals(
-            ThemeColors.readable(dark.textDim, dark.surface),
-            tokens.onSurfaceVariant,
-        )
-        assertEquals(dark.accent, tokens.accent)
+        val theme = dark.copy(textDim = 0xFFB3B6BE.toInt())
+        val tokens = Oe3Colors.resolve(theme)
+        assertEquals(theme.text, tokens.onSurface)
+        assertEquals(theme.primary, tokens.primary)
+        assertEquals(theme.textDim, tokens.onSurfaceVariant)
+        assertEquals(theme.accent, tokens.accent)
     }
 
     @Test
     fun darkLadderRisesFromPageToRaisedToHigh() {
-        val tokens = Oe3Colors.resolve(dark)
-        assertTrue(brightness(tokens.surfaceRaised) > brightness(tokens.surface))
-        assertTrue(brightness(tokens.surfaceHigh) > brightness(tokens.surfaceRaised))
+        ThemeCatalog.all.filter { it.isDark }.forEach { preset ->
+            val tokens = Oe3Colors.resolve(preset)
+            assertEquals(preset.id, 9.0, lightness(tokens.surface) - lightness(tokens.background), 0.8)
+            assertEquals(preset.id, 6.0, lightness(tokens.surfaceRaised) - lightness(tokens.surface), 0.8)
+            assertEquals(preset.id, 6.0, lightness(tokens.surfaceHigh) - lightness(tokens.surfaceRaised), 0.8)
+            assertEquals(tokens.surfaceRaised, tokens.surfaceFloating)
+        }
     }
 
     @Test
     fun lightLadderFallsFromPageToRaisedToHigh() {
-        val tokens = Oe3Colors.resolve(light)
-        assertEquals(light.background, tokens.background)
-        assertEquals(light.surface, tokens.surface)
-        assertTrue(brightness(tokens.surfaceRaised) < brightness(tokens.surface))
-        assertTrue(brightness(tokens.surfaceHigh) < brightness(tokens.surfaceRaised))
+        ThemeCatalog.all.filterNot { it.isDark }.forEach { preset ->
+            val tokens = Oe3Colors.resolve(preset)
+            assertEquals(preset.surface, tokens.surface)
+            assertEquals(preset.id, 4.0, lightness(tokens.surface) - lightness(tokens.background), 0.6)
+            assertEquals(preset.id, 4.0, lightness(tokens.surface) - lightness(tokens.surfaceRaised), 0.6)
+            assertEquals(preset.id, 4.0, lightness(tokens.surfaceRaised) - lightness(tokens.surfaceHigh), 0.6)
+            assertEquals(preset.id, 3.0, lightness(tokens.surface) - lightness(tokens.surfaceFloating), 0.6)
+        }
     }
 
     @Test
@@ -84,13 +96,12 @@ class Oe3ColorsTest {
         assertEquals(0xFF0B0B0C.toInt(), tokens.surface)
         assertEquals(0xFF131315.toInt(), tokens.surfaceRaised)
         assertEquals(0xFF1C1C1F.toInt(), tokens.surfaceHigh)
+        assertTrue(lightness(tokens.surfaceFloating) - lightness(tokens.surface) >= 5.0)
     }
 
     @Test
     fun pureBlackNeverDarkensALightTheme() {
-        val tokens = Oe3Colors.resolve(light, pureBlack = true)
-        assertEquals(light.background, tokens.background)
-        assertEquals(light.surface, tokens.surface)
+        assertEquals(Oe3Colors.resolve(light), Oe3Colors.resolve(light, pureBlack = true))
     }
 
     @Test

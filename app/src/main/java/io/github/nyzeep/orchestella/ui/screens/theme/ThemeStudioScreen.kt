@@ -2,13 +2,14 @@ package io.github.nyzeep.orchestella.ui.screens.theme
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -27,10 +28,12 @@ import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Chip
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import kotlin.math.roundToInt
@@ -64,18 +67,23 @@ fun ThemeStudioScreen(
         FontChoice.Mono -> FontFamily.Monospace
         FontChoice.System, FontChoice.Imported -> FontFamily.Default
     }
+    val scrollState = rememberScrollState()
 
     OeScaffold(
         title = stringResource(R.string.ui3_theme_title),
         modifier = modifier.testTag("theme-studio:screen"),
         leading = onBack?.let { back -> { ThemeBackButton(onBack = back) } },
+        scrollOffsetPx = { scrollState.oeScrollOffsetPx() },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                // Reserve bottom dock height on the scroll viewport so bringIntoView /
+                // performScrollTo() lands bottom rows above Oe3NavBar rather than behind it.
+                .padding(bottom = LocalOe3PageBottomPadding.current)
+                .verticalScroll(scrollState)
                 .padding(horizontal = Oe3Spacing.pageInset)
-                .padding(top = Oe3Spacing.xs, bottom = LocalOe3PageBottomPadding.current),
+                .padding(top = LocalOe3PageTopPadding.current + Oe3Spacing.xs),
         ) {
             // 所见即所得锚点：所有偏好改动的结果都先在这里出现。
             ThemeSectionHeader(
@@ -172,7 +180,7 @@ private fun EntryCard(
             Text(
                 text = stringResource(R.string.ui3_theme_mode_fixed_note),
                 modifier = Modifier.padding(horizontal = Oe3Spacing.rowHorizontal, vertical = 10.dp),
-                style = MetaTextStyle,
+                style = Oe3Typography.style(Oe3TextRole.Meta),
                 color = Oe3ThemeValues.colors.onSurfaceVariant.oe3Color(),
             )
         }
@@ -253,7 +261,7 @@ private fun InlineLabel(title: String, value: String, valueTag: String, tag: Str
         Text(
             text = value,
             modifier = Modifier.testTag(valueTag),
-            style = MetaTextStyle,
+            style = Oe3Typography.style(Oe3TextRole.Meta),
             color = colors.onSurfaceVariant.oe3Color(),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -335,7 +343,7 @@ private fun MoreLabel(text: String) {
             horizontal = Oe3Spacing.rowHorizontal,
             vertical = 10.dp,
         ),
-        style = MetaTextStyle,
+        style = Oe3Typography.style(Oe3TextRole.Meta),
         color = Oe3ThemeValues.colors.onSurfaceVariant.oe3Color(),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -343,6 +351,7 @@ private fun MoreLabel(text: String) {
 }
 
 /** 圆角分段：inline 保留在根页（spec §2.2）。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CornerChooser(selectedDp: Int, onSelect: (Int) -> Unit) {
     val options = if (selectedDp in ThemeStudioSpec.cornerOptions) {
@@ -350,14 +359,12 @@ private fun CornerChooser(selectedDp: Int, onSelect: (Int) -> Unit) {
     } else {
         ThemeStudioSpec.cornerOptions + selectedDp
     }
-    // 真机（411dp）上五档 + 遗留档会超出单行宽度：chips 行必须可横向滚动，
-    // 否则最后一档被裁掉（Wave 4 真机走查发现）。
-    Row(
+    FlowRow(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
             .padding(horizontal = Oe3Spacing.rowHorizontal, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+        verticalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
     ) {
         options.forEach { dp ->
             Oe3Chip(

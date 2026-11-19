@@ -11,7 +11,7 @@ import io.github.nyzeep.orchestella.ui.design.tokens.OeTypeRole
 import io.github.nyzeep.orchestella.ui.design.tokens.OeTypeSpec
 
 /**
- * Legacy names for the eight text roles. The enum and spec types live in
+ * Legacy names for the text roles. The enum and spec types live in
  * `ui/design/tokens` since UI-01; these aliases keep every existing import
  * (`Oe3TextRole.Brand`, `Oe3TypeSpec`) source-compatible.
  */

@@ -18,7 +18,7 @@ class Oe3NavShadowSpecTest {
 
     @Test
     fun twoLayersMatchTheDocumentedShadow() {
-        val layers = Oe3NavShadowSpec.layers
+        val layers = Oe3NavShadowSpec.layersFor(Oe3NavStyle.Floating)
         assertEquals(2, layers.size)
         assertEquals(0.08f, layers[0].alpha, 0.0001f)
         assertEquals(24.dp, layers[0].blur)
@@ -29,8 +29,10 @@ class Oe3NavShadowSpecTest {
     }
 
     @Test
-    fun theShadowIsFloatingOnly() {
-        assertTrue(Oe3NavShadowSpec.appliesTo(Oe3NavStyle.Floating))
-        assertFalse(Oe3NavShadowSpec.appliesTo(Oe3NavStyle.Fixed))
+    fun fixedDockHasASoftShadowAboveItsTopEdge() {
+        val layer = Oe3NavShadowSpec.layersFor(Oe3NavStyle.Fixed).single()
+        assertEquals(0.10f, layer.alpha, 0.0001f)
+        assertEquals(12.dp, layer.blur)
+        assertEquals((-2).dp, layer.offsetY)
     }
 }

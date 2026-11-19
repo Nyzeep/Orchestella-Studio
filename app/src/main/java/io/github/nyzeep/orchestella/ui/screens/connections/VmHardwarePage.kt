@@ -26,6 +26,7 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.HostHardwareProfile
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.runtime.capability.GpuCapabilityEvaluator
@@ -44,6 +45,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 import kotlin.math.roundToInt
 
 /** The exact values handed back to the host when the user saves. */
@@ -244,20 +246,22 @@ fun VmHardwareContent(
     modifier: Modifier = Modifier,
 ) {
     val colors = Oe3ThemeValues.colors
+    val scrollState = rememberScrollState()
     OeScaffold(
         title = stringResource(R.string.connections_vm_hardware_title),
         modifier = modifier,
         leading = { ConnectionsBackButton(onBack = onBack) },
+        scrollOffsetPx = { scrollState.oeScrollOffsetPx() },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .weight(1f)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(
                     start = Oe3Spacing.pageInset,
                     end = Oe3Spacing.pageInset,
-                    top = Oe3Spacing.sm,
+                    top = LocalOe3PageTopPadding.current + Oe3Spacing.sm,
                     bottom = Oe3Spacing.sm,
                 ),
             verticalArrangement = Arrangement.spacedBy(Oe3Spacing.sm),

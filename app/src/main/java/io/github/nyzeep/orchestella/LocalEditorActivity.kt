@@ -20,6 +20,8 @@ import io.github.nyzeep.orchestella.runtime.contract.services.LocalTcpRelay
 import io.github.nyzeep.orchestella.ui.design.components.OeDialogAction
 import io.github.nyzeep.orchestella.ui.design.components.OeDialogHost
 import io.github.nyzeep.orchestella.ui.design.components.OeDialogSpec
+import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle
+import io.github.nyzeep.orchestella.ui.design.tokens.OeTypeRole
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
@@ -90,9 +92,14 @@ class LocalEditorActivity : AppCompatActivity() {
         owner = this
         id = intent.getStringExtra("instanceId")
         if (id.isNullOrBlank()) { finish(); return }
-        status = TextView(this).apply { text = "正在核对 guest 服务与本地监听…"; textSize = 14f }
+        status = TextView(this).apply {
+            text = "正在核对 guest 服务与本地监听…"
+            OeLegacyViewStyle.text(this, OeTypeRole.Body)
+        }
         lanButton = MaterialButton(this).apply {
-            text = "开启/关闭局域网协作"; isEnabled = false
+            text = "开启/关闭局域网协作"
+            isEnabled = false
+            OeLegacyViewStyle.action(this)
             setOnClickListener {
                 if (lan?.binding() != null) {
                     work.execute { closeLan() }
@@ -135,9 +142,16 @@ class LocalEditorActivity : AppCompatActivity() {
                     if (allowed(request.url.toString(), true)) null else denied()
             })
         }
-        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16, 16, 16, 16) }
-        column.addView(status)
-        column.addView(lanButton)
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val inset = resources.getDimensionPixelSize(R.dimen.oe_space_xl)
+            val gap = resources.getDimensionPixelSize(R.dimen.oe_space_sm)
+            setPadding(inset, gap, inset, gap)
+            addView(status)
+            addView(lanButton)
+        }
+        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        column.addView(header)
         column.addView(web, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(column)
         ThemeApplier.bind(this)

@@ -30,11 +30,15 @@ object Oe3Sizes {
     /** WCAG 2.5.5 / Material minimum; every interactive primitive meets it. */
     val minTouchTarget = 48.dp
 
-    /** Visual-only minimum: spec §2.2 allows 44dp drawn size; hit area is still floored to 48dp by [interactiveMinHeight]. */
+    /** Visual height of a toolbar action or standard button. */
     val interactiveVisual = 44.dp
+    /** Visual height of an inline section or text action (48dp hit target kept). */
+    val sectionActionVisual = 36.dp
 
     val button = 48.dp
     val chip = 32.dp
+    /** Minimum width of clickable cards so touch targets never collapse in narrow grids. */
+    val cardMinWidth = 64.dp
 
     val dividerThickness = 0.75.dp
     val dividerStart = 56.dp

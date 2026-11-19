@@ -15,6 +15,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -81,6 +83,7 @@ import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3CardEnterMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3ThemeInfo
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
@@ -91,6 +94,7 @@ import io.github.nyzeep.orchestella.ui.screens.common.formatGigabytes
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 import io.github.nyzeep.orchestella.ui.shell.OeScaffoldAction
 import io.github.nyzeep.orchestella.ui.shell.oeCardShape
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import kotlin.math.PI
 import kotlin.math.cos
@@ -131,9 +135,6 @@ object DashboardSpec {
     /** 徽标与卡片右上角的留白。 */
     val editBadgeInset = 6.dp
 }
-
-/** 页面标题下的元信息（spec §2.3：13/18）。 */
-private val MetaTextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
 
 /** 环心与指标卡的大数字；不在八级 token 内，属于页面局部样式。 */
 private val FigureTextStyle = TextStyle(
@@ -255,6 +256,7 @@ fun DashboardScreen(
     modifier: Modifier = Modifier,
     edit: DashboardEditState = rememberDashboardEditState(),
 ) {
+    val listState = rememberLazyListState()
     OeScaffold(
         title = stringResource(
             if (edit.isEditing) R.string.ui3_dashboard_edit_title else R.string.ui3_dashboard_title,
@@ -270,8 +272,9 @@ fun DashboardScreen(
                 testTag = "dashboard:edit-toggle",
             ),
         ),
+        scrollOffsetPx = { listState.oeScrollOffsetPx() },
     ) {
-        DashboardCardList(state = state, actions = actions, edit = edit)
+        DashboardCardList(state = state, actions = actions, edit = edit, listState = listState)
     }
 }
 
@@ -280,8 +283,8 @@ private fun DashboardCardList(
     state: DashboardUiState,
     actions: DashboardActions,
     edit: DashboardEditState,
+    listState: LazyListState,
 ) {
-    val listState = rememberLazyListState()
     val drag = remember { DashboardDragState() }
     val scope = rememberCoroutineScope()
     // 卡片入场只播一次（spec §1.5 cardEnter；tab 切换回来不重播）。
@@ -300,7 +303,7 @@ private fun DashboardCardList(
         contentPadding = PaddingValues(
             start = Oe3Spacing.pageInset,
             end = Oe3Spacing.pageInset,
-            top = Oe3Spacing.xl,
+            top = LocalOe3PageTopPadding.current + Oe3Spacing.sm,
             bottom = LocalOe3PageBottomPadding.current,
         ),
         verticalArrangement = Arrangement.spacedBy(Oe3Spacing.gridGap),
@@ -308,7 +311,7 @@ private fun DashboardCardList(
         item(key = KEY_META) {
             Text(
                 text = metaLine(state),
-                style = MetaTextStyle,
+                style = Oe3Typography.style(Oe3TextRole.Meta),
                 color = Oe3ThemeValues.colors.onSurfaceVariant.oe3Color(),
                 modifier = Modifier.padding(bottom = Oe3Spacing.xs),
             )
@@ -550,6 +553,7 @@ private fun HideBadge(
 }
 
 /** 编辑态尾部：被隐藏的卡以 chips 列出，点按恢复到原槽位（不是删除）。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RestoreRow(edit: DashboardEditState) {
     Column {
@@ -559,7 +563,10 @@ private fun RestoreRow(edit: DashboardEditState) {
             color = Oe3ThemeValues.colors.onSurfaceVariant.oe3Color(),
         )
         Spacer(Modifier.height(Oe3Spacing.xxs))
-        Row(horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+        ) {
             edit.hidden.forEach { cardId ->
                 Oe3Chip(
                     label = stringResource(cardId.labelRes),

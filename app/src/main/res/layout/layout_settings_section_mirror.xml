@@ -26,7 +26,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="镜像源与容器加速管理"
-            android:textSize="14sp"
+            android:textAppearance="@style/TextAppearance.Orchestella.Body"
             android:textStyle="bold"
             android:textColor="?attr/colorPrimary" />
     </LinearLayout>
@@ -37,8 +37,7 @@
         android:layout_height="wrap_content"
         app:cardCornerRadius="@dimen/oe_corner_card"
         app:cardElevation="0dp"
-        app:strokeWidth="1dp"
-        app:strokeColor="?attr/colorOutlineVariant"
+        app:strokeWidth="0dp"
         app:cardBackgroundColor="?attr/colorSurfaceContainer">
 
         <LinearLayout
@@ -51,7 +50,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="系统软件源策略 (apt / dnf / pacman / zypper)"
-                android:textSize="15sp"
+                android:textAppearance="@style/TextAppearance.Orchestella.Section"
                 android:textStyle="bold"
                 android:textColor="?attr/colorOnSurface" />
 
@@ -60,7 +59,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/oe_space_xs"
                 android:text="多层级回退：国内云镜像 (Tier 1) → 教育网骨干 (Tier 2) → 官方上游 (Tier 3)"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                 android:textColor="?attr/colorOutline" />
 
             <Spinner
@@ -87,16 +86,12 @@
                     android:layout_width="0dp"
                     android:layout_height="@dimen/oe_btn_h_secondary"
                     android:minHeight="@dimen/oe_btn_h_secondary"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
                     android:gravity="center"
                     android:layout_weight="1"
                     android:layout_marginEnd="@dimen/oe_icon_inline_gap"
-                    app:cornerRadius="@dimen/oe_corner_md"
                     app:icon="@drawable/ic_sym_lan"
                     app:iconSize="18dp"
                     android:text="一键测速并优选"
-                    android:textSize="12sp"
                     android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
@@ -105,14 +100,10 @@
                     android:layout_width="0dp"
                     android:layout_height="@dimen/oe_btn_h_secondary"
                     android:minHeight="@dimen/oe_btn_h_secondary"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
                     android:gravity="center"
                     android:layout_weight="1"
                     android:layout_marginStart="@dimen/oe_icon_inline_gap"
-                    app:cornerRadius="@dimen/oe_corner_md"
-                    android:text="恢复默认配置"
-                    android:textSize="12sp" />
+                    android:text="恢复默认配置" />
             </LinearLayout>
 
             <TextView
@@ -123,7 +114,7 @@
                 android:background="?attr/colorSurfaceContainerLow"
                 android:padding="@dimen/oe_space_sm"
                 android:text="节点延迟监测就绪，点击上方按钮测速"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
             <!-- Docker mirrors subsection -->
@@ -132,7 +123,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/oe_space_lg"
                 android:text="Docker 容器加速源 (/etc/docker/daemon.json)"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.Orchestella.Body"
                 android:textStyle="bold"
                 android:textColor="?attr/colorOnSurface" />
 
@@ -144,7 +135,7 @@
                 android:background="?attr/colorSurfaceContainerLow"
                 android:padding="@dimen/oe_space_sm"
                 android:text="• 轩辕镜像 (docker.xuanyuan.me)\n• 毫秒镜像 (docker.1ms.run)\n• DaoCloud 加速 (docker.m.daocloud.io)\n• Docker Hub 官方兜底 (registry-1.docker.io)"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
         </LinearLayout>

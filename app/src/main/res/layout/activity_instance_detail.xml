@@ -10,13 +10,14 @@
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/colorSurface"
+        android:background="@android:color/transparent"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
+            style="@style/Widget.Orchestella.Toolbar"
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
+            android:layout_height="@dimen/oe_top_bar"
             app:navigationIcon="?attr/homeAsUpIndicator"
             app:title="@string/instance_detail_title"
             app:titleTextColor="?attr/colorOnSurface" />
@@ -33,8 +34,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingStart="@dimen/oe_space_lg"
-            android:paddingEnd="@dimen/oe_space_lg"
+            android:paddingStart="@dimen/oe_space_xl"
+            android:paddingEnd="@dimen/oe_space_xl"
             android:paddingTop="@dimen/oe_space_sm"
             android:paddingBottom="36dp">
 
@@ -49,8 +50,7 @@
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="@dimen/oe_corner_card"
                 app:cardElevation="0dp"
-                app:strokeWidth="@dimen/oe_stroke_hairline"
-                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="0dp"
                 app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
                 <LinearLayout
@@ -91,7 +91,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Ubuntu 24.04 LTS"
-                                android:textSize="20sp"
+                                android:textAppearance="@style/TextAppearance.Orchestella.Brand"
                                 android:textStyle="bold"
                                 android:textColor="?attr/colorOnSurface" />
 
@@ -101,7 +101,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="@dimen/oe_space_xs"
                                 android:text="ID: instance-001 · root@orchestella"
-                                android:textSize="13sp"
+                                android:textAppearance="@style/TextAppearance.Orchestella.Meta"
                                 android:textColor="?attr/colorOutline" />
                         </LinearLayout>
 
@@ -115,7 +115,7 @@
                             android:paddingEnd="@dimen/oe_space_md"
                             android:paddingBottom="@dimen/oe_icon_inline_gap"
                             android:text="○ 已关机"
-                            android:textSize="12sp"
+                            android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                             android:textStyle="bold"
                             android:textColor="@color/status_stopped" />
                     </LinearLayout>
@@ -150,7 +150,7 @@
                                 android:layout_weight="1"
                                 android:gravity="center_vertical"
                                 android:text="2 vCPU · 2048 MB · 8 GB"
-                                android:textSize="12sp"
+                                android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
 
@@ -167,7 +167,7 @@
                                 android:layout_height="wrap_content"
                                 android:gravity="center_vertical"
                                 android:text="IP: 离线"
-                                android:textSize="12sp"
+                                android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
                     </LinearLayout>
@@ -189,12 +189,10 @@
                             android:layout_marginEnd="@dimen/oe_icon_inline_gap"
                             android:paddingTop="@dimen/oe_space_sm"
                             android:paddingBottom="@dimen/oe_space_sm"
-                            app:cornerRadius="@dimen/oe_corner_md"
                             app:icon="@drawable/ic_sym_terminal"
                             app:iconSize="20dp"
                             app:iconGravity="textTop"
-                            android:text="@string/console_btn_terminal"
-                            android:textSize="12sp" />
+                            android:text="@string/console_btn_terminal" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_detail_desktop"
@@ -205,27 +203,23 @@
                             android:layout_marginEnd="@dimen/oe_icon_inline_gap"
                             android:paddingTop="@dimen/oe_space_sm"
                             android:paddingBottom="@dimen/oe_space_sm"
-                            app:cornerRadius="@dimen/oe_corner_md"
                             app:icon="@drawable/ic_sym_desktop_windows"
                             app:iconSize="20dp"
                             app:iconGravity="textTop"
-                            android:text="@string/console_btn_desktop"
-                            android:textSize="12sp" />
+                            android:text="@string/console_btn_desktop" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_detail_power"
-                            style="@style/Widget.Material3.Button"
+                            style="@style/Widget.Orchestella.Button.Primary"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:paddingTop="@dimen/oe_space_sm"
                             android:paddingBottom="@dimen/oe_space_sm"
-                            app:cornerRadius="@dimen/oe_corner_md"
                             app:icon="@drawable/ic_sym_power_settings_new"
                             app:iconSize="20dp"
                             app:iconGravity="textTop"
-                            android:text="@string/console_btn_power"
-                            android:textSize="12sp" />
+                            android:text="@string/console_btn_power" />
                     </LinearLayout>
 
                     <!-- Runtime log viewers: guest console + app logcat (field diagnosis) -->
@@ -243,11 +237,9 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginEnd="@dimen/oe_icon_inline_gap"
-                            app:cornerRadius="@dimen/oe_corner_md"
                             app:icon="@drawable/ic_sym_terminal"
                             app:iconSize="18dp"
-                            android:text="@string/console_btn_guest_log"
-                            android:textSize="12sp" />
+                            android:text="@string/console_btn_guest_log" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_detail_app_log"
@@ -255,11 +247,9 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            app:cornerRadius="@dimen/oe_corner_md"
                             app:icon="@drawable/ic_sym_info"
                             app:iconSize="18dp"
-                            android:text="@string/console_btn_app_log"
-                            android:textSize="12sp" />
+                            android:text="@string/console_btn_app_log" />
                     </LinearLayout>
 
                 </LinearLayout>
@@ -341,8 +331,7 @@
                     android:layout_marginBottom="@dimen/oe_space_md"
                     app:cardCornerRadius="@dimen/oe_corner_card"
                     app:cardElevation="0dp"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="0dp"
                     app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
                     <LinearLayout
@@ -373,7 +362,7 @@
                                     android:layout_height="wrap_content"
                                     android:layout_weight="1"
                                     android:text="SSH 远程终端连接"
-                                    android:textSize="14sp"
+                                    android:textAppearance="@style/TextAppearance.Orchestella.Body"
                                     android:textStyle="bold"
                                     android:textColor="?attr/colorOnSurface" />
                             </LinearLayout>
@@ -387,7 +376,7 @@
                                 android:paddingEnd="@dimen/oe_space_sm"
                                 android:paddingBottom="@dimen/oe_space_xs"
                                 android:text="端口 2222"
-                                android:textSize="11sp"
+                                android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                                 android:textColor="?attr/colorPrimary" />
                         </LinearLayout>
 
@@ -400,7 +389,7 @@
                             android:padding="@dimen/oe_space_sm"
                             android:text="ssh -p 2222 root@127.0.0.1"
                             android:fontFamily="monospace"
-                            android:textSize="13sp"
+                            android:textAppearance="@style/TextAppearance.Orchestella.Meta"
                             android:textColor="?attr/colorPrimary" />
 
                         <LinearLayout
@@ -413,30 +402,22 @@
                                 android:id="@+id/btn_detail_ssh_copy"
                                 style="@style/Widget.Orchestella.Button.Tonal"
                                 android:layout_width="0dp"
-                                android:layout_height="40dp"
+                                android:layout_height="@dimen/oe_btn_h_secondary"
                                 android:layout_weight="1"
                                 android:layout_marginEnd="@dimen/oe_icon_inline_gap"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                app:cornerRadius="@dimen/oe_corner_md"
                                 app:icon="@drawable/ic_sym_content_copy"
                                 app:iconSize="16dp"
-                                android:text="复制命令"
-                                android:textSize="12sp" />
+                                android:text="复制命令" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_detail_ssh_manage"
                                 style="@style/Widget.Orchestella.Button.Outlined"
                                 android:layout_width="0dp"
-                                android:layout_height="40dp"
+                                android:layout_height="@dimen/oe_btn_h_secondary"
                                 android:layout_weight="1"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                app:cornerRadius="@dimen/oe_corner_md"
                                 app:icon="@drawable/ic_sym_settings"
                                 app:iconSize="16dp"
-                                android:text="SSH 管理器"
-                                android:textSize="12sp" />
+                                android:text="SSH 管理器" />
                         </LinearLayout>
 
                     </LinearLayout>
@@ -450,8 +431,7 @@
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="@dimen/oe_corner_card"
                     app:cardElevation="0dp"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="0dp"
                     app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
                     <LinearLayout
@@ -464,7 +444,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="运行架构与环境特征"
-                            android:textSize="14sp"
+                            android:textAppearance="@style/TextAppearance.Orchestella.Body"
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
 
@@ -473,7 +453,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/oe_space_sm"
                             android:text="• 内核架构：Linux 6.x aarch64 / arm64 架构隔离运行"
-                            android:textSize="12sp"
+                            android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                             android:textColor="?attr/colorOutline" />
 
                         <TextView
@@ -481,7 +461,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="• 网络通道：用户态 GVProxy SLIRP NAT / 双向端口转发"
-                            android:textSize="12sp"
+                            android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                             android:textColor="?attr/colorOutline" />
 
                         <TextView
@@ -489,7 +469,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="• 磁盘驱动：virtio-blk 硬件增量稀疏镜像"
-                            android:textSize="12sp"
+                            android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                             android:textColor="?attr/colorOutline" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -511,7 +491,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="@dimen/oe_space_sm"
                     android:text="@string/console_section_hardware"
-                    android:textSize="14sp"
+                    android:textAppearance="@style/TextAppearance.Orchestella.Body"
                     android:textStyle="bold"
                     android:textColor="?attr/colorPrimary" />
 
@@ -522,8 +502,7 @@
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="@dimen/oe_corner_card"
                     app:cardElevation="0dp"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="0dp"
                     app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
                     <LinearLayout
@@ -542,7 +521,7 @@
                             android:padding="@dimen/oe_space_sm"
                             android:gravity="center"
                             android:text="@string/console_hw_running_hint"
-                            android:textSize="13sp"
+                            android:textAppearance="@style/TextAppearance.Orchestella.Meta"
                             android:textStyle="bold"
                             android:textColor="@color/status_crashed"
                             android:visibility="gone" />
@@ -553,7 +532,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="CPU 核心分配：2 vCPU"
-                            android:textSize="14sp"
+                            android:textAppearance="@style/TextAppearance.Orchestella.Body"
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
 
@@ -572,7 +551,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/oe_space_md"
                             android:text="运存 (RAM) 配额：2048 MB"
-                            android:textSize="14sp"
+                            android:textAppearance="@style/TextAppearance.Orchestella.Body"
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
 
@@ -591,18 +570,17 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="@string/hardware_ram_zone_green"
-                            android:textSize="12sp"
+                            android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                             android:textColor="@color/zone_green" />
 
                         <!-- Save Hardware Button -->
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_save_hardware"
-                            style="@style/Widget.Material3.Button"
+                            style="@style/Widget.Orchestella.Button.Primary"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/oe_space_md"
                             android:layout_gravity="end"
-                            app:cornerRadius="@dimen/oe_corner_md"
                             android:text="@string/console_hw_save" />
 
                     </LinearLayout>
@@ -625,7 +603,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="@dimen/oe_space_sm"
                     android:text="@string/console_section_storage"
-                    android:textSize="14sp"
+                    android:textAppearance="@style/TextAppearance.Orchestella.Body"
                     android:textStyle="bold"
                     android:textColor="?attr/colorPrimary" />
 
@@ -636,8 +614,7 @@
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="@dimen/oe_corner_card"
                     app:cardElevation="0dp"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="0dp"
                     app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
                     <LinearLayout
@@ -658,7 +635,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="实际物理占用：1.2 GB"
-                                android:textSize="13sp"
+                                android:textAppearance="@style/TextAppearance.Orchestella.Meta"
                                 android:textColor="?attr/colorOnSurface" />
                         </LinearLayout>
 
@@ -676,7 +653,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="逻辑虚拟上限：8 GB (稀疏增量扩容)"
-                                android:textSize="13sp"
+                                android:textAppearance="@style/TextAppearance.Orchestella.Meta"
                                 android:textColor="?attr/colorOutline" />
                         </LinearLayout>
 
@@ -693,9 +670,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:layout_marginEnd="@dimen/oe_space_sm"
-                                app:cornerRadius="@dimen/oe_corner_md"
-                                android:text="@string/console_storage_expand_disk"
-                                android:textSize="12sp" />
+                                android:text="@string/console_storage_expand_disk" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_export_backup"
@@ -703,11 +678,9 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                app:cornerRadius="@dimen/oe_corner_md"
                                 app:icon="@drawable/ic_sym_backup"
                                 app:iconSize="16dp"
-                                android:text="@string/console_storage_export_backup"
-                                android:textSize="12sp" />
+                                android:text="@string/console_storage_export_backup" />
                         </LinearLayout>
 
                     </LinearLayout>
@@ -730,7 +703,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="@dimen/oe_space_sm"
                     android:text="@string/console_section_network"
-                    android:textSize="14sp"
+                    android:textAppearance="@style/TextAppearance.Orchestella.Body"
                     android:textStyle="bold"
                     android:textColor="?attr/colorPrimary" />
 
@@ -741,8 +714,7 @@
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="@dimen/oe_corner_card"
                     app:cardElevation="0dp"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="0dp"
                     app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
                     <LinearLayout
@@ -762,7 +734,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/console_network_mode"
-                                android:textSize="13sp"
+                                android:textAppearance="@style/TextAppearance.Orchestella.Meta"
                                 android:textColor="?attr/colorOnSurface" />
                         </LinearLayout>
 
@@ -780,7 +752,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="分配虚拟 IP：192.168.127.15"
-                                android:textSize="13sp"
+                                android:textAppearance="@style/TextAppearance.Orchestella.Meta"
                                 android:textColor="?attr/colorOutline" />
                         </LinearLayout>
 
@@ -790,9 +762,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/oe_space_md"
-                            app:cornerRadius="@dimen/oe_corner_md"
-                            android:text="@string/console_network_port_forwarding"
-                            android:textSize="12sp" />
+                            android:text="@string/console_network_port_forwarding" />
 
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -814,7 +784,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="@dimen/oe_space_sm"
                     android:text="@string/console_section_danger"
-                    android:textSize="14sp"
+                    android:textAppearance="@style/TextAppearance.Orchestella.Body"
                     android:textStyle="bold"
                     android:textColor="@color/status_crashed" />
 
@@ -853,7 +823,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="@string/console_danger_clone"
-                                    android:textSize="14sp"
+                                    android:textAppearance="@style/TextAppearance.Orchestella.Body"
                                     android:textStyle="bold"
                                     android:textColor="?attr/colorOnSurface" />
 
@@ -861,7 +831,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="@string/console_danger_clone_desc"
-                                    android:textSize="11sp"
+                                    android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                                     android:textColor="?attr/colorOutline" />
                             </LinearLayout>
 
@@ -870,7 +840,6 @@
                                 style="@style/Widget.Orchestella.Button.Outlined"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                app:cornerRadius="@dimen/oe_corner_md"
                                 app:icon="@drawable/ic_sym_content_copy"
                                 app:iconSize="16dp"
                                 android:text="克隆" />
@@ -900,7 +869,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="@string/console_danger_reset"
-                                    android:textSize="14sp"
+                                    android:textAppearance="@style/TextAppearance.Orchestella.Body"
                                     android:textStyle="bold"
                                     android:textColor="?attr/colorOnSurface" />
 
@@ -908,7 +877,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="@string/console_danger_reset_desc"
-                                    android:textSize="11sp"
+                                    android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                                     android:textColor="?attr/colorOutline" />
                             </LinearLayout>
 
@@ -917,7 +886,6 @@
                                 style="@style/Widget.Orchestella.Button.Outlined"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                app:cornerRadius="@dimen/oe_corner_md"
                                 app:icon="@drawable/ic_sym_restart_alt"
                                 app:iconSize="16dp"
                                 android:text="复位" />
@@ -947,7 +915,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="@string/console_danger_delete"
-                                    android:textSize="14sp"
+                                    android:textAppearance="@style/TextAppearance.Orchestella.Body"
                                     android:textStyle="bold"
                                     android:textColor="@color/status_crashed" />
 
@@ -955,17 +923,16 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="@string/console_danger_delete_desc"
-                                    android:textSize="11sp"
+                                    android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                                     android:textColor="?attr/colorOutline" />
                             </LinearLayout>
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_danger_delete"
-                                style="@style/Widget.Material3.Button"
+                                style="@style/Widget.Orchestella.Button.Primary"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 app:backgroundTint="@color/status_crashed"
-                                app:cornerRadius="@dimen/oe_corner_md"
                                 app:icon="@drawable/ic_sym_delete"
                                 app:iconSize="16dp"
                                 android:text="删除" />
@@ -978,7 +945,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
-                            android:textSize="11sp"
+                            android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                             android:textColor="@color/status_crashed"
                             android:visibility="gone" />
 

@@ -20,13 +20,14 @@
         android:id="@+id/settings_sub_app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/colorSurface"
+        android:background="@android:color/transparent"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
+            style="@style/Widget.Orchestella.Toolbar"
             android:id="@+id/settings_sub_toolbar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
+            android:layout_height="@dimen/oe_top_bar"
             app:navigationIcon="?attr/homeAsUpIndicator"
             app:titleTextColor="?attr/colorOnSurface" />
     </com.google.android.material.appbar.AppBarLayout>
@@ -42,8 +43,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingStart="@dimen/oe_space_lg"
-            android:paddingEnd="@dimen/oe_space_lg"
+            android:paddingStart="@dimen/oe_space_xl"
+            android:paddingEnd="@dimen/oe_space_xl"
             android:paddingTop="@dimen/oe_space_sm"
             android:paddingBottom="36dp" />
     </androidx.core.widget.NestedScrollView>

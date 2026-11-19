@@ -314,7 +314,7 @@ object ThemeColors {
         return channels.max() - channels.min() < 48
     }
 
-    private fun luminance(color: Int): Double {
+    internal fun luminance(color: Int): Double {
         fun channel(shift: Int): Double {
             val c = (color ushr shift and 255) / 255.0
             return if (c <= 0.04045) c / 12.92 else ((c + 0.055) / 1.055).pow(2.4)

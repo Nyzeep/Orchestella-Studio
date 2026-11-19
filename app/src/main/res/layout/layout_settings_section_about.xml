@@ -25,7 +25,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="关于平台与官方商标合规"
-            android:textSize="14sp"
+            android:textAppearance="@style/TextAppearance.Orchestella.Body"
             android:textStyle="bold"
             android:textColor="?attr/colorPrimary" />
     </LinearLayout>
@@ -36,8 +36,7 @@
         android:layout_height="wrap_content"
         app:cardCornerRadius="@dimen/oe_corner_card"
         app:cardElevation="0dp"
-        app:strokeWidth="1dp"
-        app:strokeColor="?attr/colorOutlineVariant"
+        app:strokeWidth="0dp"
         app:cardBackgroundColor="?attr/colorSurfaceContainer">
 
         <LinearLayout
@@ -50,7 +49,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Orchestella Studio"
-                android:textSize="18sp"
+                android:textAppearance="@style/TextAppearance.Orchestella.Section"
                 android:textStyle="bold"
                 android:textColor="?attr/colorOnSurface" />
 
@@ -60,7 +59,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/oe_space_xs"
                 android:text="版本：v0.1.5 · Phase 5.0"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.Orchestella.Meta"
                 android:textColor="?attr/colorOutline" />
 
             <!-- 商标与合规声明折叠块：tap header row to expand/collapse
@@ -89,7 +88,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="@string/settings_trademark_disclosure_title"
-                        android:textSize="13sp"
+                        android:textAppearance="@style/TextAppearance.Orchestella.Meta"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary" />
 
@@ -98,7 +97,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="▸"
-                        android:textSize="13sp"
+                        android:textAppearance="@style/TextAppearance.Orchestella.Meta"
                         android:textColor="?attr/colorPrimary" />
                 </LinearLayout>
 
@@ -114,7 +113,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/oe_space_xs"
                         android:text="官方发行版商标合规声明：\n• Ubuntu 是 Canonical Ltd. 的注册商标。\n• Debian 是 Software in the Public Interest, Inc. 的注册商标。\n• Fedora 是 Red Hat, Inc. 的注册商标。\n• Arch Linux 是 Judd Vinet 与 Aaron Griffin 的注册商标。\n• openSUSE 是 SUSE LLC 的商标。\n• AlmaLinux 是 AlmaLinux OS Foundation 的商标。\n• Rocky Linux 是 Rocky Enterprise Software Foundation 的商标。\n所有官方图标资源均遵循各项目开源品牌规范使用。"
-                        android:textSize="11sp"
+                        android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                         android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
             </LinearLayout>

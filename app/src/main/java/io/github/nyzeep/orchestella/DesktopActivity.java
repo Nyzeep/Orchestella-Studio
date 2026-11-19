@@ -3,7 +3,6 @@ package io.github.nyzeep.orchestella;
 import android.annotation.SuppressLint;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -23,6 +22,7 @@ import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.ui.design.components.OeDialogs;
+import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle;
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -148,10 +148,7 @@ public class DesktopActivity extends ComponentActivity
         MaterialButton button = new MaterialButton(this, null,
                 com.google.android.material.R.attr.materialButtonStyle);
         button.setText(labelRes);
-        button.setTextSize(12f);
-        button.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
-        button.setMinimumHeight(dp(48));
-        button.setCornerRadius(getResources().getDimensionPixelSize(R.dimen.oe_corner_md));
+        OeLegacyViewStyle.action(button);
         int pad = getResources().getDimensionPixelSize(R.dimen.oe_space_md);
         button.setPadding(pad, 0, pad, 0);
         if (outlined) {
@@ -160,7 +157,6 @@ public class DesktopActivity extends ComponentActivity
                     com.google.android.material.R.attr.colorOutline)));
             button.setBackgroundTintList(ColorStateList.valueOf(Color.TRANSPARENT));
         }
-        button.setTextAppearance(R.style.TextAppearance_Orchestella_LabelEmphasized);
         return button;
     }
 

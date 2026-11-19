@@ -72,5 +72,10 @@
          同期引入的列表行/组间距档位已随旧壳清理移除，Oe3 侧几何由
          ui/oe3/tokens 接管。 -->
     <dimen name="oe_card_gap">12dp</dimen>
-    <dimen name="oe_btn_h_secondary">44dp</dimen>
+    <!-- View mirrors of the Compose toolbar and action geometry. -->
+    <dimen name="oe_top_bar">72dp</dimen>
+    <dimen name="oe_btn_h_secondary">48dp</dimen>
+    <dimen name="oe_btn_visual_inset">2dp</dimen>
+    <dimen name="oe_btn_section_visual_inset">6dp</dimen>
+    <dimen name="oe_btn_pill_radius">22dp</dimen>
 </resources>

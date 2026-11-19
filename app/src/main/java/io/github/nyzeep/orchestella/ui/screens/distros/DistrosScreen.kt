@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,10 +48,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
@@ -61,6 +60,7 @@ import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SectionHeader
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3DistroIcons
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
@@ -70,6 +70,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 import io.github.nyzeep.orchestella.ui.shell.oeCardShape
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 import java.util.Locale
 
 /** 页面级几何常量；语义与命中区断言直接读这里。 */
@@ -89,9 +90,6 @@ object DistrosSpec {
     /** UML 下载进度条视觉高度。 */
     val progressHeight = 4.dp
 }
-
-/** 页面标题下的元信息（spec §2.3：13/18）。 */
-private val MetaTextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
 
 /**
  * 发行版页：2 列目录 + 单开手风琴 + 独立的 UML rootfs 组。
@@ -120,12 +118,15 @@ fun DistrosScreen(
     val expandedId = state.distros.firstOrNull { it.id == openId }?.id
     val animationMillis = motion.pageFade.durationMillis
     val expansionEasing = motion.pageFade.easing
+    val gridState = rememberLazyGridState()
 
     OeScaffold(
         title = stringResource(R.string.ui3_distros_title),
         modifier = modifier,
+        scrollOffsetPx = { gridState.oeScrollOffsetPx() },
     ) {
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Fixed(DistrosSpec.GRID_COLUMNS),
             modifier = Modifier
                 .fillMaxSize()
@@ -133,7 +134,7 @@ fun DistrosScreen(
             contentPadding = PaddingValues(
                 start = Oe3Spacing.pageInset,
                 end = Oe3Spacing.pageInset,
-                top = Oe3Spacing.xl,
+                top = LocalOe3PageTopPadding.current + Oe3Spacing.sm,
                 bottom = LocalOe3PageBottomPadding.current,
             ),
             horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.gridGap),
@@ -179,7 +180,7 @@ private fun DistrosHeader() {
     val colors = Oe3ThemeValues.colors
     Text(
         text = stringResource(R.string.ui3_distros_meta_line),
-        style = MetaTextStyle,
+        style = Oe3Typography.style(Oe3TextRole.Meta),
         color = colors.onSurfaceVariant.oe3Color(),
         modifier = Modifier
             .fillMaxWidth()
@@ -326,6 +327,7 @@ private fun UmlRootfsCard(uml: UmlRootfsUi, onProvision: () -> Unit) {
                 color = colors.onSurface.oe3Color(),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
         }
         Spacer(Modifier.height(Oe3Spacing.xs))

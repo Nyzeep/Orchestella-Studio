@@ -26,7 +26,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/config_system_section_title"
-            android:textSize="14sp"
+            android:textAppearance="@style/TextAppearance.Orchestella.Body"
             android:textStyle="bold"
             android:textColor="?attr/colorPrimary" />
     </LinearLayout>
@@ -36,7 +36,7 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="@dimen/oe_space_sm"
         android:text="@string/config_system_hint"
-        android:textSize="12sp"
+        android:textAppearance="@style/TextAppearance.Orchestella.Caption"
         android:textColor="?attr/colorOnSurfaceVariant" />
 
     <!-- Flat tonal block, no stroke: spec §6 forbids legacy card containers
@@ -61,7 +61,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="@string/config_system_card_title"
-                    android:textSize="15sp"
+                    android:textAppearance="@style/TextAppearance.Orchestella.Section"
                     android:textStyle="bold"
                     android:textColor="?attr/colorOnSurface" />
 
@@ -75,7 +75,7 @@
                     android:paddingEnd="@dimen/oe_space_sm"
                     android:paddingBottom="@dimen/oe_space_xs"
                     android:text="@string/config_system_badge_probing"
-                    android:textSize="11sp"
+                    android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                     android:textStyle="bold"
                     android:textColor="?attr/colorPrimary" />
             </LinearLayout>
@@ -88,7 +88,7 @@
                 android:background="?attr/colorSurfaceContainerLow"
                 android:padding="@dimen/oe_space_md"
                 android:text="@string/config_system_details_probing"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
             <com.google.android.material.button.MaterialButton
@@ -125,7 +125,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="@string/config_system_fallback_title"
-                        android:textSize="13sp"
+                        android:textAppearance="@style/TextAppearance.Orchestella.Meta"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary" />
 
@@ -134,7 +134,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="▾"
-                        android:textSize="13sp"
+                        android:textAppearance="@style/TextAppearance.Orchestella.Meta"
                         android:textColor="?attr/colorPrimary" />
                 </LinearLayout>
 
@@ -149,7 +149,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/oe_space_xs"
                         android:text="@string/config_system_fallback_body"
-                        android:textSize="11sp"
+                        android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                         android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
             </LinearLayout>

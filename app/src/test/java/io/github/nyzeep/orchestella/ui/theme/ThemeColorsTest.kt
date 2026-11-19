@@ -225,31 +225,27 @@ class ThemeColorsTest {
     }
 
     @Test fun roundingMovesOe3ResolutionByAtMostTwoStepsPerChannel() {
-        // Oe3Colors.resolve chains two blends (surface→raised→high), so the composed
-        // shift against the truncation reference is bounded by 1 per blend step.
-        // The flat tokens (background/surface/onSurface/primary/accent/error) are
-        // constants or pass-throughs and must not move at all.
+        // Oe3Colors.resolve uses CIE L* steps for catalog presets, keeps authored
+        // surface on custom slots, and rounds primaryContainer through ThemeColors.blend
+        // within a 1-step budget against the truncation reference.
         val dark = oe3DarkStandIn()
-        val text = dark.text
-        fun raised(theme: AppTheme, blend: (Int, Int, Float) -> Int): Int =
-            blend(theme.surface, text, 0.025f)
-        fun high(theme: AppTheme, blend: (Int, Int, Float) -> Int): Int =
-            blend(raised(theme, blend), text, 0.045f)
         val resolved = io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors.resolve(dark)
-        assertEquals(dark.surface, resolved.surface)
-        assertTrue(
-            "surfaceRaised delta",
-            maxChannelDelta(raised(dark, ::truncationBlend), resolved.surfaceRaised) <= 1,
-        )
-        assertTrue(
-            "surfaceHigh delta",
-            maxChannelDelta(high(dark, ::truncationBlend), resolved.surfaceHigh) <= 2,
-        )
         assertTrue(
             "primaryContainer delta",
             maxChannelDelta(
-                truncationBlend(dark.surface, dark.primary, 0.22f),
+                truncationBlend(resolved.surface, dark.primary, 0.22f),
                 resolved.primaryContainer,
+            ) <= 1,
+        )
+        val custom = io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors.resolve(
+            dark.copy(id = AppTheme.CUSTOM_ID),
+        )
+        assertEquals(dark.surface, custom.surface)
+        assertTrue(
+            "custom primaryContainer delta",
+            maxChannelDelta(
+                truncationBlend(dark.surface, dark.primary, 0.22f),
+                custom.primaryContainer,
             ) <= 1,
         )
     }

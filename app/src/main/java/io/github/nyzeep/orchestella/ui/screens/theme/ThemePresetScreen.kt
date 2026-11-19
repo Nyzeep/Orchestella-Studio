@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,14 +29,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
 import io.github.nyzeep.orchestella.R
-import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3CardSpec
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3GridCard
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
-import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 
@@ -61,18 +64,20 @@ fun ThemePresetScreen(
     }
     val mascot = groups.firstOrNull { it.isMascot }
     val others = groups.filterNot { it.isMascot }
+    val scrollState = rememberScrollState()
 
     OeScaffold(
         title = stringResource(R.string.ui3_theme_page_presets),
         modifier = modifier.testTag("theme-presets:screen"),
         leading = { ThemeBackButton(onBack = onBack) },
+        scrollOffsetPx = { scrollState.oeScrollOffsetPx() },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = Oe3Spacing.pageInset)
-                .padding(top = Oe3Spacing.xs, bottom = LocalOe3PageBottomPadding.current),
+                .padding(top = LocalOe3PageTopPadding.current + Oe3Spacing.xs, bottom = LocalOe3PageBottomPadding.current),
         ) {
             if (mascot != null) {
                 ThemeSectionHeader(
@@ -140,20 +145,21 @@ private fun PresetCard(
     modifier: Modifier = Modifier,
 ) {
     val colors = Oe3ThemeValues.colors
-    val radius = LocalOe3CornerRadius.current ?: Oe3Shapes.lg
-    Oe3Card(
+    val radius = Oe3CardSpec.radius(LocalOe3CornerRadius.current)
+    Oe3GridCard(
         modifier = modifier.semantics { this.selected = selected },
         onClick = onClick,
-        contentPadding = PaddingValues(Oe3Spacing.sm),
-        shape = RoundedCornerShape(radius),
     ) {
-        PresetStrip(group.theme)
+        PresetStrip(
+            theme = group.theme,
+            shape = RoundedCornerShape(OeShape.insetRadius(radius, Oe3Spacing.sm)),
+        )
         Spacer(Modifier.height(Oe3Spacing.xs))
         Row(verticalAlignment = Alignment.Top) {
             Text(
                 text = group.title,
                 modifier = Modifier.weight(1f),
-                style = MetaTextStyle,
+                style = Oe3Typography.style(Oe3TextRole.Meta),
                 color = colors.onSurface.oe3Color(),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -167,12 +173,12 @@ private fun PresetCard(
 }
 
 @Composable
-private fun PresetStrip(theme: AppTheme) {
+private fun PresetStrip(theme: AppTheme, shape: RoundedCornerShape) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(18.dp)
-            .clip(RoundedCornerShape(OeShape.sm)),
+            .clip(shape),
     ) {
         ThemePresetGrouping.stripColors(theme).forEach { argb ->
             Box(Modifier.weight(1f).fillMaxSize().background(Color(argb)))

@@ -51,6 +51,12 @@ class Oe3TypographyTest {
         val mono = Oe3Typography.spec(Oe3TextRole.Mono)
         assertEquals(13f, mono.sizeSp, 0.001f)
         assertEquals(18f, mono.lineHeightSp, 0.001f)
+
+        val metadata = Oe3Typography.styleStatic(Oe3TextRole.Meta)
+        assertEquals(13f, metadata.fontSize.value, 0.001f)
+        assertEquals(18f, metadata.lineHeight.value, 0.001f)
+        assertEquals(FontWeight.Normal, metadata.fontWeight)
+        assertEquals(FontFamily.Default, metadata.fontFamily)
     }
 
     @Test

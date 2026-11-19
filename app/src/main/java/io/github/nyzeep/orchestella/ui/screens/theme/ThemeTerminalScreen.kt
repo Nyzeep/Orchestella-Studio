@@ -1,6 +1,9 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -30,11 +32,13 @@ import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import kotlin.math.roundToInt
 
@@ -56,17 +60,19 @@ fun ThemeTerminalScreen(
 ) {
     val colors = Oe3ThemeValues.colors
     val radius = LocalOe3CornerRadius.current ?: Oe3Shapes.xl
+    val scrollState = rememberScrollState()
     OeScaffold(
         title = stringResource(R.string.ui3_theme_page_terminal),
         modifier = modifier.testTag("theme-terminal:screen"),
         leading = { ThemeBackButton(onBack = onBack) },
+        scrollOffsetPx = { scrollState.oeScrollOffsetPx() },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = Oe3Spacing.pageInset)
-                .padding(top = Oe3Spacing.xs, bottom = LocalOe3PageBottomPadding.current),
+                .padding(top = LocalOe3PageTopPadding.current + Oe3Spacing.xs, bottom = LocalOe3PageBottomPadding.current),
         ) {
             ThemeSectionHeader(
                 key = "terminal-palette",
@@ -177,32 +183,37 @@ fun ThemeTerminalScreen(
                 contentPadding = PaddingValues(12.dp),
                 shape = RoundedCornerShape(radius),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.fillMaxWidth()) {
                     Text(
                         text = if (state.terminalBackgroundUri == null) {
                             stringResource(R.string.ui3_theme_wallpaper_none)
                         } else {
                             stringResource(R.string.ui3_theme_terminal_bg_set)
                         },
-                        modifier = Modifier.weight(1f),
-                        style = MetaTextStyle,
+                        style = Oe3Typography.style(Oe3TextRole.Meta),
                         color = colors.onSurfaceVariant.oe3Color(),
                     )
-                    Oe3Button(
-                        text = stringResource(R.string.ui3_theme_terminal_bg_pick),
-                        onClick = { onPickTerminalBackground?.invoke() },
-                        enabled = onPickTerminalBackground != null,
-                        style = Oe3ButtonStyle.Tonal,
-                        modifier = Modifier.testTag("theme-terminal:bg-pick"),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Oe3Button(
-                        text = stringResource(R.string.ui3_theme_terminal_bg_clear),
-                        onClick = { onEvent(ThemeStudioEvent.ClearTerminalBackground) },
-                        enabled = state.terminalBackgroundUri != null,
-                        style = Oe3ButtonStyle.Text,
-                        modifier = Modifier.testTag("theme-terminal:bg-clear"),
-                    )
+                    Spacer(Modifier.height(Oe3Spacing.xs))
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+                        verticalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+                    ) {
+                        Oe3Button(
+                            text = stringResource(R.string.ui3_theme_terminal_bg_pick),
+                            onClick = { onPickTerminalBackground?.invoke() },
+                            enabled = onPickTerminalBackground != null,
+                            style = Oe3ButtonStyle.Tonal,
+                            modifier = Modifier.testTag("theme-terminal:bg-pick"),
+                        )
+                        Oe3Button(
+                            text = stringResource(R.string.ui3_theme_terminal_bg_clear),
+                            onClick = { onEvent(ThemeStudioEvent.ClearTerminalBackground) },
+                            enabled = state.terminalBackgroundUri != null,
+                            style = Oe3ButtonStyle.Text,
+                            modifier = Modifier.testTag("theme-terminal:bg-clear"),
+                        )
+                    }
                 }
                 Text(
                     text = stringResource(R.string.ui3_theme_terminal_bg_note),

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,9 +36,11 @@ import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
 import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+import io.github.nyzeep.orchestella.ui.shell.LocalOeSurfaceAlpha
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 
 /**
@@ -47,7 +50,9 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeColors
  * fallback stays the documented 24dp page-card step of the shape ladder.
  */
 object Oe3CardSpec {
-    fun cornerShape(cornerRadius: Dp?): Shape = RoundedCornerShape(cornerRadius ?: Oe3Shapes.xl)
+    fun radius(cornerRadius: Dp?): Dp = cornerRadius ?: Oe3Shapes.xl
+
+    fun cornerShape(cornerRadius: Dp?): Shape = RoundedCornerShape(radius(cornerRadius))
 }
 
 /**
@@ -116,15 +121,17 @@ fun Oe3Card(
     Column(
         modifier = modifier
             .clip(resolvedShape)
-            .background(fill)
+            .background(fill.copy(alpha = fill.alpha * LocalOeSurfaceAlpha.current))
             .then(
                 if (onClick != null) {
-                    Modifier.clickable(
-                        interactionSource = interaction,
-                        indication = null,
-                        role = Role.Button,
-                        onClick = onClick,
-                    )
+                    Modifier
+                        .sizeIn(minWidth = Oe3Sizes.cardMinWidth, minHeight = Oe3Sizes.minTouchTarget)
+                        .clickable(
+                            interactionSource = interaction,
+                            indication = null,
+                            role = Role.Button,
+                            onClick = onClick,
+                        )
                 } else {
                     Modifier
                 },
@@ -194,7 +201,7 @@ fun OeCardHeader(
     }
 }
 
-/** 20dp grid tile used by the two-column distro and preset grids. */
+/** Shared card surface with the compact inset for two-column grids. */
 @Composable
 fun Oe3GridCard(
     modifier: Modifier = Modifier,
@@ -205,7 +212,6 @@ fun Oe3GridCard(
         modifier = modifier,
         onClick = onClick,
         contentPadding = PaddingValues(Oe3Spacing.sm),
-        shape = RoundedCornerShape(Oe3Shapes.lg),
         content = content,
     )
 }

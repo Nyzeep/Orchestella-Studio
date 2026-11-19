@@ -1,9 +1,7 @@
 package io.github.nyzeep.orchestella.ui.screens.config
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -34,17 +33,16 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3BackButton
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ListRow
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SectionHeader
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SwitchRow
@@ -60,10 +58,8 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 import io.github.nyzeep.orchestella.ui.shell.oeCardShape
+import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
-
-/** 页面标题下的元信息与「当前值」读数（spec §2.3：13/18）。 */
-private val MetaTextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
 
 /** Live values the page needs besides [ConfigOptions]. */
 @Immutable
@@ -96,21 +92,30 @@ fun ConfigScreen(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
 ) {
+    val listState = rememberLazyListState()
     OeScaffold(
         title = stringResource(R.string.config_page_title),
         modifier = modifier,
         leading = onBack?.let { back ->
-            { ConfigBackButton(onBack = back) }
+            {
+                Oe3BackButton(
+                    onBack = back,
+                    contentDescription = stringResource(R.string.config_back_desc),
+                    testTag = "config:back",
+                )
+            }
         },
+        scrollOffsetPx = { listState.oeScrollOffsetPx() },
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .testTag("config:screen"),
             contentPadding = PaddingValues(
                 start = Oe3Spacing.pageInset,
                 end = Oe3Spacing.pageInset,
-                top = Oe3Spacing.xs,
+                top = LocalOe3PageTopPadding.current + Oe3Spacing.xs,
                 bottom = LocalOe3PageBottomPadding.current,
             ),
         ) {
@@ -159,7 +164,7 @@ private fun ConfigPageHeader(meta: String) {
     val colors = Oe3ThemeValues.colors
     Text(
         text = meta,
-        style = MetaTextStyle,
+        style = Oe3Typography.style(Oe3TextRole.Meta),
         color = colors.onSurfaceVariant.oe3Color(),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -167,22 +172,6 @@ private fun ConfigPageHeader(meta: String) {
             .fillMaxWidth()
             .padding(top = Oe3Spacing.xs, bottom = Oe3Spacing.xxs),
     )
-}
-
-/** 顶栏 leading 槽里的返回钮；视觉 44dp，命中 48dp 由槽位保证。 */
-@Composable
-private fun ConfigBackButton(onBack: () -> Unit) {
-    val back = stringResource(R.string.config_back_desc)
-    Box(
-        modifier = Modifier
-            .size(Oe3Sizes.interactiveVisual)
-            .testTag("config:back")
-            .clickable(role = Role.Button, onClick = onBack)
-            .semantics { contentDescription = back },
-        contentAlignment = Alignment.Center,
-    ) {
-        DirectionChevron(pointsLeft = true)
-    }
 }
 
 @Composable
@@ -248,7 +237,7 @@ private fun UpdateBadge() {
     val colors = Oe3ThemeValues.colors
     Text(
         text = stringResource(R.string.config_update_badge),
-        style = MetaTextStyle,
+        style = Oe3Typography.style(Oe3TextRole.Meta),
         color = colors.primary.oe3Color(),
         modifier = Modifier
             .background(
@@ -264,7 +253,7 @@ private fun OptionLabel() {
     val colors = Oe3ThemeValues.colors
     Text(
         text = stringResource(R.string.config_options_label),
-        style = MetaTextStyle,
+        style = Oe3Typography.style(Oe3TextRole.Meta),
         color = colors.onSurfaceVariant.oe3Color(),
         modifier = Modifier.padding(
             start = Oe3Spacing.rowHorizontal,
@@ -387,7 +376,7 @@ private fun ChoiceRow(
             ) {
                 Text(
                     text = value,
-                    style = MetaTextStyle,
+                    style = Oe3Typography.style(Oe3TextRole.Meta),
                     color = colors.onSurfaceVariant.oe3Color(),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -471,12 +460,6 @@ private fun ConfigChevron(title: String) {
     val description = stringResource(R.string.config_chevron_desc, title)
     val color = Oe3ThemeValues.colors.onSurfaceVariant.oe3Color()
     OeChevron(color = color, contentDescription = description)
-}
-
-@Composable
-private fun DirectionChevron(pointsLeft: Boolean) {
-    val color = Oe3ThemeValues.colors.onSurface.oe3Color()
-    OeChevron(color = color, pointsLeft = pointsLeft)
 }
 
 @Preview(name = "配置 · 暗色", showBackground = true, widthDp = 390, heightDp = 900)

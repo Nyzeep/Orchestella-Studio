@@ -14,6 +14,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,6 +34,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
@@ -64,6 +67,10 @@ object OeAppBackgroundSpec {
 
     /** 壁纸之上叠加的页面底色 scrim 透明度（兼顾可读性与壁纸通透度）。 */
     internal const val WALLPAPER_SCRIM_ALPHA = 0.62f
+
+    /** 壁纸模式下顶部标题区额外保护渐变高度与峰值透明度（M2-A）。 */
+    internal val WALLPAPER_TOP_SCRIM_HEIGHT = 128.dp
+    internal const val WALLPAPER_TOP_SCRIM_ALPHA = 0.38f
 
     /**
      * 壁纸优先于纯黑：壁纸是用户显式选择，纯黑开关只是"没有壁纸时"的底色。
@@ -171,12 +178,24 @@ fun OeAppBackground(
                     .graphicsLayer { alpha = wallpaperAlpha },
                 contentScale = ContentScale.Crop,
             )
-            // 文字可读性由壳层承担：壁纸之上盖一层页面底色 scrim。
+            // 文字可读性由壳层承担：壁纸之上盖一层页面底色 scrim，并在顶栏透明态区域叠加柔和顶部保护渐隐。
             Box(
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer { alpha = wallpaperAlpha }
                     .background(animatedBg.copy(alpha = OeAppBackgroundSpec.WALLPAPER_SCRIM_ALPHA)),
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(OeAppBackgroundSpec.WALLPAPER_TOP_SCRIM_HEIGHT)
+                    .graphicsLayer { alpha = wallpaperAlpha }
+                    .background(
+                        Brush.verticalGradient(
+                            0f to animatedBg.copy(alpha = OeAppBackgroundSpec.WALLPAPER_TOP_SCRIM_ALPHA),
+                            1f to Color.Transparent,
+                        ),
+                    ),
             )
         }
     }

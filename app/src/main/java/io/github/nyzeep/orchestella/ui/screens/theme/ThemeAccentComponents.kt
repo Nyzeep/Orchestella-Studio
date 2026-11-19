@@ -190,7 +190,7 @@ fun CustomSlotSection(
                             active -> "${slot.name} · ${stringResource(R.string.ui3_theme_slot_current)}"
                             else -> slot.name
                         },
-                        style = MetaTextStyle,
+                        style = Oe3Typography.style(Oe3TextRole.Meta),
                         color = colors.onSurfaceVariant.oe3Color(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
