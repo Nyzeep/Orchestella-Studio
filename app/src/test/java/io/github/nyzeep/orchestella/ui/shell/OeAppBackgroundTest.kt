@@ -6,12 +6,16 @@ import android.content.Context
 import android.content.res.AssetFileDescriptor
 import android.database.Cursor
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
@@ -26,6 +30,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
@@ -33,6 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-mdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class OeAppBackgroundTest {
 
     class FakeWallpaperProvider : ContentProvider() {
@@ -67,7 +73,7 @@ class OeAppBackgroundTest {
     }
 
     @get:Rule
-    val compose = createComposeRule()
+    val compose = createAndroidComposeRule(ComponentActivity::class.java)
 
     private lateinit var tempImageA: File
     private lateinit var tempImageB: File
@@ -95,10 +101,25 @@ class OeAppBackgroundTest {
 
     private fun writeSamplePng(target: File) {
         val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.GREEN)
         FileOutputStream(target).use { out ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
         }
         bitmap.recycle()
+    }
+
+    private fun showsWallpaper(): Boolean = compose.runOnIdle {
+        val root = compose.activity.window.decorView
+        val sample = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+        try {
+            val canvas = Canvas(sample)
+            canvas.translate(-root.width / 2f, -root.height / 2f)
+            root.draw(canvas)
+            val pixel = sample.getPixel(0, 0)
+            Color.green(pixel) - Color.red(pixel) > 24
+        } finally {
+            sample.recycle()
+        }
     }
 
     @Test
@@ -112,19 +133,28 @@ class OeAppBackgroundTest {
                 OeAppBackground(mode = mode)
             }
         }
-        compose.waitUntil(timeoutMillis = 5_000) { FakeWallpaperProvider.openCount.get() >= 2 }
-        compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) { showsWallpaper() }
         val afterFirstDecode = FakeWallpaperProvider.openCount.get()
 
-        // Switch themes & temporarily toggle away and back to the same URI: must hit cache without re-decoding.
-        theme = ThemeCatalog.mascotLight
+        // Repainting a theme does not touch the provider. Reattachment checks availability without decoding.
+        compose.runOnIdle { Snapshot.withMutableSnapshot { theme = ThemeCatalog.mascotLight } }
         compose.waitForIdle()
-        mode = OeAppBackgroundMode.Gradient
-        compose.waitForIdle()
-        mode = OeAppBackgroundMode.Wallpaper("content://test.wallpaper/a")
-        compose.waitForIdle()
-
         assertEquals(afterFirstDecode, FakeWallpaperProvider.openCount.get())
+        compose.runOnIdle { Snapshot.withMutableSnapshot { mode = OeAppBackgroundMode.Gradient } }
+        compose.waitUntil(timeoutMillis = 5_000) { !showsWallpaper() }
+        compose.runOnIdle { Snapshot.withMutableSnapshot { mode = OeAppBackgroundMode.Wallpaper("content://test.wallpaper/a") } }
+        compose.waitUntil(timeoutMillis = 5_000) { FakeWallpaperProvider.openCount.get() > afterFirstDecode }
+
+        assertEquals(afterFirstDecode + 1, FakeWallpaperProvider.openCount.get())
+        assertTrue(showsWallpaper())
+
+        compose.runOnIdle { Snapshot.withMutableSnapshot { mode = OeAppBackgroundMode.Gradient } }
+        compose.waitUntil(timeoutMillis = 5_000) { !showsWallpaper() }
+        assertTrue(tempImageA.delete())
+        compose.runOnIdle { Snapshot.withMutableSnapshot { mode = OeAppBackgroundMode.Wallpaper("content://test.wallpaper/a") } }
+        compose.waitUntil(timeoutMillis = 5_000) {
+            FakeWallpaperProvider.openCount.get() >= afterFirstDecode + 2 && !showsWallpaper()
+        }
     }
 
     @Test
@@ -159,10 +189,17 @@ class OeAppBackgroundTest {
         var resolvedMode: OeAppBackgroundMode? = null
         compose.setContent {
             val theme = if (isDark) ThemeCatalog.mascotDark else ThemeCatalog.mascotLight
-            Oe3Theme(theme = theme, pureBlack = theme.isDark && true, reduceMotion = true) {
-                resolvedPureBlack = Oe3ThemeValues.info.pureBlack
-                resolvedMode = OeAppBackgroundSpec.resolve(null, resolvedPureBlack)
-            }
+            Oe3App(
+                selectedTab = Oe3Tab.Workstation,
+                onTabSelected = {},
+                theme = theme,
+                pureBlack = true,
+                reduceMotion = true,
+                pages = Oe3Pages(workstation = {
+                    resolvedPureBlack = Oe3ThemeValues.info.pureBlack
+                    resolvedMode = OeAppBackgroundSpec.resolve(null, resolvedPureBlack)
+                }),
+            )
         }
         compose.waitForIdle()
         assertEquals(false, resolvedPureBlack)

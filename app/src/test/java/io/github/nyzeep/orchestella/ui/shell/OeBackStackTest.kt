@@ -119,7 +119,7 @@ class OeBackStackTest {
         val t3 = stack.transition.transitionId
         assertTrue(t3 > t2)
         assertEquals(StackFlight.Pop, stack.transition.flight)
-        assertEquals(1f, stack.transition.startProgress, 0.0001f)
+        assertEquals(0f, stack.transition.startProgress, 0.0001f)
         assertEquals("b", stack.transition.leaving?.destination?.key)
     }
 

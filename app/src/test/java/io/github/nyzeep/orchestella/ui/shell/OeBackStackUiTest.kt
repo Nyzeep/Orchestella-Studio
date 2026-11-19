@@ -316,6 +316,37 @@ class OeBackStackUiTest {
     }
 
     @Test
+    fun backReversesAnEnteringPageFromItsCurrentPosition() {
+        val stack = OeBackStack()
+        compose.setContent {
+            Oe3Theme(theme = ThemeCatalog.constructivistWorkstation) {
+                OeBackStackHost(backStack = stack) { Box(Modifier.fillMaxSize()) }
+            }
+        }
+        compose.waitForIdle()
+        compose.mainClock.autoAdvance = false
+        compose.runOnUiThread {
+            Snapshot.withMutableSnapshot {
+                stack.push(OeDestination("detail", "Detail") {
+                    Box(Modifier.fillMaxSize().testTag("detail"))
+                })
+            }
+        }
+        compose.mainClock.advanceTimeBy(80)
+        fun left() = compose.onNodeWithTag("detail").fetchSemanticsNode().boundsInRoot.left
+        val beforeBack = left()
+        val width = compose.onRoot().fetchSemanticsNode().boundsInRoot.width
+        assertTrue("Detail must still be entering", beforeBack in (width * 0.12f)..(width * 0.9f))
+
+        compose.runOnUiThread { Snapshot.withMutableSnapshot { assertTrue(stack.pop()) } }
+        compose.mainClock.advanceTimeByFrame()
+        assertEquals("Reversing direction must preserve the position", beforeBack, left(), width * 0.05f)
+
+        compose.mainClock.autoAdvance = true
+        compose.onNodeWithTag("detail").assertDoesNotExist()
+    }
+
+    @Test
     fun underLayerDoesNotDisposeBaseAcrossZeroToOnePushAndPop() {
         val stack = OeBackStack()
         var baseDisposals = 0

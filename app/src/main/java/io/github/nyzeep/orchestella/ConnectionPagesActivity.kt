@@ -3,11 +3,11 @@ package io.github.nyzeep.orchestella
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -15,18 +15,20 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.network.PortForwardingManager
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
-import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.screens.connections.PortForwardingPage
 import io.github.nyzeep.orchestella.ui.screens.connections.SshManagerPage
 import io.github.nyzeep.orchestella.ui.screens.connections.VmHardwarePage
+import io.github.nyzeep.orchestella.ui.shell.LocalOeSurfaceAlpha
+import io.github.nyzeep.orchestella.ui.shell.OeAppBackground
+import io.github.nyzeep.orchestella.ui.shell.OeAppBackgroundSpec
+import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
@@ -91,10 +93,32 @@ class ConnectionPagesActivity : AppCompatActivity() {
             }
     }
 
-    private val themeState = mutableStateOf(ThemeCatalog.default)
-    private val pureBlackState = mutableStateOf(false)
-    private val textScaleState = mutableStateOf(1f)
-    private var reduceMotion = false
+    private data class Appearance(
+        val theme: AppTheme = ThemeCatalog.default,
+        val pureBlack: Boolean = false,
+        val textScale: Float = 1f,
+        val reduceMotion: Boolean = false,
+        val surfaceAlpha: Float = 1f,
+        val backgroundUri: String? = null,
+    )
+
+    private val themeStore by lazy { ThemeStore(this) }
+    private val appearance = mutableStateOf(Appearance())
+    private val themeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        refreshAppearance()
+    }
+
+    private fun refreshAppearance() {
+        val theme = themeStore.resolve()
+        appearance.value = Appearance(
+            theme = theme,
+            pureBlack = theme.isDark && themeStore.uiPureBlack(),
+            textScale = themeStore.textScaleFactor(),
+            reduceMotion = !ValueAnimator.areAnimatorsEnabled(),
+            surfaceAlpha = OeAppBackgroundSpec.surfaceAlpha(themeStore.uiSurfaceOpacityPercent()),
+            backgroundUri = themeStore.backgroundUri(),
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeApplier.prepare(this)
@@ -111,13 +135,8 @@ class ConnectionPagesActivity : AppCompatActivity() {
         }
         val instanceId = intent.getStringExtra(EXTRA_INSTANCE_ID)
 
-        val themeStore = ThemeStore(this)
-        val initialTheme = themeStore.resolve()
-        val initialPureBlack = initialTheme.isDark && themeStore.uiPureBlack()
-        themeState.value = initialTheme
-        pureBlackState.value = initialPureBlack
-        textScaleState.value = themeStore.textScaleFactor()
-        reduceMotion = !ValueAnimator.areAnimatorsEnabled()
+        refreshAppearance()
+        val initial = appearance.value
 
         val portForwardingManager = if (page == PAGE_PORT_FORWARDING) {
             instanceId?.let { id ->
@@ -175,18 +194,19 @@ class ConnectionPagesActivity : AppCompatActivity() {
         val back: () -> Unit = { closePage() }
         val compose = ComposeView(this).apply {
             setBackgroundColor(
-                if (initialPureBlack) Color.BLACK else initialTheme.background,
+                if (initial.pureBlack) Color.BLACK else initial.theme.background,
             )
         }
         setContentView(compose)
         compose.setContent {
+            val current = appearance.value
             Oe3Theme(
-                theme = themeState.value,
-                pureBlack = pureBlackState.value,
-                textScale = textScaleState.value,
-                reduceMotion = reduceMotion,
+                theme = current.theme,
+                pureBlack = current.pureBlack,
+                textScale = current.textScale,
+                reduceMotion = current.reduceMotion,
             ) {
-                val isDark = themeState.value.isDark
+                val isDark = current.theme.isDark
                 DisposableEffect(isDark) {
                     val controller = WindowCompat.getInsetsController(window, window.decorView)
                     controller.isAppearanceLightStatusBars = !isDark
@@ -196,48 +216,51 @@ class ConnectionPagesActivity : AppCompatActivity() {
                 // 本宿主没有底部坞：页面读的底部预留必须归零，否则会空出 83dp
                 // 的坞位；系统导航条的内边距由这一层统一补（页面自身不再各自
                 // 调 navigationBarsPadding，避免两套口径）。
-                CompositionLocalProvider(LocalOe3PageBottomPadding provides 0.dp) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(ComposeColor(Oe3ThemeValues.colors.background))
-                            .navigationBarsPadding(),
-                    ) {
-                        when (page) {
-                            PAGE_SSH -> SshManagerPage(
-                                onBack = back,
-                                defaultInstanceId = instanceId,
-                                defaultHost = intent.getStringExtra(EXTRA_DEFAULT_HOST) ?: "127.0.0.1",
-                                defaultPort = intent.getIntExtra(EXTRA_DEFAULT_PORT, 2222),
-                                defaultUser = intent.getStringExtra(EXTRA_DEFAULT_USER) ?: "root",
-                            )
+                CompositionLocalProvider(
+                    LocalOe3PageBottomPadding provides 0.dp,
+                    LocalOeSurfaceAlpha provides current.surfaceAlpha,
+                ) {
+                    Box(Modifier.fillMaxSize()) {
+                        OeAppBackground(
+                            mode = OeAppBackgroundSpec.resolve(current.backgroundUri, current.pureBlack),
+                        )
+                        Box(Modifier.fillMaxSize().navigationBarsPadding()) {
+                            when (page) {
+                                PAGE_SSH -> SshManagerPage(
+                                    onBack = back,
+                                    defaultInstanceId = instanceId,
+                                    defaultHost = intent.getStringExtra(EXTRA_DEFAULT_HOST) ?: "127.0.0.1",
+                                    defaultPort = intent.getIntExtra(EXTRA_DEFAULT_PORT, 2222),
+                                    defaultUser = intent.getStringExtra(EXTRA_DEFAULT_USER) ?: "root",
+                                )
 
-                            PAGE_PORT_FORWARDING -> PortForwardingPage(
-                                instanceId = requireNotNull(instanceId),
-                                manager = requireNotNull(portForwardingManager),
-                                onBack = back,
-                            )
+                                PAGE_PORT_FORWARDING -> PortForwardingPage(
+                                    instanceId = requireNotNull(instanceId),
+                                    manager = requireNotNull(portForwardingManager),
+                                    onBack = back,
+                                )
 
-                            PAGE_VM_HARDWARE -> VmHardwarePage(
-                                instance = requireNotNull(hardwareInstance),
-                                hostProfile = requireNotNull(hardwareProfile),
-                                onBack = back,
-                                gpuAccelerationStatus = gpuAccelerationStatus,
-                                onSaved = { selection ->
-                                    setResult(
-                                        RESULT_OK,
-                                        Intent().apply {
-                                            putExtra(RESULT_CPU_CORES, selection.cpuCores)
-                                            putExtra(RESULT_RAM_MEGABYTES, selection.ramMegabytes)
-                                            selection.expandedDiskBytes?.let {
-                                                putExtra(RESULT_DISK_BYTES, it)
-                                            }
-                                            putExtra(RESULT_GPU_ENABLED, selection.gpuAccelerationEnabled)
-                                        },
-                                    )
-                                    finish()
-                                },
-                            )
+                                PAGE_VM_HARDWARE -> VmHardwarePage(
+                                    instance = requireNotNull(hardwareInstance),
+                                    hostProfile = requireNotNull(hardwareProfile),
+                                    onBack = back,
+                                    gpuAccelerationStatus = gpuAccelerationStatus,
+                                    onSaved = { selection ->
+                                        setResult(
+                                            RESULT_OK,
+                                            Intent().apply {
+                                                putExtra(RESULT_CPU_CORES, selection.cpuCores)
+                                                putExtra(RESULT_RAM_MEGABYTES, selection.ramMegabytes)
+                                                selection.expandedDiskBytes?.let {
+                                                    putExtra(RESULT_DISK_BYTES, it)
+                                                }
+                                                putExtra(RESULT_GPU_ENABLED, selection.gpuAccelerationEnabled)
+                                            },
+                                        )
+                                        finish()
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -245,14 +268,15 @@ class ConnectionPagesActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        val themeStore = ThemeStore(this)
-        val resolvedTheme = themeStore.resolve()
-        themeState.value = resolvedTheme
-        pureBlackState.value = resolvedTheme.isDark && themeStore.uiPureBlack()
-        textScaleState.value = themeStore.textScaleFactor()
-        reduceMotion = !ValueAnimator.areAnimatorsEnabled()
+    override fun onStart() {
+        super.onStart()
+        themeStore.addOnThemeChangeListener(themeListener)
+        refreshAppearance()
+    }
+
+    override fun onStop() {
+        themeStore.removeOnThemeChangeListener(themeListener)
+        super.onStop()
     }
 
     /** Single back action for the page's visible button (system back also finishes). */

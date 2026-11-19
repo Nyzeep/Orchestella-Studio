@@ -1,5 +1,7 @@
 package io.github.nyzeep.orchestella.ui.shell
 
+import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
+import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,8 +55,9 @@ class OeAppBackgroundSpecTest {
     }
 
     @Test
-    fun wallpaperScrimAlphaIsSoftenedBelowHalfOpaque() {
-        assertTrue(OeAppBackgroundSpec.WALLPAPER_SCRIM_ALPHA <= 0.50f)
-        assertTrue(OeAppBackgroundSpec.WALLPAPER_SCRIM_ALPHA >= 0.35f)
+    fun brightWallpaperKeepsMascotDarkTextReadable() {
+        val theme = ThemeCatalog.mascotDark
+        val backed = ThemeColors.blend(0xFFFFFFFF.toInt(), theme.background, OeAppBackgroundSpec.WALLPAPER_SCRIM_ALPHA)
+        assertTrue(ThemeColors.contrast(theme.text, backed) >= 4.5)
     }
 }

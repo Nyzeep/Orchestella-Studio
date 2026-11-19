@@ -63,7 +63,7 @@ sealed interface OeAppBackgroundMode {
 object OeAppBackgroundSpec {
 
     /** 壁纸之上叠加的页面底色 scrim 透明度（兼顾可读性与壁纸通透度）。 */
-    internal const val WALLPAPER_SCRIM_ALPHA = 0.45f
+    internal const val WALLPAPER_SCRIM_ALPHA = 0.62f
 
     /**
      * 壁纸优先于纯黑：壁纸是用户显式选择，纯黑开关只是"没有壁纸时"的底色。
@@ -85,15 +85,14 @@ object OeAppBackgroundSpec {
 /**
  * 界面表面不透明度（0.55..1.0），供后续玻璃/半透明表面消费。
  *
- * UI-02 提供并接线（`Oe3App` 从 ThemeStore 读入），消费方是 UI-06 的
- * 玻璃材质：`Oe3Card` 这类基座组件仍按 docs 的 `surface` 不透明规则绘制。
+ * `Oe3App` 从 ThemeStore 读入，供页面表面和浮动栏使用。
  */
 val LocalOeSurfaceAlpha = staticCompositionLocalOf { 1f }
 
 /**
  * 壳层最底层的背景画布。只负责"画什么"，不含导航与标题。
  *
- * 壁纸会过一层 45% 的页面底色 scrim，兼顾文字可读性与壁纸色彩；
+ * 壁纸叠加页面底色遮罩以维持标题和正文的可读性。
  * 渐变由主题的 `primary`/`accent` 与 `background` 混出，浅色与暗色主题都
  * 落在同一套语义色上，不写死 hex。
  */
@@ -138,26 +137,23 @@ fun OeAppBackground(
     } else {
         null
     }
-    LaunchedEffect(mode, wallpaperLoadState) {
-        when {
-            mode !is OeAppBackgroundMode.Wallpaper -> retainedBitmap = null
-            wallpaperLoadState is WallpaperLoadState.Ready -> retainedBitmap = wallpaperLoadState.image
-            wallpaperLoadState is WallpaperLoadState.Failed -> retainedBitmap = null
-            else -> Unit
-        }
-    }
-    val activeBitmap = when {
-        mode !is OeAppBackgroundMode.Wallpaper -> null
-        wallpaperLoadState is WallpaperLoadState.Ready -> wallpaperLoadState.image
-        wallpaperLoadState is WallpaperLoadState.Failed -> null
-        else -> retainedBitmap
-    }
-    val showWallpaper = mode is OeAppBackgroundMode.Wallpaper && activeBitmap != null
+    val readyBitmap = (wallpaperLoadState as? WallpaperLoadState.Ready)?.image
+    val activeBitmap = readyBitmap ?: retainedBitmap
+    val showWallpaper = readyBitmap != null ||
+        (wallpaperLoadState == WallpaperLoadState.Loading && retainedBitmap != null)
     val wallpaperAlpha by animateFloatAsState(
         targetValue = if (showWallpaper) 1f else 0f,
         animationSpec = alphaSpec,
         label = "oeBgWallpaperAlpha",
     )
+    val wallpaperHidden = !showWallpaper && wallpaperAlpha == 0f
+    LaunchedEffect(readyBitmap, wallpaperHidden) {
+        if (readyBitmap != null) {
+            retainedBitmap = readyBitmap
+        } else if (wallpaperHidden) {
+            retainedBitmap = null
+        }
+    }
 
     val gradient = Brush.verticalGradient(listOf(animatedTop, animatedBg, animatedBottom))
     Box(modifier.fillMaxSize()) {
@@ -211,6 +207,10 @@ private object WallpaperCache {
     fun clear() {
         lru.evictAll()
     }
+
+    fun remove(uri: String) {
+        lru.remove(uri)
+    }
 }
 
 @VisibleForTesting
@@ -236,7 +236,12 @@ private fun rememberWallpaper(uri: String): State<WallpaperLoadState> {
     val state = remember(uri) { mutableStateOf(initial) }
     LaunchedEffect(uri, context) {
         if (cached != null) {
-            state.value = WallpaperLoadState.Ready(cached)
+            // A cache hit draws immediately. Check on attachment that the document still opens.
+            val available = withContext(Dispatchers.IO) { wallpaperAvailable(context, uri) }
+            if (!available) {
+                WallpaperCache.remove(uri)
+                state.value = WallpaperLoadState.Failed
+            }
         } else {
             state.value = WallpaperLoadState.Loading
             val decoded = withContext(Dispatchers.IO) { decodeWallpaper(context, uri) }
@@ -249,6 +254,12 @@ private fun rememberWallpaper(uri: String): State<WallpaperLoadState> {
         }
     }
     return state
+}
+
+private fun wallpaperAvailable(context: Context, uri: String): Boolean = try {
+    context.contentResolver.openInputStream(Uri.parse(uri))?.use { true } ?: false
+} catch (_: Exception) {
+    false
 }
 
 /**
@@ -266,8 +277,8 @@ private fun decodeWallpaper(context: Context, uri: String): ImageBitmap? = try {
     } else {
         var sample = 1
         while (
-            bounds.outWidth / (sample * 2) >= WALLPAPER_MAX_DIMENSION_PX ||
-            bounds.outHeight / (sample * 2) >= WALLPAPER_MAX_DIMENSION_PX
+            bounds.outWidth / sample > WALLPAPER_MAX_DIMENSION_PX ||
+            bounds.outHeight / sample > WALLPAPER_MAX_DIMENSION_PX
         ) {
             sample *= 2
         }

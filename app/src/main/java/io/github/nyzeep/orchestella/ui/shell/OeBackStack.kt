@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella.ui.shell
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.SpringSpec
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -39,6 +40,7 @@ data class OeDestination(
 internal data class StackEntry(
     val id: Long,
     val destination: OeDestination,
+    val argument: String? = null,
 )
 
 internal enum class StackFlight { None, Push, Pop }
@@ -51,6 +53,7 @@ internal data class StackTransition(
     val leaving: StackEntry? = null,
     val underIndex: Int = -1,
     val startProgress: Float = 0f,
+    val initialVelocity: Float = 0f,
 )
 
 /**
@@ -62,9 +65,12 @@ internal data class StackTransition(
  */
 class OeBackStack {
 
-    private var nextEntryId = 1L
+    internal var nextEntryId = 1L
+        private set
     private var nextTransitionId = 1L
     private var transitionState by mutableStateOf(StackTransition())
+    private val progress = Animatable(0f)
+    private var animatedTransitionId by mutableLongStateOf(-1L)
 
     internal val transition: StackTransition get() = transitionState
 
@@ -81,8 +87,10 @@ class OeBackStack {
     operator fun get(index: Int): OeDestination = transitionState.entries[index].destination
 
     /** 推入一个二级目的地。 */
-    fun push(destination: OeDestination) {
-        val nextEntries = transitionState.entries + StackEntry(nextEntryId++, destination)
+    fun push(destination: OeDestination) = push(destination, argument = null)
+
+    internal fun push(destination: OeDestination, argument: String?) {
+        val nextEntries = transitionState.entries + StackEntry(nextEntryId++, destination, argument)
         transitionState = StackTransition(
             transitionId = nextTransitionId++,
             entries = nextEntries,
@@ -90,6 +98,7 @@ class OeBackStack {
             leaving = null,
             underIndex = nextEntries.size - 2,
             startProgress = 0f,
+            initialVelocity = OeBackStackTransitionSpec.initialVelocity(),
         )
     }
 
@@ -97,13 +106,20 @@ class OeBackStack {
      * 弹出栈顶。返回值即"本层是否消费了返回事件"：空栈返回 false，让
      * 宿主的上一层（tab 回工作站 / 系统退出）接管。
      */
-    fun pop(): Boolean = popFromProgress(1f)
+    fun pop(): Boolean {
+        val current = transitionState
+        return if (current.flight == StackFlight.Push) {
+            popFromProgress(progressFor(current), velocityFor(current))
+        } else {
+            popFromProgress(1f)
+        }
+    }
 
     /**
      * 从预测式返回手势的当前进度 [initialProgress]（1f = 未拉开，0f = 已滑出）
      * 继续弹出动画，供 M3 `PredictiveBackHandler` 接线使用。
      */
-    internal fun popFromProgress(initialProgress: Float): Boolean {
+    internal fun popFromProgress(initialProgress: Float, initialVelocity: Float = 0f): Boolean {
         val current = transitionState.entries
         if (current.isEmpty()) return false
         val popped = current.last()
@@ -115,8 +131,41 @@ class OeBackStack {
             leaving = popped,
             underIndex = nextEntries.size - 1,
             startProgress = initialProgress.coerceIn(0f, 1f),
+            initialVelocity = initialVelocity,
         )
         return true
+    }
+
+    internal fun restore(entries: List<StackEntry>, firstNewEntryId: Long) {
+        check(nextTransitionId == 1L && transitionState.entries.isEmpty())
+        nextEntryId = maxOf(firstNewEntryId, (entries.maxOfOrNull { it.id } ?: 0L) + 1)
+        transitionState = StackTransition(entries = entries)
+    }
+
+    internal fun progressFor(snapshot: StackTransition): Float =
+        if (animatedTransitionId == snapshot.transitionId) progress.value else snapshot.startProgress
+
+    private fun velocityFor(snapshot: StackTransition): Float =
+        if (animatedTransitionId == snapshot.transitionId) progress.velocity else 0f
+
+    internal suspend fun animate(snapshot: StackTransition, spring: SpringSpec<Float>?) {
+        if (snapshot.flight == StackFlight.None) return
+        if (spring != null) {
+            val start = progressFor(snapshot)
+            val velocity = if (animatedTransitionId == snapshot.transitionId) {
+                progress.velocity
+            } else {
+                snapshot.initialVelocity
+            }
+            progress.snapTo(start)
+            animatedTransitionId = snapshot.transitionId
+            progress.animateTo(
+                targetValue = if (snapshot.flight == StackFlight.Push) 1f else 0f,
+                animationSpec = spring,
+                initialVelocity = velocity,
+            )
+        }
+        settleTransition(snapshot.transitionId)
     }
 
     /** 一次性清空（切换 dock tab 时走这里，显式即时重置，不播放返回动画）。 */
@@ -236,44 +285,8 @@ internal fun OeBackStackHost(
         trackedIds.addAll(activeSet)
     }
 
-    val animatable = remember { Animatable(0f) }
-    val activeAnimId = remember { mutableLongStateOf(0L) }
-
-    LaunchedEffect(transition.transitionId, pushSpring) {
-        when (transition.flight) {
-            StackFlight.None -> {
-                animatable.snapTo(if (transition.entries.isEmpty()) 0f else 1f)
-                activeAnimId.longValue = transition.transitionId
-            }
-            StackFlight.Push -> {
-                if (pushSpring == null) {
-                    animatable.snapTo(1f)
-                    activeAnimId.longValue = transition.transitionId
-                    backStack.settleTransition(transition.transitionId)
-                } else {
-                    animatable.snapTo(transition.startProgress)
-                    activeAnimId.longValue = transition.transitionId
-                    animatable.animateTo(
-                        targetValue = 1f,
-                        animationSpec = pushSpring,
-                        initialVelocity = OeBackStackTransitionSpec.initialVelocity(),
-                    )
-                    backStack.settleTransition(transition.transitionId)
-                }
-            }
-            StackFlight.Pop -> {
-                if (pushSpring == null) {
-                    animatable.snapTo(0f)
-                    activeAnimId.longValue = transition.transitionId
-                    backStack.settleTransition(transition.transitionId)
-                } else {
-                    animatable.snapTo(transition.startProgress)
-                    activeAnimId.longValue = transition.transitionId
-                    animatable.animateTo(targetValue = 0f, animationSpec = pushSpring)
-                    backStack.settleTransition(transition.transitionId)
-                }
-            }
-        }
+    LaunchedEffect(backStack, transition.transitionId, pushSpring) {
+        backStack.animate(transition, pushSpring)
     }
 
     val clampedGesture = gestureProgress?.coerceIn(0f, 1f)
@@ -286,8 +299,7 @@ internal fun OeBackStackHost(
             isScrubbing -> 1f - clampedGesture!!
             transition.flight == StackFlight.None -> if (transition.entries.isEmpty()) 0f else 1f
             pushSpring == null -> if (transition.flight == StackFlight.Push) 1f else 0f
-            activeAnimId.longValue != transition.transitionId -> transition.startProgress
-            else -> animatable.value
+            else -> backStack.progressFor(transition)
         }
     }
 

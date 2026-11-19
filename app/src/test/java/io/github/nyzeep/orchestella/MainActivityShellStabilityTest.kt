@@ -11,8 +11,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.nyzeep.orchestella.ui.screens.theme.CursorBlinkPort
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemePresetScreen
@@ -54,6 +56,21 @@ class MainActivityShellStabilityTest {
         assertTrue("MainActivity must gate pureBlack on isDark", text.contains("resolvedTheme.isDark && themeStore.uiPureBlack()"))
         assertTrue("MainActivity must share ThemeStudioHandle", text.contains("LocalMainThemeStudioHandle"))
         assertTrue("MainActivity must update system bar appearance", text.contains("isAppearanceLightStatusBars"))
+    }
+
+    @Test
+    fun recreatingMainActivityRestoresTheOpenThemeDestinationAndItsParent() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            compose.onNodeWithText(Oe3Tab.Config.label).performClick()
+            compose.onNodeWithTag("config:route:appearance.theme_studio").performClick()
+            compose.onNodeWithTag("theme-entry:presets").performClick()
+            compose.onNodeWithTag("theme-preset:github").performScrollTo().assertExists()
+
+            scenario.recreate()
+            compose.onNodeWithTag("theme-preset:github").assertExists()
+            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+            compose.onNodeWithTag("theme-entry:presets").assertExists()
+        }
     }
 
     @Test

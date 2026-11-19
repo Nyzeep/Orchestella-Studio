@@ -98,13 +98,8 @@ fun Oe3App(
             LocalOeSurfaceAlpha provides surfaceAlpha,
             LocalOeBackStack provides stack,
         ) {
-            Box(
-                modifier = modifier
-                    .fillMaxSize()
-                    // 横屏/挖孔：只让左右安全区推开内容，顶部与底部仍由各自的
-                    // statusBarsPadding / navBar token 处理，避免重复叠加。
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
-            ) {
+            val horizontalInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+            Box(modifier.fillMaxSize()) {
                 // 背景层 + 页面内容一起作为 haze 源：底栏模糊的是"壁纸 + 卡片"，
                 // 而不是旧壳的纯色平面。
                 Box(
@@ -115,7 +110,7 @@ fun Oe3App(
                     OeAppBackground(mode = backgroundMode)
                     OeBackStackHost(
                         backStack = stack,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().windowInsetsPadding(horizontalInsets),
                     ) {
                         Oe3Pager(
                             selected = selectedTab,
@@ -133,7 +128,7 @@ fun Oe3App(
                         onTabSelected(tab)
                     },
                     style = navStyle,
-                    modifier = Modifier.align(Alignment.BottomCenter),
+                    modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(horizontalInsets),
                     glassState = glassState,
                 )
             }

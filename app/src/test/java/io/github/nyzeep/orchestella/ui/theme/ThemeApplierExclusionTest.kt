@@ -59,11 +59,8 @@ class ThemeApplierExclusionTest {
 
     @Test
     fun mainActivityIsRecognizedAsComposeOnlyHost() {
-        assertTrue(MainActivity::class.java.simpleName == "MainActivity")
-        val sourceMethod = ThemeApplier::class.java.declaredMethods.firstOrNull {
-            it.name.startsWith("isComposeOnlyHost")
-        }
-        assertTrue(sourceMethod != null)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).get()
+        assertTrue(ThemeApplier.isComposeOnlyHost(activity))
     }
 
     @Test

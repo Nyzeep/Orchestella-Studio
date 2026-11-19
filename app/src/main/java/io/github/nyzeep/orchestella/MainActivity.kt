@@ -28,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.ContextCompat
+import androidx.core.os.BundleCompat
+import androidx.core.view.doOnAttach
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -56,6 +58,7 @@ import io.github.nyzeep.orchestella.ui.shell.Oe3ShellController
 import io.github.nyzeep.orchestella.ui.shell.OeDestination
 import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
 import io.github.nyzeep.orchestella.ui.shell.OeAppBackgroundSpec
+import io.github.nyzeep.orchestella.ui.shell.StackEntry
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
@@ -287,6 +290,7 @@ class MainActivity : AppCompatActivity() {
         /** 主题工坊根页的栈内标识（子页 key 见 `ThemeStudioPage`）。 */
         private const val THEME_STUDIO_DESTINATION_KEY = "theme-studio"
         private const val STATE_WIZARD_DRAFT = "creation_draft_v1"
+        private const val STATE_SHELL_STACK = "shell_stack_v1"
     }
 
     private val dashboardHandler = Handler(Looper.getMainLooper())
@@ -433,6 +437,7 @@ class MainActivity : AppCompatActivity() {
         oe3Shell = controller
         val backStack = OeBackStack()
         oe3BackStack = backStack
+        restoreShellStack(backStack, savedInstanceState)
         refreshOe3ShellSnapshot()
 
         val initialTheme = oe3ThemeState.value ?: themeStore.resolve()
@@ -490,7 +495,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
         oe3ComposeView = composeView
-        setContentView(composeView)
 
         // 返回键：非首 tab 回工作站；工作站上放行给系统（退出）。
         // 二级页（含主题工坊）由 OeBackStackHost 的 BackHandler 先消费。
@@ -503,6 +507,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+        composeView.doOnAttach { startGlassFrameGateIfNeeded() }
+        setContentView(composeView)
 
         // 协同落点（Lane C 落地 / Lane D 规格，2026-11-07）：通知权限请求挂到
         // Compose 宿主首帧之后，语义与旧壳路径一致。
@@ -511,21 +517,49 @@ class MainActivity : AppCompatActivity() {
             if (!notificationPromptShownThisProcess.compareAndSet(false, true)) return@post
             NotificationPermissionPrompt.requestIfNeeded(this)
         }
-        // UI-12：进程死亡恢复——旧 SetupWizardActivity 以「重进 Activity」恢复，
-        // 壳内导航下改为「草稿恢复 + 自动回到向导目的地」，语义等价。
-        savedInstanceState?.getBundle(STATE_WIZARD_DRAFT)?.let { bundle ->
-            val draft = bundle.keySet().associateWith { key -> requireNotNull(bundle.getString(key)) }
-            val restored = WizardController(
-                context = applicationContext,
-                targetDistroId = draft["distro"] ?: "ubuntu",
-                callbacks = wizardCallbacks(),
-                savedDraft = draft,
-            )
-            wizardController = restored
-            backStack.push(wizardDestination(restored, backStack))
-        }
         initUmlRootfsCardState()
         dashboardHandler.post(refreshDashboard)
+    }
+
+    private fun restoreShellStack(stack: OeBackStack, saved: Bundle?) {
+        val draft = saved?.getBundle(STATE_WIZARD_DRAFT)?.let { bundle ->
+            bundle.keySet().mapNotNull { key -> bundle.getString(key)?.let { key to it } }.toMap()
+        }
+        val wizard = draft?.let {
+            WizardController(
+                context = applicationContext,
+                targetDistroId = it["distro"] ?: "ubuntu",
+                callbacks = wizardCallbacks(),
+                savedDraft = it,
+            ).also { controller -> wizardController = controller }
+        }
+        val savedStack = saved?.getBundle(STATE_SHELL_STACK)
+        if (savedStack == null) {
+            // Versions that saved only the wizard draft restore the wizard directly.
+            wizard?.let { stack.restore(listOf(StackEntry(1L, wizardDestination(it, stack))), 2L) }
+            return
+        }
+        val entries = BundleCompat.getParcelableArrayList(savedStack, "entries", Bundle::class.java)
+            .orEmpty().mapNotNull { entry ->
+                val key = entry.getString("key") ?: return@mapNotNull null
+                val argument = entry.getString("argument")
+                val destination = when (key) {
+                    WIZARD_DESTINATION_KEY -> wizard?.let { wizardDestination(it, stack) }
+                    THEME_STUDIO_DESTINATION_KEY -> themeStudioDestination()
+                    ConnectionsPage.SSH_KEY -> sshDestination(stack)
+                    ConnectionsPage.PORT_FORWARDING_KEY -> argument?.let {
+                        try {
+                            portForwardingDestination(stack, it)
+                        } catch (_: IOException) {
+                            null
+                        }
+                    }
+                    else -> ThemeStudioPage.entries.firstOrNull { it.key == key }
+                        ?.let(::themeStudioSubDestination)
+                } ?: return@mapNotNull null
+                StackEntry(entry.getLong("id"), destination, argument)
+            }
+        stack.restore(entries, savedStack.getLong("nextEntryId", 1L))
     }
 
     /** 壳层快照：主题与 Theme Studio 呈现偏好的唯一读取点（含运行时呈现量）。 */
@@ -574,9 +608,10 @@ class MainActivity : AppCompatActivity() {
         if (oe3GlassDeviceCapState.value != GlassDeviceCap.Unlimited) return
         if (oe3GlassLowRamDevice) return
         if (Build.VERSION.SDK_INT < Oe3GlassStrategy.MIN_REAL_BLUR_API) return
+        val display = window.decorView.display ?: return
         if (!oe3GlassGateArmed.compareAndSet(false, true)) return
 
-        val refreshRate = display?.refreshRate?.coerceAtLeast(60f) ?: 60f
+        val refreshRate = display.refreshRate.takeIf { it > 0f } ?: 60f
         val budgetMs = 1000.0 / refreshRate.toDouble()
 
         val gate = Oe3GlassFrameGate(budgetMs = budgetMs) { verdict ->
@@ -1155,39 +1190,36 @@ class MainActivity : AppCompatActivity() {
     private fun pushOe3SshManager() {
         val stack = oe3BackStack ?: return
         if (stack.top?.key == ConnectionsPage.SSH_KEY) return
-        stack.push(
-            OeDestination(
-                key = ConnectionsPage.SSH_KEY,
-                title = getString(R.string.connections_ssh_title),
-                content = { SshManagerPage(onBack = { stack.pop() }) },
-            ),
-        )
+        stack.push(sshDestination(stack))
     }
+
+    private fun sshDestination(stack: OeBackStack) = OeDestination(
+        key = ConnectionsPage.SSH_KEY,
+        title = getString(R.string.connections_ssh_title),
+        content = { SshManagerPage(onBack = { stack.pop() }) },
+    )
 
     private fun pushOe3PortForwarding(instance: InstanceLifecycle.Instance) {
         val stack = oe3BackStack ?: return
+        if (stack.top?.key == ConnectionsPage.PORT_FORWARDING_KEY) return
         try {
-            val manager =
-                PortForwardingManager.forInstance(instance.id(), filesDir.toPath().resolve("network"))
-            if (stack.top?.key == ConnectionsPage.PORT_FORWARDING_KEY) return
-            stack.push(
-                OeDestination(
-                    key = ConnectionsPage.PORT_FORWARDING_KEY,
-                    title = getString(R.string.connections_port_forwarding_title),
-                    content = {
-                        PortForwardingPage(
-                            instanceId = instance.id(),
-                            manager = manager,
-                            onBack = { stack.pop() },
-                        )
-                    },
-                ),
-            )
+            stack.push(portForwardingDestination(stack, instance.id()), argument = instance.id())
         } catch (e: Exception) {
             // 异常详情只进日志，不进用户文案（voice.md §5）。
             android.util.Log.w("MainActivity", "open port forwarding failed", e)
             Toast.makeText(this, R.string.toast_port_forwarding_open_failed, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun portForwardingDestination(stack: OeBackStack, instanceId: String): OeDestination {
+        val manager = PortForwardingManager.forInstance(instanceId, filesDir.toPath().resolve("network"))
+        return OeDestination(
+            key = ConnectionsPage.PORT_FORWARDING_KEY,
+            title = getString(R.string.connections_port_forwarding_title),
+            content = {
+                PortForwardingPage(instanceId = instanceId, manager = manager, onBack = { stack.pop() })
+            },
+        )
     }
 
     /** 既有冷备份闸门（UI3-12 收敛为 ColdBackupGuard 单源）。 */
@@ -1698,6 +1730,19 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         oe3Shell?.let { outState.putString(Oe3ShellController.STATE_KEY, it.selectedTab.key) }
+        oe3BackStack?.let { stack ->
+            val entries = stack.transition.entries.mapTo(ArrayList()) { entry ->
+                Bundle().apply {
+                    putLong("id", entry.id)
+                    putString("key", entry.destination.key)
+                    putString("argument", entry.argument)
+                }
+            }
+            outState.putBundle(STATE_SHELL_STACK, Bundle().apply {
+                putParcelableArrayList("entries", entries)
+                putLong("nextEntryId", stack.nextEntryId)
+            })
+        }
         // UI-12：向导草稿随 Activity 状态持久（旧 SetupWizardActivity STATE_DRAFT 语义）。
         wizardController?.let { controller ->
             val draft = Bundle()
