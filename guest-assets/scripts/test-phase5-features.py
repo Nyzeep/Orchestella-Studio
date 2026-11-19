@@ -350,17 +350,20 @@ class ProfileContracts(unittest.TestCase):
         config = self.root / "home/orchestella/.config/labwc/rc.xml"
         config.write_text("<labwc_config><!-- user choice --></labwc_config>\n")
         inputs = json.loads((FEATURES / "inputs.json").read_text())
-        inputs["units_version"] = 2
+        inputs["units_version"] = 3
         (self.root / "inputs.json").write_text(json.dumps(inputs))
         self.ctl("install", "desktop-labwc")
         state = self.wait("desktop-labwc", {"installed"})
-        self.assertEqual(2, state["units_version"])
+        self.assertEqual(3, state["units_version"])
         self.assertIn("user choice", config.read_text())
-        unit = self.root / "etc/systemd/system/orchestella-desktop-compositor.service"
-        self.assertTrue(unit.read_text().startswith("# Orchestella owned unit schema=2"))
-        self.assertIn("User=orchestella", unit.read_text())
+        unit = self.root / "home/orchestella/.config/systemd/user/orchestella-desktop-compositor.service"
+        self.assertTrue(unit.read_text().startswith("# Orchestella owned unit schema=3"))
+        # DW-03: user-manager units run as the owning user and never carry User=/Group=.
+        self.assertNotIn("User=", unit.read_text())
+        self.assertNotIn("Group=", unit.read_text())
         self.assertNotIn("no-sandbox", unit.read_text())
-        inputs["units_version"] = 3
+        self.assertFalse((self.root / "etc/systemd/system/orchestella-desktop-compositor.service").exists())
+        inputs["units_version"] = 4
         (self.root / "inputs.json").write_text(json.dumps(inputs))
         unit.write_text("# foreign unit\nExecStart=/bin/false\n")
         self.ctl("install", "desktop-labwc")
@@ -476,6 +479,9 @@ class ProfileContracts(unittest.TestCase):
         self.assertIn("Restart=always\nRestartSec=2", relay)
         self.assertIn("KillMode=control-group", relay)
         self.assertNotIn("[Install]", relay)
+        # DW-03: the wayvnc dependency cannot cross the manager boundary once
+        # wayvnc became a user unit; readiness is sequenced by start instead.
+        self.assertNotIn("orchestella-desktop-wayvnc.service", relay)
         self.ctl("start", "desktop-labwc")
         before = self.wait("desktop-labwc", {"awaiting-frame"})
         rc, value = self.ctl("resize", "desktop-labwc", "4096", "4096", "1")
@@ -488,6 +494,113 @@ class ProfileContracts(unittest.TestCase):
         rc, value = self.ctl("confirm-frame", "desktop-labwc", before["generation"])
         self.assertNotEqual(0, rc)
         self.assertEqual("stale-frame", value["reason"])
+
+    def test_desktop_units_are_persistent_user_units_with_linger(self):
+        self.ctl("install", "desktop-labwc")
+        state = self.wait("desktop-labwc", {"installed"})
+        self.assertEqual(3, state["units_version"])
+        user_dir = self.root / "home/orchestella/.config/systemd/user"
+        compositor = (user_dir / "orchestella-desktop-compositor.service").read_text()
+        wayvnc = (user_dir / "orchestella-desktop-wayvnc.service").read_text()
+        self.assertTrue(compositor.startswith("# Orchestella owned unit schema=3"))
+        self.assertIn("WLR_BACKENDS=headless", compositor)
+        self.assertIn("feature-session.py desktop-apps", compositor)
+        self.assertIn("Requires=orchestella-desktop-compositor.service", wayvnc)
+        self.assertIn("BindsTo=orchestella-desktop-compositor.service", wayvnc)
+        # The root relays stay persistent system units; wayvnc-name dependencies
+        # cannot cross the manager boundary (DW-03).
+        relay = (self.root / "etc/systemd/system/orchestella-display-relay.service").read_text()
+        self.assertIn("display-relay.py --user orchestella", relay)
+        self.assertNotIn("orchestella-desktop-wayvnc.service", relay)
+        self.assertIn("audio-relay.py --user orchestella", (self.root / "etc/systemd/system/orchestella-audio-relay.service").read_text())
+        self.assertFalse((self.root / "etc/systemd/system/orchestella-desktop-compositor.service").exists())
+        self.assertFalse((self.root / "etc/systemd/system/orchestella-desktop-wayvnc.service").exists())
+        # DW-04: the fixed 9104 PulseAudio endpoint ships with the profile.
+        self.assertIn("port=9104", (self.root / "home/orchestella/.config/pulse/default.pa").read_text())
+        commands = (self.root / "commands.jsonl").read_text()
+        self.assertIn('"enable-linger"', commands)
+        self.assertIn('"show-user"', commands)
+        self.assertIn('"daemon-reload"', commands)
+        user_reloads = [json.loads(line) for line in commands.splitlines()
+                        if json.loads(line)[:1] == ["runuser"] and "daemon-reload" in json.loads(line)]
+        self.assertEqual(1, len(user_reloads))
+
+    def test_linger_failure_is_honest_and_recoverable(self):
+        self.fixture(fail_linger=True)
+        self.ctl("install", "desktop-labwc")
+        value = self.wait("desktop-labwc", {"failed"})
+        self.assertEqual("linger-enable-failed", value["reason"])
+        self.assertFalse(value["installed"])
+        self.assertTrue((self.root / "home/orchestella/.config/systemd/user/orchestella-desktop-compositor.service").exists())
+        # enable-linger succeeds but logind does not actually persist the flag:
+        # the Linger=yes proof must still fail the install.
+        self.fixture(fail_linger="", linger_untracked=True)
+        self.ctl("install", "desktop-labwc")
+        value = self.wait("desktop-labwc", {"failed"})
+        self.assertEqual("linger-enable-failed", value["reason"])
+        self.fixture(linger_untracked=False)
+        self.ctl("install", "desktop-labwc")
+        state = self.wait("desktop-labwc", {"installed"})
+        self.assertEqual("installed", state["state"])
+
+    def test_desktop_lifecycle_routes_user_units_through_user_manager(self):
+        self.ctl("install", "desktop-labwc")
+        self.wait("desktop-labwc", {"installed"})
+        self.ctl("start", "desktop-labwc")
+        self.wait("desktop-labwc", {"awaiting-frame"})
+        commands = [json.loads(line) for line in (self.root / "commands.jsonl").read_text().splitlines()]
+        user_sessions = [call for call in commands if call[:1] == ["runuser"]]
+        self.assertTrue(user_sessions)
+        self.assertTrue(all(call[call.index("--user") + 1] == "orchestella" for call in user_sessions))
+        compositor_starts = [call for call in user_sessions
+                             if call[-1] == "orchestella-desktop-compositor.service" and call[-2] == "start"]
+        self.assertEqual(1, len(compositor_starts))
+        self.assertIn("systemctl", compositor_starts[0])
+        self.assertIn("--user", compositor_starts[0])
+        # The compositor is never started against the root manager.
+        self.assertFalse([call for call in commands if call[0] == "systemctl"
+                          and call[-1] == "orchestella-desktop-compositor.service"])
+        # The display relay remains a root system unit started by the system manager.
+        self.assertTrue([call for call in commands if call[0] == "systemctl"
+                         and call[-1] == "orchestella-display-relay.service"])
+        self.ctl("stop", "desktop-labwc")
+        self.wait("desktop-labwc", {"installed"})
+        commands = [json.loads(line) for line in (self.root / "commands.jsonl").read_text().splitlines()]
+        stops = [call for call in commands if call[0] == "systemctl" and call[-1] == "orchestella-display-relay.service"
+                 and call[1] == "stop"]
+        user_stops = [call for call in commands if call[:1] == ["runuser"]
+                      and call[-1] == "orchestella-desktop-compositor.service" and call[-2] == "stop"]
+        self.assertTrue(stops)
+        self.assertTrue(user_stops)
+
+    def test_upgrade_retires_legacy_system_desktop_units(self):
+        self.ctl("install", "desktop-labwc")
+        self.wait("desktop-labwc", {"installed"})
+        # Model a pre-DW-03 device whose compositor/wayvnc lived in the root manager.
+        legacy = self.root / "etc/systemd/system"
+        legacy.mkdir(exist_ok=True)
+        (legacy / "orchestella-desktop-compositor.service").write_text("# Orchestella owned unit schema=2\nExecStart=/bin/labwc\n")
+        (legacy / "orchestella-desktop-wayvnc.service").write_text("# Orchestella owned unit schema=2\nExecStart=/bin/wayvnc\n")
+        self.fixture(services={"dbus.service": True, "ssh.service": True, "orchestella-desktop-compositor.service": True})
+        inputs = json.loads((FEATURES / "inputs.json").read_text())
+        inputs["units_version"] = 4
+        (self.root / "inputs.json").write_text(json.dumps(inputs))
+        self.ctl("install", "desktop-labwc")
+        state = self.wait("desktop-labwc", {"installed"})
+        self.assertEqual(4, state["units_version"])
+        self.assertFalse((legacy / "orchestella-desktop-compositor.service").exists())
+        self.assertFalse((legacy / "orchestella-desktop-wayvnc.service").exists())
+        fixture = json.loads((self.root / "fixture.json").read_text())
+        self.assertFalse(fixture["services"].get("orchestella-desktop-compositor.service"))
+        self.assertTrue((self.root / "home/orchestella/.config/systemd/user/orchestella-desktop-compositor.service").exists())
+        # Foreign unit files in the root manager are never touched.
+        (legacy / "orchestella-desktop-compositor.service").write_text("# foreign unit\nExecStart=/bin/false\n")
+        inputs["units_version"] = 5
+        (self.root / "inputs.json").write_text(json.dumps(inputs))
+        self.ctl("install", "desktop-labwc")
+        self.wait("desktop-labwc", {"installed"})
+        self.assertTrue((legacy / "orchestella-desktop-compositor.service").read_text().startswith("# foreign unit"))
+        self.assertTrue((self.root / "home/orchestella/.config/systemd/user/orchestella-desktop-compositor.service").read_text().startswith("# Orchestella owned unit schema=5"))
 
     def test_code_alive_port_without_auth_never_ready(self):
         self.code_archive()
@@ -707,9 +820,9 @@ class ProfileContracts(unittest.TestCase):
         self.assertEqual("installing", accepted["state"], "units_version must force explicit upgrade instead of early return")
         upgraded = self.wait("code-server", {"installed", "failed"})
         self.assertEqual("installed", upgraded["state"])
-        self.assertEqual(2, upgraded["units_version"])
+        self.assertEqual(3, upgraded["units_version"])
         self.assertFalse(upgraded["authenticationConfigured"])
-        self.assertTrue(unit.read_text().startswith("# Orchestella owned unit schema=2\n"))
+        self.assertTrue(unit.read_text().startswith("# Orchestella owned unit schema=3\n"))
         self.assertNotIn("NoNewPrivileges=yes", unit.read_text())
         self.assertIn("User=orchestella", unit.read_text())
         self.assertNotIn("[Install]", unit.read_text())
