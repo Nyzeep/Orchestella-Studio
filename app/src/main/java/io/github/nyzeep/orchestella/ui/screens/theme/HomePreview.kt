@@ -1,8 +1,15 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,7 +43,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Ring
+import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3Motion
 import io.github.nyzeep.orchestella.ui.oe3.tokens.HomePreviewBlockKind
 import io.github.nyzeep.orchestella.ui.oe3.tokens.HomePreviewSpec
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
@@ -62,9 +71,18 @@ fun HomePreview(
     contentDescription: String? = null,
     modifier: Modifier = Modifier,
 ) {
+    val effectiveReduceMotion = reduceMotion || LocalOe3Motion.current.themeTween.durationMillis <= 0
     val target = homePreviewColors(theme, pureBlack, surfaceOpacityPercent, glass)
-    val colors = animatedColors(target, reduceMotion)
-    val cardRadius = min(cornerDp, 24).dp
+    val colors = animatedColors(target, effectiveReduceMotion)
+    val cardRadius by animateDpAsState(
+        targetValue = min(cornerDp, 24).dp,
+        animationSpec = if (effectiveReduceMotion) {
+            snap()
+        } else {
+            tween(ThemeStudioSpec.previewTweenMillis, easing = OeMotion.standardEasing)
+        },
+        label = "previewCardRadius",
+    )
 
     Box(
         modifier = modifier
@@ -99,17 +117,40 @@ fun HomePreview(
                 }
             }
         }
-        if (navStyle == NavStyleOption.Floating) {
-            FloatingNav(colors, Modifier.align(Alignment.BottomCenter).padding(bottom = 7.dp))
-        } else {
-            FixedNav(colors, Modifier.align(Alignment.BottomCenter))
+        AnimatedContent(
+            targetState = navStyle,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            transitionSpec = {
+                if (effectiveReduceMotion) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    fadeIn(tween(180, easing = OeMotion.standardEasing)) togetherWith
+                        fadeOut(tween(180, easing = OeMotion.standardEasing))
+                }
+            },
+            label = "previewNavStyle",
+        ) { style ->
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                if (style == NavStyleOption.Floating) {
+                    FloatingNav(colors, Modifier.padding(bottom = 7.dp))
+                } else {
+                    FixedNav(colors)
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun animatedColors(target: HomePreviewColors, reduceMotion: Boolean): HomePreviewColors {
-    val spec = if (reduceMotion) snap<Color>() else tween(ThemeStudioSpec.previewTweenMillis)
+    val spec = if (reduceMotion) {
+        snap<Color>()
+    } else {
+        tween(ThemeStudioSpec.previewTweenMillis, easing = OeMotion.standardEasing)
+    }
     return HomePreviewColors(
         background = animateColorAsState(Color(target.background), spec, label = "previewBackground").value.toArgb(),
         surface = animateColorAsState(Color(target.surface), spec, label = "previewSurface").value.toArgb(),

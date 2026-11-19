@@ -92,7 +92,7 @@ fun Oe3App(
         // 提升并做恢复）；缺省时壳层自持一份。二级页面覆盖在 pager 之上、
         // 背景层之上、坞之下——背景不随栈转场缩放，坞持续采样玻璃源。
         val stack = backStack ?: rememberOeBackStack()
-        val backgroundMode = OeAppBackgroundSpec.resolve(backgroundUri, pureBlack)
+        val backgroundMode = OeAppBackgroundSpec.resolve(backgroundUri, Oe3ThemeValues.info.pureBlack)
         CompositionLocalProvider(
             LocalOe3GlassEnabled provides glassEnabled,
             LocalOeSurfaceAlpha provides surfaceAlpha,

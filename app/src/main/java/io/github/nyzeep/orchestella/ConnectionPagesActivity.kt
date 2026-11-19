@@ -7,17 +7,22 @@ import android.graphics.Color
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.network.PortForwardingManager
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
+import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.screens.connections.PortForwardingPage
 import io.github.nyzeep.orchestella.ui.screens.connections.SshManagerPage
@@ -87,6 +92,7 @@ class ConnectionPagesActivity : AppCompatActivity() {
     }
 
     private val themeState = mutableStateOf(ThemeCatalog.default)
+    private val pureBlackState = mutableStateOf(false)
     private val textScaleState = mutableStateOf(1f)
     private var reduceMotion = false
 
@@ -106,7 +112,10 @@ class ConnectionPagesActivity : AppCompatActivity() {
         val instanceId = intent.getStringExtra(EXTRA_INSTANCE_ID)
 
         val themeStore = ThemeStore(this)
-        themeState.value = themeStore.resolve()
+        val initialTheme = themeStore.resolve()
+        val initialPureBlack = initialTheme.isDark && themeStore.uiPureBlack()
+        themeState.value = initialTheme
+        pureBlackState.value = initialPureBlack
         textScaleState.value = themeStore.textScaleFactor()
         reduceMotion = !ValueAnimator.areAnimatorsEnabled()
 
@@ -165,20 +174,35 @@ class ConnectionPagesActivity : AppCompatActivity() {
 
         val back: () -> Unit = { closePage() }
         val compose = ComposeView(this).apply {
-            setBackgroundColor(themeState.value.background)
+            setBackgroundColor(
+                if (initialPureBlack) Color.BLACK else initialTheme.background,
+            )
         }
         setContentView(compose)
         compose.setContent {
             Oe3Theme(
                 theme = themeState.value,
+                pureBlack = pureBlackState.value,
                 textScale = textScaleState.value,
                 reduceMotion = reduceMotion,
             ) {
+                val isDark = themeState.value.isDark
+                DisposableEffect(isDark) {
+                    val controller = WindowCompat.getInsetsController(window, window.decorView)
+                    controller.isAppearanceLightStatusBars = !isDark
+                    controller.isAppearanceLightNavigationBars = !isDark
+                    onDispose {}
+                }
                 // 本宿主没有底部坞：页面读的底部预留必须归零，否则会空出 83dp
                 // 的坞位；系统导航条的内边距由这一层统一补（页面自身不再各自
                 // 调 navigationBarsPadding，避免两套口径）。
                 CompositionLocalProvider(LocalOe3PageBottomPadding provides 0.dp) {
-                    Box(modifier = Modifier.navigationBarsPadding()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(ComposeColor(Oe3ThemeValues.colors.background))
+                            .navigationBarsPadding(),
+                    ) {
                         when (page) {
                             PAGE_SSH -> SshManagerPage(
                                 onBack = back,
@@ -219,13 +243,14 @@ class ConnectionPagesActivity : AppCompatActivity() {
                 }
             }
         }
-        ThemeApplier.bind(this)
     }
 
     override fun onResume() {
         super.onResume()
         val themeStore = ThemeStore(this)
-        themeState.value = themeStore.resolve()
+        val resolvedTheme = themeStore.resolve()
+        themeState.value = resolvedTheme
+        pureBlackState.value = resolvedTheme.isDark && themeStore.uiPureBlack()
         textScaleState.value = themeStore.textScaleFactor()
         reduceMotion = !ValueAnimator.areAnimatorsEnabled()
     }

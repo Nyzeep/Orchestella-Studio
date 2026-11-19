@@ -3,20 +3,33 @@ package io.github.nyzeep.orchestella.ui.shell
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.LruCache
+import androidx.annotation.VisibleForTesting
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
@@ -49,6 +62,9 @@ sealed interface OeAppBackgroundMode {
  */
 object OeAppBackgroundSpec {
 
+    /** 壁纸之上叠加的页面底色 scrim 透明度（兼顾可读性与壁纸通透度）。 */
+    internal const val WALLPAPER_SCRIM_ALPHA = 0.45f
+
     /**
      * 壁纸优先于纯黑：壁纸是用户显式选择，纯黑开关只是"没有壁纸时"的底色。
      * 空白 URI 当作没有壁纸。
@@ -77,7 +93,7 @@ val LocalOeSurfaceAlpha = staticCompositionLocalOf { 1f }
 /**
  * 壳层最底层的背景画布。只负责"画什么"，不含导航与标题。
  *
- * 壁纸会过一层 55% 的页面底色 scrim，否则浅色壁纸上的正文对比度不达标；
+ * 壁纸会过一层 45% 的页面底色 scrim，兼顾文字可读性与壁纸色彩；
  * 渐变由主题的 `primary`/`accent` 与 `background` 混出，浅色与暗色主题都
  * 落在同一套语义色上，不写死 hex。
  */
@@ -87,57 +103,156 @@ fun OeAppBackground(
     modifier: Modifier = Modifier,
 ) {
     val colors = Oe3ThemeValues.colors
-    val background = Color(colors.background)
-    val gradient = Brush.verticalGradient(
-        listOf(
-            Color(ThemeColors.blend(colors.background, colors.primary, 0.22f)),
-            background,
-            Color(ThemeColors.blend(colors.background, colors.accent, 0.16f)),
-        ),
+    val info = Oe3ThemeValues.info
+    val motion = Oe3ThemeValues.motion
+    val reduceMotion = info.reducedMotion || motion.themeTween.durationMillis <= 0
+    val colorSpec: AnimationSpec<Color> = if (reduceMotion) {
+        snap()
+    } else {
+        tween(
+            durationMillis = motion.themeTween.durationMillis,
+            easing = motion.themeTween.easing,
+        )
+    }
+    val alphaSpec: AnimationSpec<Float> = if (reduceMotion) {
+        snap()
+    } else {
+        tween(
+            durationMillis = motion.themeTween.durationMillis,
+            easing = motion.themeTween.easing,
+        )
+    }
+
+    val targetBg = Color(colors.background)
+    val isSolid = mode == OeAppBackgroundMode.Solid
+    val targetTop = if (isSolid) targetBg else Color(ThemeColors.blend(colors.background, colors.primary, 0.22f))
+    val targetBottom = if (isSolid) targetBg else Color(ThemeColors.blend(colors.background, colors.accent, 0.16f))
+
+    val animatedBg by animateColorAsState(targetBg, colorSpec, label = "oeBgBase")
+    val animatedTop by animateColorAsState(targetTop, colorSpec, label = "oeBgTop")
+    val animatedBottom by animateColorAsState(targetBottom, colorSpec, label = "oeBgBottom")
+
+    var retainedBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    val wallpaperLoadState = if (mode is OeAppBackgroundMode.Wallpaper) {
+        rememberWallpaper(mode.uri).value
+    } else {
+        null
+    }
+    LaunchedEffect(mode, wallpaperLoadState) {
+        when {
+            mode !is OeAppBackgroundMode.Wallpaper -> retainedBitmap = null
+            wallpaperLoadState is WallpaperLoadState.Ready -> retainedBitmap = wallpaperLoadState.image
+            wallpaperLoadState is WallpaperLoadState.Failed -> retainedBitmap = null
+            else -> Unit
+        }
+    }
+    val activeBitmap = when {
+        mode !is OeAppBackgroundMode.Wallpaper -> null
+        wallpaperLoadState is WallpaperLoadState.Ready -> wallpaperLoadState.image
+        wallpaperLoadState is WallpaperLoadState.Failed -> null
+        else -> retainedBitmap
+    }
+    val showWallpaper = mode is OeAppBackgroundMode.Wallpaper && activeBitmap != null
+    val wallpaperAlpha by animateFloatAsState(
+        targetValue = if (showWallpaper) 1f else 0f,
+        animationSpec = alphaSpec,
+        label = "oeBgWallpaperAlpha",
     )
+
+    val gradient = Brush.verticalGradient(listOf(animatedTop, animatedBg, animatedBottom))
     Box(modifier.fillMaxSize()) {
-        when (mode) {
-            OeAppBackgroundMode.Solid -> Box(Modifier.fillMaxSize().background(background))
-            OeAppBackgroundMode.Gradient -> Box(Modifier.fillMaxSize().background(gradient))
-            is OeAppBackgroundMode.Wallpaper -> {
-                val bitmap by rememberWallpaper(mode.uri)
-                val loaded = bitmap
-                if (loaded != null) {
-                    Image(
-                        bitmap = loaded,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                    // 文字可读性由壳层承担：壁纸之上盖一层页面底色。
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(background.copy(alpha = WALLPAPER_SCRIM_ALPHA)),
-                    )
-                } else {
-                    // 授权丢失/不是图片：退回渐变，不留一块透明空洞。
-                    Box(Modifier.fillMaxSize().background(gradient))
-                }
-            }
+        if (animatedTop == animatedBg && animatedBottom == animatedBg) {
+            Box(Modifier.fillMaxSize().background(animatedBg))
+        } else {
+            Box(Modifier.fillMaxSize().background(gradient))
+        }
+        if (activeBitmap != null && wallpaperAlpha > 0f) {
+            Image(
+                bitmap = activeBitmap,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = wallpaperAlpha },
+                contentScale = ContentScale.Crop,
+            )
+            // 文字可读性由壳层承担：壁纸之上盖一层页面底色 scrim。
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = wallpaperAlpha }
+                    .background(animatedBg.copy(alpha = OeAppBackgroundSpec.WALLPAPER_SCRIM_ALPHA)),
+            )
         }
     }
 }
 
-private const val WALLPAPER_SCRIM_ALPHA = 0.62f
+private const val MAX_WALLPAPER_CACHE_KB = 24 * 1024
 
 /** 壁纸解码上限：背景只需要屏幕尺寸，整张原图会白占几十 MB。 */
 private const val WALLPAPER_MAX_DIMENSION_PX = 1440
 
-@Composable
-private fun rememberWallpaper(uri: String) = LocalContext.current.let { context ->
-    produceState<ImageBitmap?>(initialValue = null, uri, context) {
-        value = withContext(Dispatchers.IO) { decodeWallpaper(context, uri) }
+private data class CachedWallpaper(
+    val image: ImageBitmap,
+    val sizeKb: Int,
+)
+
+private object WallpaperCache {
+    private val lru = object : LruCache<String, CachedWallpaper>(MAX_WALLPAPER_CACHE_KB) {
+        override fun sizeOf(key: String, value: CachedWallpaper): Int = value.sizeKb
+    }
+
+    fun get(uri: String): ImageBitmap? = lru.get(uri)?.image
+
+    fun put(uri: String, image: ImageBitmap) {
+        val sizeKb = (image.asAndroidBitmap().allocationByteCount / 1024).coerceAtLeast(1)
+        lru.put(uri, CachedWallpaper(image, sizeKb))
+    }
+
+    fun clear() {
+        lru.evictAll()
     }
 }
 
+@VisibleForTesting
+internal fun clearWallpaperCacheForTest() {
+    WallpaperCache.clear()
+}
+
+private sealed interface WallpaperLoadState {
+    data object Loading : WallpaperLoadState
+    data class Ready(val image: ImageBitmap) : WallpaperLoadState
+    data object Failed : WallpaperLoadState
+}
+
+@Composable
+private fun rememberWallpaper(uri: String): State<WallpaperLoadState> {
+    val context = LocalContext.current
+    val cached = remember(uri) { WallpaperCache.get(uri) }
+    val initial: WallpaperLoadState = if (cached != null) {
+        WallpaperLoadState.Ready(cached)
+    } else {
+        WallpaperLoadState.Loading
+    }
+    val state = remember(uri) { mutableStateOf(initial) }
+    LaunchedEffect(uri, context) {
+        if (cached != null) {
+            state.value = WallpaperLoadState.Ready(cached)
+        } else {
+            state.value = WallpaperLoadState.Loading
+            val decoded = withContext(Dispatchers.IO) { decodeWallpaper(context, uri) }
+            state.value = if (decoded != null) {
+                WallpaperCache.put(uri, decoded)
+                WallpaperLoadState.Ready(decoded)
+            } else {
+                WallpaperLoadState.Failed
+            }
+        }
+    }
+    return state
+}
+
 /**
- * 有界解码：先读边界算采样率，再按采样率解一次。授权失效或不是图片时
+ * 有界解码：先读边界算采样率，再按采样率解一次。授权失效、不是图片或内存不足时
  * 返回 null，由调用方退回渐变。
  */
 private fun decodeWallpaper(context: Context, uri: String): ImageBitmap? = try {
@@ -161,7 +276,10 @@ private fun decodeWallpaper(context: Context, uri: String): ImageBitmap? = try {
             BitmapFactory.decodeStream(stream, null, options)?.asImageBitmap()
         }
     }
-} catch (e: Exception) {
+} catch (_: Exception) {
     // 越权/损坏的 URI 不 crash 壳层：这是唯一允许的兜底，正常路径上不触发。
+    null
+} catch (_: OutOfMemoryError) {
+    WallpaperCache.clear()
     null
 }

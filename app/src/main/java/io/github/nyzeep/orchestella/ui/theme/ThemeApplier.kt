@@ -71,13 +71,18 @@ object ThemeApplier {
     private val dialogs = WeakHashMap<Dialog, RootBinding>()
     private var registration: Registration? = null
 
+    @JvmStatic
+    internal fun isComposeOnlyHost(activity: Activity): Boolean =
+        activity is io.github.nyzeep.orchestella.MainActivity ||
+            activity is io.github.nyzeep.orchestella.ConnectionPagesActivity
+
     /** Safe to call repeatedly. Uses only application context and existing appearance preferences. */
     @JvmStatic
     fun install(context: Context) {
-        if (registration != null) return
         val app = context.applicationContext as? Application ?: return
+        if (registration?.app === app) return
         registration = Registration(app).also { it.start() }
-        if (context is Activity) {
+        if (context is Activity && !isComposeOnlyHost(context)) {
             val reference = WeakReference(context)
             main.post { reference.get()?.takeUnless { it.isDestroyed }?.let(::bind) }
         }
@@ -94,6 +99,7 @@ object ThemeApplier {
     @JvmStatic
     fun bind(activity: Activity) {
         install(activity)
+        if (isComposeOnlyHost(activity)) return
         registration?.bind(activity)
     }
 
@@ -207,7 +213,7 @@ object ThemeApplier {
         }
 
         fun bind(activity: Activity) {
-            if (activity.isDestroyed) return
+            if (activity.isDestroyed || isComposeOnlyHost(activity)) return
             // Live changes only repaint: changing the delegate here would recreate in-flight editors/wizards.
             val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
             val theme = store.resolve(app)

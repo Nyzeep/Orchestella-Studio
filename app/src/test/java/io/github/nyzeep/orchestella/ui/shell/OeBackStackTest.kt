@@ -94,4 +94,102 @@ class OeBackStackTest {
         assertEquals("a", stack[0].key)
         assertEquals("b", stack[1].key)
     }
+
+    @Test
+    fun transitionIdIsMonotonicAndUnchangedOnEmptyNoOps() {
+        val stack = OeBackStack()
+        assertEquals(0L, stack.transition.transitionId)
+        assertFalse(stack.pop())
+        assertEquals(0L, stack.transition.transitionId)
+        stack.popAll()
+        assertEquals(0L, stack.transition.transitionId)
+
+        stack.push(destination("a"))
+        val t1 = stack.transition.transitionId
+        assertEquals(StackFlight.Push, stack.transition.flight)
+        assertEquals(0f, stack.transition.startProgress, 0.0001f)
+        assertEquals(-1, stack.transition.underIndex)
+
+        stack.push(destination("b"))
+        val t2 = stack.transition.transitionId
+        assertTrue(t2 > t1)
+        assertEquals(0, stack.transition.underIndex)
+
+        assertTrue(stack.pop())
+        val t3 = stack.transition.transitionId
+        assertTrue(t3 > t2)
+        assertEquals(StackFlight.Pop, stack.transition.flight)
+        assertEquals(1f, stack.transition.startProgress, 0.0001f)
+        assertEquals("b", stack.transition.leaving?.destination?.key)
+    }
+
+    @Test
+    fun popAllProducesInstantResetWithoutPopFlight() {
+        val stack = OeBackStack()
+        stack.push(destination("a"))
+        stack.push(destination("b"))
+        val before = stack.transition.transitionId
+        stack.popAll()
+        assertTrue(stack.transition.transitionId > before)
+        assertEquals(StackFlight.None, stack.transition.flight)
+        assertNull(stack.transition.leaving)
+        assertEquals(0, stack.size)
+        assertEquals(-1, stack.transition.underIndex)
+    }
+
+    @Test
+    fun settleTransitionClearsFlightWithoutBumpingTransitionIdAndIgnoresStaleIds() {
+        val stack = OeBackStack()
+        stack.push(destination("a"))
+        stack.push(destination("b"))
+        val pushId = stack.transition.transitionId
+        stack.settleTransition(pushId - 1)
+        assertEquals(StackFlight.Push, stack.transition.flight)
+
+        stack.settleTransition(pushId)
+        assertEquals(pushId, stack.transition.transitionId)
+        assertEquals(StackFlight.None, stack.transition.flight)
+
+        assertTrue(stack.pop())
+        val popId = stack.transition.transitionId
+        stack.settleTransition(popId)
+        assertEquals(popId, stack.transition.transitionId)
+        assertEquals(StackFlight.None, stack.transition.flight)
+        assertNull(stack.transition.leaving)
+        assertEquals(1, stack.size)
+    }
+
+    @Test
+    fun popFollowedByPushInSameDepthChangesTransitionIdAndEntryIds() {
+        val stack = OeBackStack()
+        stack.push(destination("a"))
+        val firstId = stack.transition.entries.single().id
+        val t1 = stack.transition.transitionId
+        assertTrue(stack.pop())
+        stack.push(destination("a"))
+        val secondId = stack.transition.entries.single().id
+        val t2 = stack.transition.transitionId
+        assertTrue(t2 > t1)
+        assertTrue(secondId > firstId)
+        assertEquals(1, stack.size)
+    }
+
+    @Test
+    fun popFromProgressClampsStartProgressAndContainsKeyOrLeavingTracksLeavingEntry() {
+        val stack = OeBackStack()
+        stack.push(destination("theme-studio"))
+        assertTrue(stack.containsKeyOrLeaving("theme-studio"))
+        assertTrue(stack.popFromProgress(0.65f))
+        assertEquals(0.65f, stack.transition.startProgress, 0.0001f)
+        assertTrue(stack.containsKeyOrLeaving("theme-studio"))
+        stack.settleTransition(stack.transition.transitionId)
+        assertFalse(stack.containsKeyOrLeaving("theme-studio"))
+
+        stack.push(destination("x"))
+        assertTrue(stack.popFromProgress(1.5f))
+        assertEquals(1f, stack.transition.startProgress, 0.0001f)
+        stack.push(destination("y"))
+        assertTrue(stack.popFromProgress(-0.5f))
+        assertEquals(0f, stack.transition.startProgress, 0.0001f)
+    }
 }

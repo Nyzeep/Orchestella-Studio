@@ -46,7 +46,7 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         return ThemeCatalog.migratedId(stored) ?: ThemeCatalog.resolve(stored).id
     }
 
-    /** Choosing a labeled light/dark preset also selects its mode, atomically with its colors. */
+    /** Choosing a preset updates theme_id while preserving Mode.SYSTEM for paired families. */
     fun setThemeId(id: String) {
         // A legacy id is stored under its current name, never re-persisted as obsolete.
         val theme = ThemeCatalog.byId(ThemeCatalog.migratedId(id) ?: id)
@@ -58,9 +58,18 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
                 .remove(KEY_CUSTOM_ACCENT).remove(KEY_CUSTOM_TEXT).apply()
             return
         }
-        prefs.edit().putString(KEY_THEME_ID, theme.id)
-            .putString(KEY_THEME_MODE, modeForTheme(theme).value)
-            .remove(KEY_CUSTOM_ACCENT).remove(KEY_CUSTOM_TEXT).apply()
+        prefs.edit().apply {
+            putString(KEY_THEME_ID, theme.id)
+            val storedMode = prefs.getString(KEY_THEME_MODE, null)
+            when {
+                theme.isFixed -> putString(KEY_THEME_MODE, Mode.FIXED.value)
+                storedMode == Mode.FIXED.value -> remove(KEY_THEME_MODE)
+                mode() != Mode.SYSTEM && mode() != Mode.FIXED ->
+                    putString(KEY_THEME_MODE, modeForTheme(theme).value)
+            }
+            remove(KEY_CUSTOM_ACCENT)
+            remove(KEY_CUSTOM_TEXT)
+        }.apply()
     }
 
     /** A fixed palette pins its own brightness; every other preset pins the mode that matches its look. */

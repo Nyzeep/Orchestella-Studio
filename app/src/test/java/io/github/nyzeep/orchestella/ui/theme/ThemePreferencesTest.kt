@@ -28,6 +28,7 @@ class ThemePreferencesTest {
         val system = ModeContext(isDark = true)
         val activity = ModeContext(isDark = false, system = system)
         store.setThemeId(ThemeCatalog.claudeLight.id)
+        store.setMode(ThemeStore.Mode.LIGHT)
         store.setTerminalFontSizeSp(18)
         store.setCustomAccent(0xFF123456.toInt())
         assertFalse(store.resolve(activity).isDark)
@@ -41,9 +42,18 @@ class ThemePreferencesTest {
         assertEquals(0, activity.resourceReads)
     }
 
-    @Test fun selectingLightPresetOverridesDarkSystemForTerminalAndPageActions() {
+    @Test fun selectingPairedPresetPreservesSystemModeAndResolvesFamilyDynamically() {
+        val store = ThemeStore(FakeSharedPreferences())
+        store.setThemeId(ThemeCatalog.github.id)
+        assertEquals(ThemeStore.Mode.SYSTEM, store.mode())
+        assertEquals(ThemeCatalog.githubLight, store.resolveForMode(false))
+        assertEquals(ThemeCatalog.github, store.resolveForMode(true))
+    }
+
+    @Test fun selectingLightModeOverridesDarkSystemForTerminalAndPageActions() {
         val store = ThemeStore(FakeSharedPreferences())
         store.setThemeId(ThemeCatalog.constructivistAmberLight.id)
+        store.setMode(ThemeStore.Mode.LIGHT)
         val resolved = store.resolveForMode(true)
         assertEquals("selected light terminal survives a dark system", ThemeCatalog.constructivistAmberLight.terminalBackground,
             resolved.terminalBackground)
@@ -52,9 +62,10 @@ class ThemePreferencesTest {
         assertFalse(resolved.isDark)
     }
 
-    @Test fun selectingDarkPresetOverridesLightSystemAndPreservesItsAnsiPalette() {
+    @Test fun selectingDarkModeOverridesLightSystemAndPreservesItsAnsiPalette() {
         val store = ThemeStore(FakeSharedPreferences())
         store.setThemeId(ThemeCatalog.github.id)
+        store.setMode(ThemeStore.Mode.DARK)
         val resolved = store.resolveForMode(false)
         assertEquals(ThemeCatalog.github.terminalBackground, resolved.terminalBackground)
         assertEquals(ThemeCatalog.github.primary, resolved.primary)
@@ -77,20 +88,18 @@ class ThemePreferencesTest {
         assertEquals(ThemeCatalog.github.id, store.themeId())
     }
 
-    @Test fun everyPresetCanOverrideEitherSystemModeAndReturnToFollowingSystem() {
+    @Test fun everyPresetPreservesSystemModeWhenPairedAndCanOverrideEitherSystemMode() {
         for (preset in ThemeCatalog.all) {
             val prefs = FakeSharedPreferences()
             val store = ThemeStore(prefs)
             store.setThemeId(preset.id)
-            assertEquals(preset, store.resolveForMode(true))
-            assertEquals(preset, store.resolveForMode(false))
-            // A fixed palette pins its own brightness instead of LIGHT/DARK.
-            val expectedMode = when {
-                preset.isFixed -> ThemeStore.Mode.FIXED
-                preset.isDark -> ThemeStore.Mode.DARK
-                else -> ThemeStore.Mode.LIGHT
-            }
+            val expectedMode = if (preset.isFixed) ThemeStore.Mode.FIXED else ThemeStore.Mode.SYSTEM
             assertEquals(expectedMode, store.mode())
+            for (systemDark in listOf(false, true)) {
+                assertEquals(ThemeCatalog.resolveForMode(preset.id, systemDark), store.resolveForMode(systemDark))
+            }
+            val pinnedMode = if (preset.isFixed) ThemeStore.Mode.FIXED else if (preset.isDark) ThemeStore.Mode.DARK else ThemeStore.Mode.LIGHT
+            store.setMode(pinnedMode)
             val restored = ThemeStore(prefs)
             assertEquals(preset, restored.resolveForMode(!preset.isDark))
             restored.setMode(ThemeStore.Mode.SYSTEM)
@@ -99,6 +108,26 @@ class ThemePreferencesTest {
             }
             assertEquals(preset.id, restored.themeId())
         }
+    }
+
+    @Test fun setThemeIdPreservesBackgroundUriPureBlackAndSurfaceOpacity() {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString(ThemeStore.KEY_THEME_MODE, ThemeStore.Mode.FIXED.value).apply()
+        val store = ThemeStore(prefs)
+        store.setBackgroundUri("content://test/wallpapers/1")
+        store.setUiPureBlack(true)
+        store.setUiSurfaceOpacityPercent(75)
+        store.setCustomAccent(0xFF123456.toInt())
+        store.setCustomText(0xFFEEDDCC.toInt())
+
+        store.setThemeId(ThemeCatalog.github.id)
+
+        assertEquals(ThemeStore.Mode.SYSTEM, store.mode())
+        assertEquals("content://test/wallpapers/1", store.backgroundUri())
+        assertTrue(store.uiPureBlack())
+        assertEquals(75, store.uiSurfaceOpacityPercent())
+        assertNull(store.customAccent())
+        assertNull(store.customText())
     }
 
     @Test fun changingOnlyModePreservesCustomColorsWallpaperTypographyAndInstancePreferences() {

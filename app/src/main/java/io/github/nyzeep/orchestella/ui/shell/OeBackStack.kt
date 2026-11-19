@@ -2,25 +2,23 @@ package io.github.nyzeep.orchestella.ui.shell
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
 import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 
@@ -38,52 +36,113 @@ data class OeDestination(
     val content: @Composable () -> Unit,
 )
 
+internal data class StackEntry(
+    val id: Long,
+    val destination: OeDestination,
+)
+
+internal enum class StackFlight { None, Push, Pop }
+
+@Immutable
+internal data class StackTransition(
+    val transitionId: Long = 0L,
+    val entries: List<StackEntry> = emptyList(),
+    val flight: StackFlight = StackFlight.None,
+    val leaving: StackEntry? = null,
+    val underIndex: Int = -1,
+    val startProgress: Float = 0f,
+)
+
 /**
  * 可返回的页面栈（工单 UI-03 实施要点 1·方案 B）。
  *
- * 方案 B 的取舍：不引入 androidx.navigation / Fragment / 多 Activity，与
- * 单 Activity Compose 壳零依赖冲突。栈只承载**推入的二级目的地**；底层
- * 五页由 pager 表达，pop 到底即回 pager。状态放在 [androidx.compose.runtime]
- * 快照列表里，所以转场与重组共享同一真值，系统返回键（[OeBackStackHost]
- * 里的 `BackHandler`）与预测式返回手势通过返回派发器拿到同一份状态。
- *
- * 页面栈本身不处理恢复：目的地携带组合体，进程级恢复交给 Wave 4（UI-13）
- * 把栈提升进 `Oe3ShellController` 时一并解决（键已预留）。
+ * 状态以不可变的 [StackTransition] 快照保存，每一次 `push` / `pop` / `popAll`
+ * 递增单调 [StackTransition.transitionId]，避免组合期写 `MutableState`
+ * 或仅靠栈深猜测方向引发的首帧闪烁与残影。
  */
 class OeBackStack {
 
-    private val entries = mutableStateListOf<OeDestination>()
+    private var nextEntryId = 1L
+    private var nextTransitionId = 1L
+    private var transitionState by mutableStateOf(StackTransition())
+
+    internal val transition: StackTransition get() = transitionState
 
     /** 推入层数；0 表示停在 pager。 */
-    val size: Int get() = entries.size
+    val size: Int get() = transitionState.entries.size
 
     /** 是否还能 pop——返回派发器的 enabled 与它同源。 */
-    val canPop: Boolean get() = entries.isNotEmpty()
+    val canPop: Boolean get() = transitionState.entries.isNotEmpty()
 
     /** 栈顶目的地；空栈为 null（显示 pager）。 */
-    val top: OeDestination? get() = entries.lastOrNull()
+    val top: OeDestination? get() = transitionState.entries.lastOrNull()?.destination
 
     /** 位置访问：栈是位置语义，不是集合语义。 */
-    operator fun get(index: Int): OeDestination = entries[index]
+    operator fun get(index: Int): OeDestination = transitionState.entries[index].destination
 
     /** 推入一个二级目的地。 */
     fun push(destination: OeDestination) {
-        entries.add(destination)
+        val nextEntries = transitionState.entries + StackEntry(nextEntryId++, destination)
+        transitionState = StackTransition(
+            transitionId = nextTransitionId++,
+            entries = nextEntries,
+            flight = StackFlight.Push,
+            leaving = null,
+            underIndex = nextEntries.size - 2,
+            startProgress = 0f,
+        )
     }
 
     /**
      * 弹出栈顶。返回值即"本层是否消费了返回事件"：空栈返回 false，让
      * 宿主的上一层（tab 回工作站 / 系统退出）接管。
      */
-    fun pop(): Boolean {
-        if (entries.isEmpty()) return false
-        entries.removeAt(entries.lastIndex)
+    fun pop(): Boolean = popFromProgress(1f)
+
+    /**
+     * 从预测式返回手势的当前进度 [initialProgress]（1f = 未拉开，0f = 已滑出）
+     * 继续弹出动画，供 M3 `PredictiveBackHandler` 接线使用。
+     */
+    internal fun popFromProgress(initialProgress: Float): Boolean {
+        val current = transitionState.entries
+        if (current.isEmpty()) return false
+        val popped = current.last()
+        val nextEntries = current.dropLast(1)
+        transitionState = StackTransition(
+            transitionId = nextTransitionId++,
+            entries = nextEntries,
+            flight = StackFlight.Pop,
+            leaving = popped,
+            underIndex = nextEntries.size - 1,
+            startProgress = initialProgress.coerceIn(0f, 1f),
+        )
         return true
     }
 
-    /** 一次性清空（切换 dock tab 时走这里，不逐层播放返回动画）。 */
+    /** 一次性清空（切换 dock tab 时走这里，显式即时重置，不播放返回动画）。 */
     fun popAll() {
-        entries.clear()
+        if (transitionState.entries.isEmpty() && transitionState.flight == StackFlight.None) return
+        transitionState = StackTransition(
+            transitionId = nextTransitionId++,
+            entries = emptyList(),
+            flight = StackFlight.None,
+            leaving = null,
+            underIndex = -1,
+            startProgress = 0f,
+        )
+    }
+
+    internal fun settleTransition(transitionId: Long) {
+        val current = transitionState
+        if (current.transitionId == transitionId && current.flight != StackFlight.None) {
+            transitionState = current.copy(flight = StackFlight.None, leaving = null)
+        }
+    }
+
+    internal fun containsKeyOrLeaving(key: String): Boolean {
+        val current = transitionState
+        return current.entries.any { it.destination.key == key } ||
+            current.leaving?.destination?.key == key
     }
 }
 
@@ -126,30 +185,34 @@ object OeBackStackTransitionSpec {
         OeMotion.PAGE_PUSH_UNDER_DIM * progress
 }
 
-/** 飞行相位：push/pop 转场进行中；None = 已落位（渲染沿用落位布局）。 */
-private enum class StackFlight { None, Push, Pop }
+private enum class LayerRole { RestTop, Under, Moving }
+
+private const val BASE_STATE_KEY = "oe-backstack-base"
 
 /**
  * 栈宿主：底层 pager 与推入目的地共同的可视容器，同时是系统返回键的
  * 拦截点（[BackHandler] 与 [OeBackStack.canPop] 同源，预测式返回手势经
  * 返回派发器同样落到 [OeBackStack.pop]）。
- *
- * 转场（v4 spec §1.5，UI-03 交付 2）：push 用 [Oe3ThemeValues.motion.pagePushSpring]
- * —— spring(300ms, bounce 0)，初速 9×距离/s；同时前一层缩至 80% 并压暗
- * 15%（[OeBackStackTransitionSpec]）。pop 反向播放同一几何。减动效下
- * `pagePushSpring == null`：进度直接落到终态，无任何中间帧（motion.md 红线）。
- *
- * [base] 是 pager；背景层（壁纸/渐变）不进本组件——玻璃要采样的背景
- * 必须保持不缩放、不压暗（[Oe3App] 把本组件放在背景层之上、坞之下）。
- *
- * 实现注记：转场布局由 (飞行相位, 栈深, 进度) 纯派生，相位在组合期同步
- * 写入快照（用"上一帧栈深/栈顶"的 remember 模式），中途重组不闪帧；中断
- * 中的转场以最新栈深为准重新起跳，动效不阻塞输入（motion.md 规则 5）。
  */
 @Composable
 fun OeBackStackHost(
     backStack: OeBackStack,
     modifier: Modifier = Modifier,
+    base: @Composable () -> Unit,
+) {
+    OeBackStackHost(
+        backStack = backStack,
+        modifier = modifier,
+        gestureProgress = null,
+        base = base,
+    )
+}
+
+@Composable
+internal fun OeBackStackHost(
+    backStack: OeBackStack,
+    modifier: Modifier = Modifier,
+    gestureProgress: Float? = null,
     base: @Composable () -> Unit,
 ) {
     val motion = Oe3ThemeValues.motion
@@ -159,146 +222,161 @@ fun OeBackStackHost(
         backStack.pop()
     }
 
-    val depth = backStack.size
-    val currentTop = backStack.top
-
-    // "上一帧"记忆：方向判定与离场层的身份都从这里来，组合期同步可得。
-    val previousDepth = remember { mutableIntStateOf(depth) }
-    val lastTop = remember { mutableStateOf<OeDestination?>(null) }
-    val flight = remember { mutableStateOf(StackFlight.None) }
-    val leaving = remember { mutableStateOf<OeDestination?>(null) }
-    // 其下一层的栈下标；-1 表示 pager 充当其下一层。
-    val underIndex = remember { mutableIntStateOf(-1) }
-
-    when {
-        depth > previousDepth.intValue -> {
-            flight.value = StackFlight.Push
-            leaving.value = null
-            underIndex.intValue = if (depth >= 2) depth - 2 else -1
-        }
-        depth < previousDepth.intValue && previousDepth.intValue > 0 -> {
-            flight.value = StackFlight.Pop
-            leaving.value = lastTop.value
-            underIndex.intValue = if (depth >= 1) depth - 1 else -1
-        }
+    val transition = backStack.transition
+    val stateHolder = rememberSaveableStateHolder()
+    val trackedIds = remember { mutableSetOf<Long>() }
+    val activeEntryIds = remember(transition.entries, transition.leaving) {
+        transition.entries.map { it.id } + listOfNotNull(transition.leaving?.id)
     }
-    SideEffect {
-        previousDepth.intValue = depth
-        lastTop.value = currentTop
+    LaunchedEffect(activeEntryIds) {
+        val activeSet = activeEntryIds.toSet()
+        val retired = trackedIds.filter { it !in activeSet }
+        retired.forEach { stateHolder.removeState(it) }
+        trackedIds.removeAll(retired.toSet())
+        trackedIds.addAll(activeSet)
     }
 
-    val progress = remember { Animatable(0f) }
-    LaunchedEffect(depth) {
-        when (flight.value) {
+    val animatable = remember { Animatable(0f) }
+    val activeAnimId = remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(transition.transitionId, pushSpring) {
+        when (transition.flight) {
+            StackFlight.None -> {
+                animatable.snapTo(if (transition.entries.isEmpty()) 0f else 1f)
+                activeAnimId.longValue = transition.transitionId
+            }
             StackFlight.Push -> {
                 if (pushSpring == null) {
-                    progress.snapTo(1f)
+                    animatable.snapTo(1f)
+                    activeAnimId.longValue = transition.transitionId
+                    backStack.settleTransition(transition.transitionId)
                 } else {
-                    progress.snapTo(0f)
-                    progress.animateTo(
+                    animatable.snapTo(transition.startProgress)
+                    activeAnimId.longValue = transition.transitionId
+                    animatable.animateTo(
                         targetValue = 1f,
                         animationSpec = pushSpring,
                         initialVelocity = OeBackStackTransitionSpec.initialVelocity(),
                     )
+                    backStack.settleTransition(transition.transitionId)
                 }
-                flight.value = StackFlight.None
             }
             StackFlight.Pop -> {
                 if (pushSpring == null) {
-                    progress.snapTo(0f)
+                    animatable.snapTo(0f)
+                    activeAnimId.longValue = transition.transitionId
+                    backStack.settleTransition(transition.transitionId)
                 } else {
-                    progress.snapTo(1f)
-                    progress.animateTo(targetValue = 0f, animationSpec = pushSpring)
+                    animatable.snapTo(transition.startProgress)
+                    activeAnimId.longValue = transition.transitionId
+                    animatable.animateTo(targetValue = 0f, animationSpec = pushSpring)
+                    backStack.settleTransition(transition.transitionId)
                 }
-                flight.value = StackFlight.None
-                leaving.value = null
             }
-            StackFlight.None -> Unit
         }
     }
 
-    BoxWithConstraints(modifier.fillMaxSize()) {
-        val density = LocalDensity.current
-        val pageWidthPx = with(density) { maxWidth.toPx() }
-        val p = progress.value
-        val underScale = OeBackStackTransitionSpec.underScale(p)
-        val underDim = OeBackStackTransitionSpec.underDim(p)
-        val movingOffset = OeBackStackTransitionSpec.movingOffsetPx(pageWidthPx, p)
+    val clampedGesture = gestureProgress?.coerceIn(0f, 1f)
+    val isScrubbing = clampedGesture != null &&
+        transition.flight == StackFlight.None &&
+        transition.entries.isNotEmpty()
 
-        // 渲染序：base → 更深的目的地（静态层叠态）→ 其下一层（随进度）→ 移动层。
-        // 栈静止（有目的地且动画已落定）时不渲染 base 与更深层：v4 页面体是
-        // 透明的（背景层在栈宿主之后统一供给），若静止态仍垫着上一页，透明
-        // 页体透出的会是栈下内容而不是背景层（UI-12 真机走查抓到的残影）。
-        // 转场期间照常渲染——被压暗缩放的下一层正是栈转场的观感来源。
-        val stackIdle = depth > 0 && flight.value == StackFlight.None && p >= 1f
-        Box(Modifier.fillMaxSize()) {
-            if (!stackIdle) {
-                if (underIndex.intValue == -1) {
-                    UnderLayer(scale = underScale, dim = underDim) { base() }
-                } else {
-                    StaticLayer { base() }
-                    for (index in 0 until underIndex.intValue) {
-                        StaticLayer { backStack[index].content() }
-                    }
-                    UnderLayer(scale = underScale, dim = underDim) {
-                        backStack[underIndex.intValue].content()
-                    }
-                }
+    val effectiveProgress: () -> Float = {
+        when {
+            isScrubbing -> 1f - clampedGesture!!
+            transition.flight == StackFlight.None -> if (transition.entries.isEmpty()) 0f else 1f
+            pushSpring == null -> if (transition.flight == StackFlight.Push) 1f else 0f
+            activeAnimId.longValue != transition.transitionId -> transition.startProgress
+            else -> animatable.value
+        }
+    }
+
+    val stackIdle = transition.entries.isNotEmpty() &&
+        (transition.flight == StackFlight.None || pushSpring == null) &&
+        !isScrubbing
+    val activeUnderIndex = if (isScrubbing) transition.entries.size - 2 else transition.underIndex
+
+    val visibleEntries: List<Pair<StackEntry, LayerRole>> = when {
+        stackIdle -> listOf(transition.entries.last() to LayerRole.RestTop)
+        isScrubbing -> buildList {
+            if (activeUnderIndex >= 0) {
+                add(transition.entries[activeUnderIndex] to LayerRole.Under)
             }
-            val movingDestination = when (flight.value) {
-                StackFlight.Push -> currentTop
-                StackFlight.Pop -> leaving.value
-                StackFlight.None -> if (p >= 1f) currentTop else null
+            add(transition.entries.last() to LayerRole.Moving)
+        }
+        transition.flight == StackFlight.Push && transition.entries.isNotEmpty() -> buildList {
+            if (activeUnderIndex >= 0) {
+                add(transition.entries[activeUnderIndex] to LayerRole.Under)
             }
-            if (movingDestination != null) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { translationX = movingOffset },
-                ) {
-                    movingDestination.content()
+            add(transition.entries.last() to LayerRole.Moving)
+        }
+        transition.flight == StackFlight.Pop -> buildList {
+            if (activeUnderIndex >= 0 && activeUnderIndex < transition.entries.size) {
+                add(transition.entries[activeUnderIndex] to LayerRole.Under)
+            }
+            if (pushSpring != null) {
+                transition.leaving?.let { add(it to LayerRole.Moving) }
+            }
+        }
+        else -> emptyList()
+    }
+
+    Box(modifier.fillMaxSize()) {
+        if (!stackIdle && activeUnderIndex == -1) {
+            stateHolder.SaveableStateProvider(key = BASE_STATE_KEY) {
+                StackLayer(role = LayerRole.Under, progress = effectiveProgress, content = base)
+            }
+        }
+        for ((entry, role) in visibleEntries) {
+            key(entry.id) {
+                stateHolder.SaveableStateProvider(key = entry.id) {
+                    StackLayer(
+                        role = role,
+                        progress = effectiveProgress,
+                        content = entry.destination.content,
+                    )
                 }
             }
         }
     }
 }
 
-/** 其下一层：随进度缩放并压暗（压暗是层内的黑纱，不遮到别的层）。 */
 @Composable
-private fun UnderLayer(scale: Float, dim: Float, content: @Composable () -> Unit) {
-    // 静止在 pager 态（scale 1 / 无压暗）时不包 graphicsLayer：空栈路径与
-    // 既有壳层逐像素一致，golden 不因栈宿主的存在而漂移。
-    if (scale >= 1f && dim <= 0f) {
-        content()
-        return
-    }
-    Box(Modifier.fillMaxSize().graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }) {
-        content()
-        if (dim > 0f) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim)))
-        }
-    }
-}
-
-/** 更深的目的地：固定在层叠终态（0.8 缩放 + 15% 压暗），被其上层覆盖。 */
-@Composable
-private fun StaticLayer(content: @Composable () -> Unit) {
+private fun StackLayer(
+    role: LayerRole,
+    progress: () -> Float,
+    content: @Composable () -> Unit,
+) {
     Box(
-        Modifier
+        modifier = Modifier
             .fillMaxSize()
             .graphicsLayer {
-                scaleX = OeMotion.PAGE_PUSH_UNDER_SCALE
-                scaleY = OeMotion.PAGE_PUSH_UNDER_SCALE
+                val p = progress()
+                when (role) {
+                    LayerRole.RestTop -> Unit
+                    LayerRole.Under -> {
+                        val s = OeBackStackTransitionSpec.underScale(p)
+                        scaleX = s
+                        scaleY = s
+                    }
+                    LayerRole.Moving -> {
+                        translationX = OeBackStackTransitionSpec.movingOffsetPx(size.width, p)
+                    }
+                }
             },
     ) {
         content()
         Box(
-            Modifier
+            modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = OeMotion.PAGE_PUSH_UNDER_DIM)),
+                .drawBehind {
+                    if (role == LayerRole.Under) {
+                        val dim = OeBackStackTransitionSpec.underDim(progress())
+                        if (dim > 0f) {
+                            drawRect(Color.Black.copy(alpha = dim))
+                        }
+                    }
+                },
         )
     }
 }

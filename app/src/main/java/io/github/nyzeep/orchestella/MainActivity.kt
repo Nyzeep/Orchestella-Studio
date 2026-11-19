@@ -20,9 +20,12 @@ import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -89,6 +92,7 @@ import io.github.nyzeep.orchestella.ui.screens.instances.InstancesUiState
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemeAccentScreen
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemeBackgroundScreen
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemePresetScreen
+import io.github.nyzeep.orchestella.ui.screens.theme.ThemeStudioHandle
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemeStudioScreen
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemeTerminalScreen
 import io.github.nyzeep.orchestella.ui.screens.theme.rememberThemeStudioHandle
@@ -108,6 +112,8 @@ import java.io.IOException
 import java.time.Clock
 import java.util.concurrent.Executors
 import java.util.function.BooleanSupplier
+
+private val LocalMainThemeStudioHandle = staticCompositionLocalOf<ThemeStudioHandle?> { null }
 
 /**
  * Oe3 shell host (ticket UI3-12): the Activity owns the Compose host, the
@@ -429,11 +435,26 @@ class MainActivity : AppCompatActivity() {
         oe3BackStack = backStack
         refreshOe3ShellSnapshot()
 
+        val initialTheme = oe3ThemeState.value ?: themeStore.resolve()
+        val initialPureBlack = initialTheme.isDark && themeStore.uiPureBlack()
         val composeView = ComposeView(this).apply {
-            setBackgroundColor(themeStore.resolve().background)
+            setBackgroundColor(if (initialPureBlack) android.graphics.Color.BLACK else initialTheme.background)
             setContent {
                 val theme = oe3ThemeState.value ?: themeStore.resolve()
                 val prefs = oe3PrefsState.value
+                val oe3Pages = remember { buildOe3Pages() }
+                val onTabSelected = remember(controller) { controller::select }
+                val themeStudioHandle = if (backStack.containsKeyOrLeaving(THEME_STUDIO_DESTINATION_KEY)) {
+                    rememberThemeStudioHandle(themeStore)
+                } else {
+                    null
+                }
+                DisposableEffect(theme.isDark) {
+                    val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                    insetsController.isAppearanceLightStatusBars = !theme.isDark
+                    insetsController.isAppearanceLightNavigationBars = !theme.isDark
+                    onDispose {}
+                }
                 // UI-06 玻璃闸运行期信号：低内存设备与设备档位缓存经 CompositionLocal
                 // 下发（预览/测试默认不降档）。「始终」模式绕过降档缓存——用户显式
                 // 意志优先于性能门，硬闸（省电/低内存/API）仍在策略层生效。
@@ -446,14 +467,15 @@ class MainActivity : AppCompatActivity() {
                 CompositionLocalProvider(
                     LocalOe3GlassLowRam provides oe3GlassLowRamDevice,
                     LocalOe3GlassDeviceCap provides effectiveCap,
+                    LocalMainThemeStudioHandle provides themeStudioHandle,
                 ) {
                     Oe3App(
                         selectedTab = controller.selectedTab,
-                        onTabSelected = { tab -> controller.select(tab) },
+                        onTabSelected = onTabSelected,
                         theme = theme,
                         textScale = prefs.textScale,
                         reduceMotion = prefs.reduceMotion,
-                        pureBlack = prefs.pureBlack,
+                        pureBlack = theme.isDark && prefs.pureBlack,
                         glassLevel = prefs.glassLevel,
                         glassEnabled = prefs.glassEnabled,
                         navStyle = prefs.navStyle,
@@ -462,7 +484,7 @@ class MainActivity : AppCompatActivity() {
                         surfaceAlpha = prefs.surfaceAlpha,
                         backgroundUri = prefs.backgroundUri,
                         backStack = backStack,
-                        pages = buildOe3Pages(),
+                        pages = oe3Pages,
                     )
                 }
             }
@@ -508,7 +530,8 @@ class MainActivity : AppCompatActivity() {
 
     /** 壳层快照：主题与 Theme Studio 呈现偏好的唯一读取点（含运行时呈现量）。 */
     private fun refreshOe3ShellSnapshot() {
-        oe3ThemeState.value = themeStore.resolve()
+        val resolvedTheme = themeStore.resolve()
+        oe3ThemeState.value = resolvedTheme
         // UI3-10 玻璃层的运行时闸：动效被系统关闭或省电模式时退到实色 scrim 面。
         val animatorsEnabled = android.animation.ValueAnimator.areAnimatorsEnabled()
         val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -517,7 +540,7 @@ class MainActivity : AppCompatActivity() {
         val glassMode = GlassMode.fromKey(themeStore.uiGlassMode())
         oe3GlassDeviceCapState.value = GlassDeviceCap.fromKey(themeStore.uiGlassDeviceCap())
         oe3PrefsState.value = Oe3ShellPrefs(
-            pureBlack = themeStore.uiPureBlack(),
+            pureBlack = resolvedTheme.isDark && themeStore.uiPureBlack(),
             glassLevel = Oe3GlassStrategy.resolveLevel(
                 mode = glassMode,
                 chosenLevelKey = themeStore.uiGlassLevelKeyOrNull(),
@@ -630,7 +653,7 @@ class MainActivity : AppCompatActivity() {
         val stack = requireNotNull(LocalOeBackStack.current) {
             "theme studio must run inside the shell back stack"
         }
-        val handle = rememberThemeStudioHandle(themeStore)
+        val handle = LocalMainThemeStudioHandle.current ?: rememberThemeStudioHandle(themeStore)
         ThemeStudioScreen(
             state = handle.state,
             onEvent = handle.onEvent,
@@ -654,7 +677,7 @@ class MainActivity : AppCompatActivity() {
         val stack = requireNotNull(LocalOeBackStack.current) {
             "theme studio pages must run inside the shell back stack"
         }
-        val handle = rememberThemeStudioHandle(themeStore)
+        val handle = LocalMainThemeStudioHandle.current ?: rememberThemeStudioHandle(themeStore)
         val onBack: () -> Unit = { stack.pop() }
         when (page) {
             ThemeStudioPage.Presets -> ThemePresetScreen(

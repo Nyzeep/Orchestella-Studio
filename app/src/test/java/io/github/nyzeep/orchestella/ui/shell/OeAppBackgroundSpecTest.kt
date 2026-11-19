@@ -51,4 +51,10 @@ class OeAppBackgroundSpecTest {
         assertEquals(0.55f, OeAppBackgroundSpec.surfaceAlpha(10), 0.0001f)
         assertEquals(1f, OeAppBackgroundSpec.surfaceAlpha(120), 0.0001f)
     }
+
+    @Test
+    fun wallpaperScrimAlphaIsSoftenedBelowHalfOpaque() {
+        assertTrue(OeAppBackgroundSpec.WALLPAPER_SCRIM_ALPHA <= 0.50f)
+        assertTrue(OeAppBackgroundSpec.WALLPAPER_SCRIM_ALPHA >= 0.35f)
+    }
 }

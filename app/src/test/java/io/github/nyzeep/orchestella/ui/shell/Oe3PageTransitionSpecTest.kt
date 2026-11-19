@@ -52,4 +52,11 @@ class Oe3PageTransitionSpecTest {
         assertEquals(-100, Oe3PageTransitionSpec.slideOffsetX(400, -1))
         assertEquals(0, Oe3PageTransitionSpec.slideOffsetX(400, 0))
     }
+
+    @Test
+    fun exitSlideOffsetXIsSymmetricOppositeOfEnterSlideOffsetX() {
+        assertEquals(-100, Oe3PageTransitionSpec.exitSlideOffsetX(400, 1))
+        assertEquals(100, Oe3PageTransitionSpec.exitSlideOffsetX(400, -1))
+        assertEquals(0, Oe3PageTransitionSpec.exitSlideOffsetX(400, 0))
+    }
 }

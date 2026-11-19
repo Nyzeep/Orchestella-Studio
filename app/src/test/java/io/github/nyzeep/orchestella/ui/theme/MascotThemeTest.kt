@@ -135,16 +135,19 @@ class MascotThemeTest {
         )
     }
 
-    /** Selecting either half pins that half's brightness, like every ordinary preset. */
-    @Test fun selectingMascotLightPinsLightModeAndSurvivesADarkSystem() {
+    /** Selecting either half preserves SYSTEM mode and resolves the paired variant dynamically. */
+    @Test fun selectingMascotLightPreservesSystemModeAndFollowsSystemBrightness() {
         val store = ThemeStore(FakeSharedPreferences())
         store.setThemeId(ThemeCatalog.mascotLight.id)
-        assertEquals(ThemeStore.Mode.LIGHT, store.mode())
+        assertEquals(ThemeStore.Mode.SYSTEM, store.mode())
+        assertEquals(ThemeCatalog.mascotLight, store.resolveForMode(false))
+        assertEquals(ThemeCatalog.mascotDark, store.resolveForMode(true))
+
+        store.setMode(ThemeStore.Mode.LIGHT)
         val resolved = store.resolveForMode(true)
         assertEquals(ThemeCatalog.mascotLight.id, resolved.id)
         assertFalse(resolved.isDark)
         assertEquals(ThemeCatalog.mascotLight, resolved)
-        assertEquals(ThemeCatalog.mascotLight, store.resolveForMode(false))
     }
 
     /** Pre-UI-14 users stored the old single-form id; the upgrade must not lose their theme. */
@@ -189,10 +192,12 @@ class MascotThemeTest {
         )
     }
 
-    /** Regression: FIXED must not leak into ordinary presets, which still pin DARK or LIGHT. */
-    @Test fun ordinaryPresetsStillPinTheirOwnBrightness() {
+    /** Regression: FIXED must not leak into ordinary presets, which preserve SYSTEM until explicitly pinned. */
+    @Test fun ordinaryPresetsPreserveSystemModeAndCanStillPinBrightnessExplicitly() {
         val store = ThemeStore(FakeSharedPreferences())
         store.setThemeId(ThemeCatalog.constructivistWorkstation.id)
+        assertEquals(ThemeStore.Mode.SYSTEM, store.mode())
+        store.setMode(ThemeStore.Mode.DARK)
         assertEquals(ThemeStore.Mode.DARK, store.mode())
         assertTrue(store.resolveForMode(false).isDark)
         store.setThemeId(ThemeCatalog.claudeLight.id)

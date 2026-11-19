@@ -24,11 +24,7 @@ class ThemeStudioControllerTest {
             assertEquals("readback id for ${preset.id}", preset.id, state.theme.id)
             assertEquals(preset, state.theme)
             assertEquals(preset.id, ThemeStore(prefs).themeId())
-            val expectedMode = when {
-                preset.isFixed -> ThemeStore.Mode.FIXED
-                preset.isDark -> ThemeStore.Mode.DARK
-                else -> ThemeStore.Mode.LIGHT
-            }
+            val expectedMode = if (preset.isFixed) ThemeStore.Mode.FIXED else ThemeStore.Mode.SYSTEM
             assertEquals("mode for ${preset.id}", expectedMode, state.mode)
         }
     }
@@ -45,17 +41,32 @@ class ThemeStudioControllerTest {
     }
 
     /**
-     * UI-14: the mascot became a paired family, so selecting it pins the picked
-     * half's brightness like every ordinary preset — no shipped palette reaches
-     * FIXED mode anymore.
+     * UI-14 + R3: the mascot is a paired family and selecting it from SYSTEM
+     * mode preserves SYSTEM mode instead of pinning LIGHT/DARK or FIXED.
      */
     @Test
-    fun selectingMascotLightPinsLightMode() {
+    fun selectingMascotLightPreservesSystemMode() {
         val controller = ThemeStudioController(store())
         val state = controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.mascotLight.id))
-        assertEquals(ThemeStore.Mode.LIGHT, state.mode)
+        assertEquals(ThemeStore.Mode.SYSTEM, state.mode)
         assertFalse(state.isFixedBrightness)
         assertEquals(ThemeCatalog.mascotLight, state.theme)
+    }
+
+    @Test
+    fun selectThemeInSystemModePreservesModeWallpaperPureBlackAndSurfaceOpacity() {
+        val prefs = FakeSharedPreferences()
+        val store = ThemeStore(prefs)
+        store.setBackgroundUri("content://test/wallpaper/99")
+        store.setUiPureBlack(true)
+        store.setUiSurfaceOpacityPercent(65)
+        val controller = ThemeStudioController(store)
+
+        val state = controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.github.id))
+        assertEquals(ThemeStore.Mode.SYSTEM, state.mode)
+        assertEquals("content://test/wallpaper/99", state.backgroundUri)
+        assertTrue(state.pureBlack)
+        assertEquals(65, state.surfaceOpacityPercent)
     }
 
     @Test

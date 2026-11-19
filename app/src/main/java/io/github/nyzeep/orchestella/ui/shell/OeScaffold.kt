@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -130,7 +131,7 @@ fun OeScaffold(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val collapsePx = with(LocalDensity.current) { Oe3Spacing.sm.toPx() }
-    var offset by remember { mutableFloatStateOf(0f) }
+    var offset by rememberSaveable { mutableFloatStateOf(0f) }
     val scrollConnection = remember(collapsePx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {

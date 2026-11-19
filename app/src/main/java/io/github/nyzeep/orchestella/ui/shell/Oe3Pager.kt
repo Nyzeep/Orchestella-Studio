@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
@@ -20,7 +21,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -67,15 +70,18 @@ object Oe3PageTransitionSpec {
     /** Start offset of the entering page, toward the direction of travel. */
     fun slideOffsetX(pageWidth: Int, direction: Int): Int =
         (pageWidth * SLIDE_DISTANCE_FRACTION).toInt() * direction
+
+    /** Exit offset of the leaving page, moving away from the entering page. */
+    fun exitSlideOffsetX(pageWidth: Int, direction: Int): Int =
+        -slideOffsetX(pageWidth, direction)
 }
 
 /**
  * Page container (ticket UI3-02 §4, motion per spec §2.5): the entering page
  * fades on the pageFade curve and slides in from the direction of the tab
- * change on the pageSlide curve; the leaving page keeps the plain fade-out, so
- * the existing fade semantics are preserved rather than stacked twice. No
- * horizontal swipe, no shared element. Reduced motion collapses both tokens
- * to 0ms through [Oe3ThemeValues.motion].
+ * change on the pageSlide curve; the leaving page fades out symmetrically in
+ * the opposite direction. No horizontal swipe, no shared element. Reduced
+ * motion collapses both tokens to 0ms through [Oe3ThemeValues.motion].
  *
  * UI3-12: [pages] carries the real screens wired by the host activity; `null`
  * keeps the placeholder page so previews and goldens render the bare shell.
@@ -92,33 +98,46 @@ fun Oe3Pager(
     val motion = Oe3ThemeValues.motion
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val bottomReserve = pageBottomReserve(navStyle, systemBottom)
+    val stateHolder = rememberSaveableStateHolder()
 
     AnimatedContent(
         targetState = selected,
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .clipToBounds(),
         transitionSpec = {
             val direction = Oe3PageTransitionSpec.slideDirection(
                 initialState.ordinal,
                 targetState.ordinal,
             )
-            val enter = if (direction == 0) {
-                fadeIn(Oe3PageTransitionSpec.fade(motion))
+            val fadeSpec = Oe3PageTransitionSpec.fade(motion)
+            val slideSpec = Oe3PageTransitionSpec.slide(motion)
+            if (direction == 0) {
+                fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec)
             } else {
-                fadeIn(Oe3PageTransitionSpec.fade(motion)) +
-                    slideInHorizontally(Oe3PageTransitionSpec.slide(motion)) { pageWidth ->
-                        Oe3PageTransitionSpec.slideOffsetX(pageWidth, direction)
-                    }
+                (
+                    fadeIn(fadeSpec) +
+                        slideInHorizontally(slideSpec) { pageWidth ->
+                            Oe3PageTransitionSpec.slideOffsetX(pageWidth, direction)
+                        }
+                    ) togetherWith (
+                    fadeOut(fadeSpec) +
+                        slideOutHorizontally(slideSpec) { pageWidth ->
+                            Oe3PageTransitionSpec.exitSlideOffsetX(pageWidth, direction)
+                        }
+                    )
             }
-            enter togetherWith fadeOut(Oe3PageTransitionSpec.fade(motion))
         },
         label = "oe3Pager",
     ) { tab ->
-        CompositionLocalProvider(LocalOe3PageBottomPadding provides bottomReserve) {
-            val page = pages?.slot(tab)
-            if (page != null) {
-                page()
-            } else {
-                Oe3Placeholder(title = tab.label, bottomReserve = bottomReserve)
+        stateHolder.SaveableStateProvider(key = tab.key) {
+            CompositionLocalProvider(LocalOe3PageBottomPadding provides bottomReserve) {
+                val page = pages?.slot(tab)
+                if (page != null) {
+                    page()
+                } else {
+                    Oe3Placeholder(title = tab.label, bottomReserve = bottomReserve)
+                }
             }
         }
     }

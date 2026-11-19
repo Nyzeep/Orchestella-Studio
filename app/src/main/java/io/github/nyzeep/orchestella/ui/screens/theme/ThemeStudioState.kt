@@ -196,7 +196,11 @@ fun rememberThemeStudioHandle(
         ThemeStudioController(store, resolvedPort)
     }
     val state = remember(controller) { mutableStateOf(controller.read()) }
-    DisposableEffect(store) {
+    DisposableEffect(store, controller) {
+        val latest = controller.read()
+        if (state.value != latest) {
+            state.value = latest
+        }
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
             state.value = controller.read()
         }
