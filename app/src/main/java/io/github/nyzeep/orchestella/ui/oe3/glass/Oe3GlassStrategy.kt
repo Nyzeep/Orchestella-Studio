@@ -43,19 +43,25 @@ sealed interface Oe3GlassRender {
  * - [Solid]：用户显式关闭，纯实色，与玻璃引入前的基线像素一致。
  * - [L0]：假玻璃配方（96% 表面 + 24dp 顶 scrim + 1dp 顶高光描边 + noise 0.02），
  *   API < 31、省电/减少动态、低内存设备、性能门降档时使用；无 GPU 模糊成本。
- * - [L1]：L0 + Haze 16dp 真模糊（tint α0.72/0.55），API ≥ 31 且性能门未降档。
- * - [L2]：L1 + 仅边缘 AGSL 折射（ds≤0.5、shader 缓存、capture outset）——
- *   **本波不实施**（UI-06b 另排）：真机补测显示 L1 的 P90 已达 60Hz 预算×0.7
- *   阈值边界（research/04），AGSL 折射无余量。保留枚举位以稳定档位语义。
+ * - [L1]：半分辨率 Haze 真模糊（tint α0.72/0.55），API 31–32 且性能门未降档。
+ * - [L2]：L1 + API 33+ AGSL 边缘折射与高光边，API ≥ 33 且通过全部闸门。
  */
-enum class GlassTier { Solid, L0, L1, L2 }
+enum class GlassTier {
+    Solid,
+    L0,
+    L1,
+    L2,
+    ;
+
+    internal val samplesBackdrop: Boolean get() = this == L1 || this == L2
+}
 
 /**
  * UI-06 用户三档设置（Theme Studio 的玻璃模式）：关闭 / 自动 / 始终。
  *
  * - [Off]：用户显式关闭玻璃（保留的关闭能力，优先于一切）。
- * - [Auto]：默认档——按设备能力解析渲染档位（31+ → L1，<31 → L0），并尊重
- *   用户在旧档位选择里的显式关闭；从未选择过旧档位时给出自动玻璃（Standard）。
+ * - [Auto]：默认档——按设备能力解析渲染档位（33+ → L2，31–32 → L1，<31 → L0），
+ *   并尊重用户在旧档位选择里的显式关闭；从未选择过旧档位时给出自动玻璃（Standard）。
  * - [Always]：始终上最强玻璃（Ultra 风格），并绕过性能门的设备降档缓存——
  *   这是用户对「我就是要玻璃」的显式意志，硬闸（省电/低内存/API）仍然生效。
  */
@@ -96,6 +102,9 @@ object Oe3GlassStrategy {
 
     /** First API level with `RenderEffect`, i.e. with real backdrop blur. */
     const val MIN_REAL_BLUR_API = 31
+
+    /** First API level with AGSL `RuntimeShader` for L2 edge refraction. */
+    const val MIN_REFRACTION_API = 33
 
     /**
      * [hasRenderEffect] defaults to the API check; callers that probe the
@@ -154,12 +163,11 @@ object Oe3GlassStrategy {
 
     /**
      * UI-06 能力判定：按「全局开关 → 省电/减少动态 → 低内存 → API → 设备档位
-     * 缓存」的顺序把请求档位落到渲染阶梯上。纯函数，输入全部由调用方探测
-     * （Activity 读系统信号，Compose 侧经 CompositionLocal 下发）。
+     * 缓存」的顺序把请求档位落到渲染阶梯上（31–32 → L1，33+ → L2）。
      *
      * [level] 是请求的玻璃风格（[resolveLevel] 的输出）；[enabled] 是运行期
-     * 闸（动效开关 && 非省电 && 有 haze 源）；[deviceCap] 是性能门持久化结果。
-     * [L2] 本波不可达（UI-06b 接管后在此追加折射探测分支）。
+     * 闸（非省电 && 有 haze 源）；[deviceCap] 是性能门持久化结果；
+     * [reducedMotion] 为 true 时退回静态 [L0] 雾面以消除动态背景重采。
      */
     fun resolveTier(
         level: Oe3GlassLevel,
@@ -167,18 +175,21 @@ object Oe3GlassStrategy {
         apiLevel: Int,
         isLowRamDevice: Boolean,
         deviceCap: GlassDeviceCap,
+        reducedMotion: Boolean = false,
     ): GlassTier = when {
         // 全局开关：显式关闭与基线像素一致，不进任何玻璃配方。
         level == Oe3GlassLevel.None -> GlassTier.Solid
         // 省电/减少动态/缺 haze 源：降为假玻璃配方，不开模糊。
-        !enabled -> GlassTier.L0
+        !enabled || reducedMotion -> GlassTier.L0
         // 低内存设备：模糊背后的离屏采样不可负担，L0 配方保观感。
         isLowRamDevice -> GlassTier.L0
         // API 能力：31 以下没有 RenderEffect。
         apiLevel < MIN_REAL_BLUR_API -> GlassTier.L0
         // 设备档位缓存：性能门在该设备上判过不合格，直接从 L0 开始。
         deviceCap == GlassDeviceCap.L0 -> GlassTier.L0
-        // 通过全部闸门 → 真模糊档（本波上限 L1；L2 待 UI-06b）。
+        // API 33+：模糊 + 边缘 AGSL 折射（L2）。
+        apiLevel >= MIN_REFRACTION_API -> GlassTier.L2
+        // API 31–32：RenderEffect 半分辨率模糊（L1）。
         else -> GlassTier.L1
     }
 }

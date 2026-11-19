@@ -48,7 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
-import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3DialogEnterMotion
+import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3DialogSpringEnterMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
@@ -204,7 +204,7 @@ private fun OeDialogOverlay(spec: OeDialogSpec, onDismiss: () -> Unit) {
             },
         contentAlignment = Alignment.Center,
     ) {
-        Oe3DialogEnterMotion {
+        Oe3DialogSpringEnterMotion {
             Column(
                 modifier = Modifier
                     .padding(horizontal = Oe3Spacing.xl)

@@ -3,7 +3,7 @@ package io.github.nyzeep.orchestella.ui.screens.theme
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -28,11 +28,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -118,18 +123,18 @@ fun HomePreview(
             }
         }
         AnimatedContent(
-            targetState = navStyle,
+            targetState = navStyle to glass,
             modifier = Modifier.align(Alignment.BottomCenter),
             transitionSpec = {
                 if (effectiveReduceMotion) {
                     EnterTransition.None togetherWith ExitTransition.None
                 } else {
-                    fadeIn(tween(180, easing = OeMotion.standardEasing)) togetherWith
-                        fadeOut(tween(180, easing = OeMotion.standardEasing))
+                    fadeIn(tween(OeMotion.PREVIEW_DOCK_SWITCH_MS, easing = OeMotion.standardEasing)) togetherWith
+                        fadeOut(tween(OeMotion.PREVIEW_DOCK_SWITCH_MS, easing = OeMotion.standardEasing))
                 }
             },
             label = "previewNavStyle",
-        ) { style ->
+        ) { (style, _) ->
             Box(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.BottomCenter,
@@ -146,24 +151,52 @@ fun HomePreview(
 
 @Composable
 private fun animatedColors(target: HomePreviewColors, reduceMotion: Boolean): HomePreviewColors {
-    val spec = if (reduceMotion) {
-        snap<Color>()
-    } else {
-        tween(ThemeStudioSpec.previewTweenMillis, easing = OeMotion.standardEasing)
+    var fromColors by remember { mutableStateOf(target) }
+    var toColors by remember { mutableStateOf(target) }
+    val progress = remember { Animatable(1f) }
+
+    LaunchedEffect(target, reduceMotion) {
+        if (reduceMotion) {
+            if (progress.value < 1f || fromColors != target || toColors != target) {
+                fromColors = target
+                toColors = target
+                progress.snapTo(1f)
+            }
+            return@LaunchedEffect
+        }
+        if (target == toColors) return@LaunchedEffect
+        fromColors = lerpHomePreviewColors(fromColors, toColors, progress.value)
+        toColors = target
+        progress.snapTo(0f)
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(ThemeStudioSpec.previewTweenMillis, easing = OeMotion.standardEasing),
+        )
     }
+    return lerpHomePreviewColors(fromColors, toColors, progress.value)
+}
+
+private fun lerpHomePreviewColors(
+    from: HomePreviewColors,
+    to: HomePreviewColors,
+    fraction: Float,
+): HomePreviewColors {
+    if (fraction <= 0f || from == to) return if (fraction <= 0f) from else to
+    if (fraction >= 1f) return to
+    fun blend(a: Int, b: Int): Int = lerp(Color(a), Color(b), fraction).toArgb()
     return HomePreviewColors(
-        background = animateColorAsState(Color(target.background), spec, label = "previewBackground").value.toArgb(),
-        surface = animateColorAsState(Color(target.surface), spec, label = "previewSurface").value.toArgb(),
-        surfaceRaised = animateColorAsState(Color(target.surfaceRaised), spec, label = "previewRaised").value.toArgb(),
-        surfaceHigh = animateColorAsState(Color(target.surfaceHigh), spec, label = "previewHigh").value.toArgb(),
-        onSurface = animateColorAsState(Color(target.onSurface), spec, label = "previewInk").value.toArgb(),
-        onSurfaceVariant = animateColorAsState(Color(target.onSurfaceVariant), spec, label = "previewDim").value.toArgb(),
-        primary = animateColorAsState(Color(target.primary), spec, label = "previewPrimary").value.toArgb(),
-        primaryContainer = animateColorAsState(Color(target.primaryContainer), spec, label = "previewPrimaryContainer").value.toArgb(),
-        onPrimary = animateColorAsState(Color(target.onPrimary), spec, label = "previewOnPrimary").value.toArgb(),
-        accent = animateColorAsState(Color(target.accent), spec, label = "previewAccent").value.toArgb(),
-        ringTrack = animateColorAsState(Color(target.ringTrack), spec, label = "previewRingTrack").value.toArgb(),
-        navFill = animateColorAsState(Color(target.navFill), spec, label = "previewNav").value.toArgb(),
+        background = blend(from.background, to.background),
+        surface = blend(from.surface, to.surface),
+        surfaceRaised = blend(from.surfaceRaised, to.surfaceRaised),
+        surfaceHigh = blend(from.surfaceHigh, to.surfaceHigh),
+        onSurface = blend(from.onSurface, to.onSurface),
+        onSurfaceVariant = blend(from.onSurfaceVariant, to.onSurfaceVariant),
+        primary = blend(from.primary, to.primary),
+        primaryContainer = blend(from.primaryContainer, to.primaryContainer),
+        onPrimary = blend(from.onPrimary, to.onPrimary),
+        accent = blend(from.accent, to.accent),
+        ringTrack = blend(from.ringTrack, to.ringTrack),
+        navFill = blend(from.navFill, to.navFill),
     )
 }
 

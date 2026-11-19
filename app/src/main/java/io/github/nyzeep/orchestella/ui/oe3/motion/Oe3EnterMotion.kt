@@ -1,16 +1,23 @@
 package io.github.nyzeep.orchestella.ui.oe3.motion
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.TweenSpec
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3MotionTokens
+import kotlinx.coroutines.launch
 
 /**
  * Pure mapping from the Oe3 motion tokens to the two entrance curves that had
@@ -129,4 +136,51 @@ fun Oe3DialogEnterMotion(
     ) {
         content()
     }
+}
+
+/**
+ * F13 spring entrance for window-level `OeDialogHost` overlays: starts at
+ * [OeMotion.DIALOG_SPRING_SCALE_FROM] (0.88f) and settles on a 0.85-damped
+ * spring while fading in, collapsing immediately under reduced motion.
+ */
+@Composable
+fun Oe3DialogSpringEnterMotion(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val motion = Oe3ThemeValues.motion
+    val instant = motion.dialog.durationMillis == 0
+    val scale = remember { Animatable(if (instant) 1f else OeMotion.DIALOG_SPRING_SCALE_FROM) }
+    val alpha = remember { Animatable(if (instant) 1f else OeMotion.DIALOG_SPRING_ALPHA_FROM) }
+    LaunchedEffect(motion) {
+        if (instant) {
+            scale.snapTo(1f)
+            alpha.snapTo(1f)
+        } else {
+            launch {
+                scale.animateTo(
+                    targetValue = 1f,
+                    animationSpec = spring(
+                        dampingRatio = OeMotion.SPRING_DAMPING,
+                        stiffness = OeMotion.DIALOG_SPRING_STIFFNESS,
+                    ),
+                )
+            }
+            alpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = motion.dialog.durationMillis,
+                    easing = motion.dialog.easing,
+                ),
+            )
+        }
+    }
+    Box(
+        modifier = modifier.graphicsLayer {
+            scaleX = scale.value
+            scaleY = scale.value
+            this.alpha = alpha.value
+        },
+        content = { content() },
+    )
 }

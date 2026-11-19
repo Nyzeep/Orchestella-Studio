@@ -1,10 +1,15 @@
 package io.github.nyzeep.orchestella.ui.oe3.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,12 +22,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -35,6 +43,28 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+
+private const val CONTROL_PRESS_SCALE = 0.95f
+
+@Composable
+private fun rememberPressScale(
+    interactionSource: MutableInteractionSource,
+    enabled: Boolean,
+): State<Float> {
+    val motion = Oe3ThemeValues.motion
+    val pressed by interactionSource.collectIsPressedAsState()
+    val springSpec = remember(motion.press.dampingRatio) {
+        spring<Float>(
+            dampingRatio = motion.press.dampingRatio,
+            stiffness = Spring.StiffnessMedium,
+        )
+    }
+    return animateFloatAsState(
+        targetValue = if (enabled && pressed) CONTROL_PRESS_SCALE else 1f,
+        animationSpec = if (motion.press.durationMillis == 0) snap() else springSpec,
+        label = "oe3ControlPress",
+    )
+}
 
 /**
  * A compact filter/selection chip. The drawn surface is 32dp;
@@ -55,20 +85,36 @@ fun Oe3Chip(
     val fill = if (selected) colors.primaryContainer else colors.surfaceHigh
     val ink = if (selected) colors.primary else colors.onSurfaceVariant
     val shape: Shape = RoundedCornerShape(Oe3Shapes.sm)
+    val interaction = remember { MutableInteractionSource() }
+    val pressScale = rememberPressScale(interaction, enabled = enabled && onClick != null)
 
     Row(
         modifier = modifier
             .minimumInteractiveComponentSize()
-            .clip(shape)
-            .background(fill.oe3Color().copy(alpha = if (enabled) 1f else 0.4f))
             .then(
                 if (onClick != null) {
                     Modifier
-                        .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+                        .clickable(
+                            interactionSource = interaction,
+                            indication = null,
+                            enabled = enabled,
+                            role = Role.Button,
+                            onClick = onClick,
+                        )
                         .semantics { this.selected = selected }
                 } else {
                     Modifier
                 },
+            )
+            .graphicsLayer {
+                val scale = pressScale.value
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(shape)
+            .background(fill.oe3Color().copy(alpha = if (enabled) 1f else 0.4f))
+            .then(
+                if (onClick != null) Modifier.indication(interaction, LocalIndication.current) else Modifier,
             )
             .heightIn(min = Oe3Sizes.chip)
             .padding(horizontal = Oe3Spacing.sm, vertical = Oe3Spacing.xxs),
@@ -109,6 +155,7 @@ fun Oe3Button(
     val paint = buttonPaint(style, Oe3ThemeValues.colors)
     val visualHeight = if (style == Oe3ButtonStyle.Text) Oe3Sizes.sectionActionVisual else Oe3Sizes.interactiveVisual
     val interaction = remember { MutableInteractionSource() }
+    val pressScale = rememberPressScale(interaction, enabled = enabled)
 
     Row(
         modifier = modifier
@@ -121,6 +168,11 @@ fun Oe3Button(
                 onClick = onClick,
             )
             .padding(vertical = (Oe3Sizes.button - visualHeight) / 2)
+            .graphicsLayer {
+                val scale = pressScale.value
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(paint.shape)
             .background(
                 paint.fill.copy(alpha = if (enabled) paint.fill.alpha else paint.fill.alpha * 0.4f),

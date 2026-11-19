@@ -21,14 +21,12 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.haze
-import dev.chrisbanes.haze.hazeChild
 import dev.chrisbanes.haze.rememberHazeState
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
@@ -98,13 +96,10 @@ object Oe3GlassFallback {
  * 低内存 → API → 设备档位缓存):
  * - `Solid` ([GlassTier.Solid]): opaque surface, no blur — pixel-identical to
  *   the pre-glass shell.
- * - `L1` ([GlassTier.L1]/[GlassTier.L2]) with the layer enabled and a [state]
- *   provided: the Haze 1.x child effect, one layer, bounded by this surface's
- *   node (the bar), so the blurred region never exceeds the chrome that
- *   composes it. Before handing the style to Haze, the blur radius is probed
- *   with the exact framework call Haze makes ([Oe3GlassBlurSafety]); a device
- *   that rejects the radius walks the fallback ladder (16 → 8dp) and lands on
- *   the L0 surface when nothing is supported (hard constraint ⑤).
+ * - `L1` ([GlassTier.L1]): the Haze 1.x child effect at half-resolution input
+ *   ([Oe3GlassBlurSafety]), walking the fallback ladder (28 → 16 → 8dp → L0).
+ * - `L2` ([GlassTier.L2]): L1 + API 33+ AGSL rim refraction ([Oe3LiquidGlass])
+ *   applied to the backdrop layer while foreground content renders crisply above.
  * - `L0` ([GlassTier.L0]): the fake-glass recipe — α0.96 fill, 24dp top scrim,
  *   1dp top highlight rim, 0.02 noise — the shared token set with the blur
  *   tiers so the degradation never reads as a different material.
@@ -120,30 +115,29 @@ fun Oe3GlassSurface(
     val tokens = Oe3ThemeValues.glass
     val info = Oe3ThemeValues.info
     val enabled = LocalOe3GlassEnabled.current
-
-    val render = if (level != info.glassLevel) {
-        Oe3GlassRender.Solid
+    val resolvedTier = if (level != info.glassLevel) {
+        GlassTier.Solid
     } else {
-        when (
-            LocalOe3GlassTierOverride.current ?: Oe3GlassStrategy.resolveTier(
+        LocalOe3GlassTierOverride.current ?: Oe3GlassStrategy.resolveTier(
+            level = level,
+            enabled = enabled && state != null,
+            apiLevel = Build.VERSION.SDK_INT,
+            isLowRamDevice = LocalOe3GlassLowRam.current,
+            deviceCap = LocalOe3GlassDeviceCap.current,
+            reducedMotion = info.reducedMotion,
+        )
+    }
+
+    val render = when (resolvedTier) {
+        GlassTier.Solid -> Oe3GlassRender.Solid
+        GlassTier.L0 -> Oe3GlassRender.Fallback
+        GlassTier.L1, GlassTier.L2 ->
+            Oe3GlassStrategy.resolve(
                 level = level,
-                enabled = enabled && state != null,
-                apiLevel = Build.VERSION.SDK_INT,
-                isLowRamDevice = LocalOe3GlassLowRam.current,
-                deviceCap = LocalOe3GlassDeviceCap.current,
+                enabled = true,
+                supportsRealBlur = true,
+                tokens = tokens,
             )
-        ) {
-            GlassTier.Solid -> Oe3GlassRender.Solid
-            GlassTier.L0 -> Oe3GlassRender.Fallback
-            // 本波 L2 不可达（UI-06b 接管）；与 L1 共用模糊绘制路径。
-            GlassTier.L1, GlassTier.L2 ->
-                Oe3GlassStrategy.resolve(
-                    level = level,
-                    enabled = true,
-                    supportsRealBlur = true,
-                    tokens = tokens,
-                )
-        }
     }
 
     when (render) {
@@ -155,27 +149,9 @@ fun Oe3GlassSurface(
         )
 
         is Oe3GlassRender.Blurred -> {
-            val state = requireNotNull(state) { "Blurred glass requires the shared glass state" }
-            val density = LocalDensity.current
-            // 硬约束 ⑤：Haze 内部的 createBlurEffect 在节点绘制期才执行，组合期
-            // 抓不到——把 style 交给 Haze 之前先用同参探针验证设备支持（相同
-            // 半径 px + CLAMP），IAE 按半径阶梯回退，非 IAE 记录后放弃模糊。
-            // 探针通过才进入 Haze，Haze 内部对已验证半径不会再踩 IAE。
-            val usableRadius = remember(render, density) {
-                // 探针只碰 API 31+ 框架调用；能力闸已保证 Blurred 分支必然
-                // API ≥ 31，这里加静态卫语句兜底（lint NewApi 需要静态可见）。
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    Oe3GlassBlurSafety.resolveBlurRadius(
-                        requested = render.blurRadius,
-                        probe = { radius -> Oe3GlassBlurSafety.probeCreateBlurEffect(radius, density) },
-                    )
-                } else {
-                    null
-                }
-            }
-            if (usableRadius == null) {
-                // 全部档位失败 / 非 IAE 异常：放弃模糊，落到共享 token 的 L0 面
-                // （回退配方，与 API<31 同一材质，不突兀）。
+            val usableRadius = rememberGlassBlurRadius(render.blurRadius)
+            if (usableRadius == null || state == null) {
+                // 全部档位失败 / 非 IAE 异常 / 无源：放弃模糊，落到共享 token 的 L0 面
                 FallbackSurface(
                     tokens = tokens,
                     modifier = modifier,
@@ -189,12 +165,21 @@ fun Oe3GlassSurface(
                     render.copy(blurRadius = usableRadius)
                 }
                 val style = remember(blurred) { blurred.toHazeStyle(tokens) }
-                Box(
-                    modifier
-                        .clip(shape)
-                        .hazeChild(state = state, style = style),
-                    content = content,
+                val refraction = rememberOe3Refraction(
+                    enabled = resolvedTier == GlassTier.L2,
+                    shape = shape,
+                    isDark = info.isDark,
                 )
+                Box(modifier.clip(shape)) {
+                    // Apply refraction outermost so its RenderNode captures hazeChild's backdrop pixels.
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .then(refraction)
+                            .oe3BackdropHaze(state = state, style = style),
+                    )
+                    content()
+                }
             }
         }
 

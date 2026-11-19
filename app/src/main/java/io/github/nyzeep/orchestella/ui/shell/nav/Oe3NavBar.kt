@@ -9,10 +9,13 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -39,7 +42,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +61,7 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -78,6 +84,8 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.Oe3NavStyle
 import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
+import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 /**
  * Selected-pill geometry and motion (spec §2.5, ticket UI3-10).
@@ -267,27 +275,43 @@ fun Oe3NavBar(
             }
             .height(if (fixed) Oe3Sizes.navBar + systemBottom else Oe3Sizes.navBar),
     ) {
-        val cellWidth = (maxWidth - Oe3Sizes.navPadding * 2) / Oe3Tab.entries.size
+        val tabs = Oe3Tab.entries
+        val cellWidth = (maxWidth - Oe3Sizes.navPadding * 2) / tabs.size
+        val cellWidthPx = with(density) { cellWidth.toPx() }
+        val navPaddingPx = with(density) { Oe3Sizes.navPadding.toPx() }
+        fun cellCenterPx(index: Int): Float = navPaddingPx + (index + 0.5f) * cellWidthPx
 
         // The selection travel: when the pill re-homes to the new cell it
         // starts translated back to the previous cell and springs to rest.
         val selectedIndex = selected.ordinal
         val previousIndex = remember { mutableIntStateOf(selectedIndex) }
         val pillTravel = remember { Animatable(0f) }
+        val scope = rememberCoroutineScope()
+        var dragOffsetPx by remember { mutableStateOf<Float?>(null) }
+        var pendingReleaseTarget by remember { mutableStateOf<Oe3Tab?>(null) }
+        var pendingReleaseOffsetPx by remember { mutableStateOf<Float?>(null) }
+
+        suspend fun settlePillTravel(startPx: Float) {
+            val spring = Oe3NavPillSpec.selectionSpring(motion)
+            if (spring == null) {
+                pillTravel.snapTo(0f)
+            } else {
+                pillTravel.snapTo(startPx)
+                pillTravel.animateTo(0f, spring)
+            }
+        }
+
         LaunchedEffect(selectedIndex, cellWidth, motion) {
             val from = previousIndex.intValue
+            val releaseOffset = if (pendingReleaseTarget == selected) pendingReleaseOffsetPx else null
+            pendingReleaseTarget = null
+            pendingReleaseOffsetPx = null
             if (from != selectedIndex) {
                 previousIndex.intValue = selectedIndex
-                val startPx = with(density) {
+                val startPx = releaseOffset ?: with(density) {
                     Oe3NavPillSpec.travel(cellWidth, from, selectedIndex).toPx()
                 }
-                val spring = Oe3NavPillSpec.selectionSpring(motion)
-                if (spring == null) {
-                    pillTravel.snapTo(0f)
-                } else {
-                    pillTravel.snapTo(startPx)
-                    pillTravel.animateTo(0f, spring)
-                }
+                settlePillTravel(startPx)
             }
         }
 
@@ -301,21 +325,96 @@ fun Oe3NavBar(
             shape = barShape,
             state = glassState,
         ) {
-            Row(
-                modifier = (
-                    if (fixed) {
-                        Modifier
-                            .height(Oe3Sizes.navBar)
-                            .padding(horizontal = Oe3Sizes.navPadding)
-                    } else {
-                        Modifier
-                            .fillMaxSize()
-                            .padding(Oe3Sizes.navPadding)
+            val scrubModifier = if (cellWidthPx <= 0f) {
+                Modifier
+            } else {
+                val minCenterPx = cellCenterPx(0)
+                val maxCenterPx = cellCenterPx(tabs.lastIndex)
+                val selectedCenterPx = cellCenterPx(selectedIndex)
+                Modifier.pointerInput(tabs.size, cellWidthPx, navPaddingPx, selectedIndex, motion) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        pendingReleaseTarget = null
+                        pendingReleaseOffsetPx = null
+                        var dragging = false
+                        var lastCenterPx = selectedCenterPx
+                        val touchSlop = viewConfiguration.touchSlop
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                    ?: event.changes.firstOrNull()
+                                    ?: break
+                                if (change.isConsumed) {
+                                    if (dragging) {
+                                        val snapFrom = dragOffsetPx ?: 0f
+                                        dragOffsetPx = null
+                                        scope.launch { settlePillTravel(snapFrom) }
+                                    }
+                                    break
+                                }
+                                if (!change.pressed) {
+                                    if (dragging) {
+                                        change.consume()
+                                        val targetIndex = ((lastCenterPx - navPaddingPx) / cellWidthPx)
+                                            .toInt()
+                                            .coerceIn(0, tabs.lastIndex)
+                                        val targetTab = tabs[targetIndex]
+                                        val remainingDelta = lastCenterPx - cellCenterPx(targetIndex)
+                                        if (targetTab != tabs[selectedIndex]) {
+                                            pendingReleaseTarget = targetTab
+                                            pendingReleaseOffsetPx = remainingDelta
+                                            dragOffsetPx = null
+                                            onSelect(targetTab)
+                                        } else {
+                                            val snapFrom = dragOffsetPx ?: 0f
+                                            dragOffsetPx = null
+                                            scope.launch { settlePillTravel(snapFrom) }
+                                        }
+                                    }
+                                    break
+                                }
+                                if (!dragging) {
+                                    val dx = change.position.x - down.position.x
+                                    val dy = change.position.y - down.position.y
+                                    if (abs(dx) > touchSlop && abs(dx) >= abs(dy)) {
+                                        dragging = true
+                                    } else if (abs(dy) > touchSlop) {
+                                        break
+                                    }
+                                }
+                                if (dragging) {
+                                    change.consume()
+                                    lastCenterPx = change.position.x.coerceIn(minCenterPx, maxCenterPx)
+                                    dragOffsetPx = lastCenterPx - selectedCenterPx
+                                }
+                            }
+                        } finally {
+                            if (dragging && dragOffsetPx != null) {
+                                dragOffsetPx = null
+                            }
+                        }
                     }
-                    ).selectableGroup(),
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .then(scrubModifier)
+                    .then(
+                        if (fixed) {
+                            Modifier
+                                .height(Oe3Sizes.navBar)
+                                .padding(horizontal = Oe3Sizes.navPadding)
+                        } else {
+                            Modifier
+                                .fillMaxSize()
+                                .padding(Oe3Sizes.navPadding)
+                        },
+                    )
+                    .selectableGroup(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Oe3Tab.entries.forEachIndexed { index, tab ->
+                tabs.forEachIndexed { index, tab ->
                     val isSelected = index == selectedIndex
                     val interaction = remember { MutableInteractionSource() }
                     val pressed by interaction.collectIsPressedAsState()
@@ -339,7 +438,7 @@ fun Oe3NavBar(
                         if (isSelected) {
                             Box(
                                 modifier = Modifier
-                                    .graphicsLayer { translationX = pillTravel.value }
+                                    .graphicsLayer { translationX = dragOffsetPx ?: pillTravel.value }
                                     // requiredWidth: the cell constrains width to its
                                     // slot, so plain width() would clamp away the 8dp
                                     // overhang. The bar's capsule clip keeps the
@@ -374,9 +473,9 @@ private fun Oe3NavItemContent(
     ink: Color,
     motion: Oe3MotionTokens,
 ) {
-    val pressScale by animateFloatAsState(
+    val pressScale = animateFloatAsState(
         targetValue = if (pressed) Oe3NavPillSpec.PRESS_SCALE else Oe3NavPillSpec.REST_SCALE,
-        animationSpec = Oe3NavPillSpec.pressSpring(motion),
+        animationSpec = if (motion.press.durationMillis == 0) snap() else Oe3NavPillSpec.pressSpring(motion),
         label = "oe3NavPress",
     )
     val labelColor by animateColorAsState(
@@ -387,8 +486,9 @@ private fun Oe3NavItemContent(
 
     Column(
         modifier = Modifier.graphicsLayer {
-            scaleX = pressScale
-            scaleY = pressScale
+            val s = pressScale.value
+            scaleX = s
+            scaleY = s
         },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,

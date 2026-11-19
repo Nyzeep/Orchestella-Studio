@@ -10,10 +10,13 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassChrome
 import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassEnabled
+import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassChromeState
 import io.github.nyzeep.orchestella.ui.oe3.glass.oe3GlassSource
 import io.github.nyzeep.orchestella.ui.oe3.glass.rememberOe3GlassState
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
@@ -81,6 +84,7 @@ fun Oe3App(
         // UI3-10 玻璃接线：内容区是唯一的 haze 源，底栏消费同一个 state。
         // 源标记仅在玻璃等级非 None 时挂载：None 级在结构上就是基线组件树
         // （不产生任何 haze 节点），像素与既有壳层完全一致。
+        val glassChrome = remember { Oe3GlassChromeState() }
         val glassState = rememberOe3GlassState()
         val glassSourceModifier =
             if (Oe3ThemeValues.info.glassLevel != Oe3GlassLevel.None) {
@@ -94,6 +98,7 @@ fun Oe3App(
         val stack = backStack ?: rememberOeBackStack()
         val backgroundMode = OeAppBackgroundSpec.resolve(backgroundUri, Oe3ThemeValues.info.pureBlack)
         CompositionLocalProvider(
+            LocalOe3GlassChrome provides glassChrome,
             LocalOe3GlassEnabled provides glassEnabled,
             LocalOeSurfaceAlpha provides surfaceAlpha,
             LocalOeBackStack provides stack,
@@ -129,7 +134,7 @@ fun Oe3App(
                     },
                     style = navStyle,
                     modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(horizontalInsets),
-                    glassState = glassState,
+                    glassState = if (glassChrome.hasScrollEdge) null else glassState,
                 )
             }
         }

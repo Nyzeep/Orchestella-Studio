@@ -27,6 +27,10 @@ object Oe3Glass {
 
     private const val FALLBACK_ALPHA = 245 // 96% of 255
     val rimWidth: Dp = 1.25.dp
+    val refractionWidth: Dp = 12.dp
+    val refractionDisplacement: Dp = 3.dp
+    val scrollEdgeBlurRadius: Dp = 12.dp
+    const val REFRACTION_HIGHLIGHT_GAIN = 0.42f
     const val DARK_RIM_HIGHLIGHT_ALPHA = 0.26f
     const val LIGHT_RIM_HIGHLIGHT_ALPHA = 0.64f
     const val DARK_RIM_SHADE_ALPHA = 0.18f

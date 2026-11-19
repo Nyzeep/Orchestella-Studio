@@ -57,6 +57,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
+import io.github.nyzeep.orchestella.ui.oe3.glass.rememberOe3ScrollEdgeGlass
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
@@ -164,6 +165,7 @@ fun OeScaffold(
     }
     val alpha = OeScaffoldSpec.barAlpha(scrollOffsetPx?.invoke()?.toFloat() ?: offset, collapsePx)
     val topPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + Oe3Sizes.topBar
+    val scrollEdgeGlass = rememberOe3ScrollEdgeGlass(alpha)
 
     Box(
         modifier = modifier
@@ -172,7 +174,9 @@ fun OeScaffold(
     ) {
         CompositionLocalProvider(LocalOe3PageTopPadding provides topPadding) {
             Column(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(scrollEdgeGlass?.sourceModifier ?: Modifier),
                 content = content,
             )
         }
@@ -181,7 +185,9 @@ fun OeScaffold(
             alpha = alpha,
             leading = leading,
             actions = actions,
-            modifier = Modifier.align(Alignment.TopCenter),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .then(scrollEdgeGlass?.effectModifier ?: Modifier),
         )
     }
 }

@@ -30,6 +30,8 @@ object OeMotion {
     const val CARD_ENTER_MS = 300
     const val DIALOG_MS = 250
     const val THEME_TWEEN_MS = 300
+    /** HomePreview dock-style crossfade duration when toggling Floating / Fixed. */
+    const val PREVIEW_DOCK_SWITCH_MS = 180
 
     const val SPRING_DAMPING = 0.85f
     const val NAV_SELECTION_STIFFNESS = Spring.StiffnessMediumLow
@@ -50,6 +52,10 @@ object OeMotion {
 
     const val CARD_ENTER_SCALE_FROM = 0.96f
     const val REDUCED_CARD_ENTER_SCALE_FROM = 1f
+    /** F13 spring entrance start scale and alpha for window-level `OeDialogHost` overlays. */
+    const val DIALOG_SPRING_SCALE_FROM = 0.88f
+    const val DIALOG_SPRING_ALPHA_FROM = 0.5f
+    const val DIALOG_SPRING_STIFFNESS = Spring.StiffnessMediumLow
 
     // --- Page push (v4 spec §1.5, ticket UI-03) ---
     // spring(300ms, bounce 0): bounce 0 is a critically damped spring; the

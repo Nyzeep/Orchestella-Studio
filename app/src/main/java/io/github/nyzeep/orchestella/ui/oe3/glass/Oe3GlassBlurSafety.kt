@@ -50,7 +50,7 @@ object Oe3GlassBlurSafety {
         logNonFatal: (Throwable, Dp) -> Unit = { _, _ -> },
         probe: (Dp) -> Unit,
     ): Dp? {
-        val candidates = (listOf(requested) + fallbackLadder).distinct()
+        val candidates = (listOf(requested) + fallbackLadder.filter { it < requested }).distinct()
         for (radius in candidates) {
             try {
                 probe(radius)
@@ -74,8 +74,8 @@ object Oe3GlassBlurSafety {
      * 仅在 API ≥ 31 的路径上被调用（L1 分支由能力闸保证，调用点另有静态卫语句）。
      */
     @RequiresApi(Build.VERSION_CODES.S)
-    fun probeCreateBlurEffect(radius: Dp, density: Density) {
-        val radiusPx = with(density) { radius.toPx() }
+    fun probeCreateBlurEffect(radius: Dp, density: Density, inputScale: Float = 1f) {
+        val radiusPx = with(density) { (radius * inputScale).toPx() }
         android.graphics.RenderEffect.createBlurEffect(
             radiusPx,
             radiusPx,

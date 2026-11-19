@@ -287,6 +287,7 @@ private fun DashboardCardList(
 ) {
     val drag = remember { DashboardDragState() }
     val scope = rememberCoroutineScope()
+    val reducedMotion = Oe3ThemeValues.info.reducedMotion
     // 卡片入场只播一次（spec §1.5 cardEnter；tab 切换回来不重播）。
     var cardsEntered by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { cardsEntered = true }
@@ -320,9 +321,18 @@ private fun DashboardCardList(
             Oe3CardEnterMotion(
                 entered = cardsEntered,
                 modifier = Modifier.animateItem(
-                    fadeInSpec = tween(OeMotion.EDIT_APPEAR_MS, easing = OeMotion.easeOutCubicEasing),
-                    placementSpec = tween(OeMotion.EDIT_REORDER_SETTLE_MS, easing = OeMotion.standardEasing),
-                    fadeOutSpec = tween(OeMotion.EDIT_APPEAR_MS, easing = OeMotion.easeOutCubicEasing),
+                    fadeInSpec = tween(
+                        if (reducedMotion) 0 else OeMotion.EDIT_APPEAR_MS,
+                        easing = OeMotion.easeOutCubicEasing,
+                    ),
+                    placementSpec = tween(
+                        if (reducedMotion) 0 else OeMotion.EDIT_REORDER_SETTLE_MS,
+                        easing = OeMotion.standardEasing,
+                    ),
+                    fadeOutSpec = tween(
+                        if (reducedMotion) 0 else OeMotion.EDIT_APPEAR_MS,
+                        easing = OeMotion.easeOutCubicEasing,
+                    ),
                 ),
             ) {
                 DashboardCardSlot(
@@ -391,11 +401,12 @@ private fun DashboardCardSlot(
         true
     }
 
+    val reducedMotion = Oe3ThemeValues.info.reducedMotion
     DashboardEditAppearMotion(isEditing = edit.isEditing) {
         Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .pointerInput(edit.isEditing, cardId) {
+                    .pointerInput(edit.isEditing, cardId, reducedMotion) {
                         if (!edit.isEditing) return@pointerInput
                         detectDragGesturesAfterLongPress(
                             onDragStart = {
@@ -403,10 +414,14 @@ private fun DashboardCardSlot(
                                     drag.draggingKey = cardId.itemKey()
                                     scope.launch {
                                         drag.dragOffset.snapTo(0f)
-                                        drag.lift.animateTo(
-                                            1f,
-                                            tween(OeMotion.EDIT_DRAG_LIFT_MS, easing = OeMotion.easeOutCubicEasing),
-                                        )
+                                        if (reducedMotion) {
+                                            drag.lift.snapTo(1f)
+                                        } else {
+                                            drag.lift.animateTo(
+                                                1f,
+                                                tween(OeMotion.EDIT_DRAG_LIFT_MS, easing = OeMotion.easeOutCubicEasing),
+                                            )
+                                        }
                                     }
                                 }
                             },
@@ -451,8 +466,8 @@ private fun DashboardCardSlot(
                                 }
                                 scope.launch { drag.dragOffset.snapTo(drag.dragOffset.targetValue + delta) }
                             },
-                            onDragEnd = { settleDrag(drag, scope) },
-                            onDragCancel = { settleDrag(drag, scope) },
+                            onDragEnd = { settleDrag(drag, scope, reducedMotion) },
+                            onDragCancel = { settleDrag(drag, scope, reducedMotion) },
                         )
                     }
                     .graphicsLayer {
@@ -512,10 +527,15 @@ private fun DashboardCardSlot(
 }
 
 /** 松手落位：scale/投影与残余位移都按拖起时长 easeOut 收回，再结束拖拽会话。 */
-private fun settleDrag(drag: DashboardDragState, scope: CoroutineScope) {
+private fun settleDrag(drag: DashboardDragState, scope: CoroutineScope, reducedMotion: Boolean) {
     scope.launch {
-        drag.lift.animateTo(0f, tween(OeMotion.EDIT_DRAG_LIFT_MS, easing = OeMotion.easeOutCubicEasing))
-        drag.dragOffset.animateTo(0f, tween(OeMotion.EDIT_DRAG_LIFT_MS, easing = OeMotion.easeOutCubicEasing))
+        if (reducedMotion) {
+            drag.lift.snapTo(0f)
+            drag.dragOffset.snapTo(0f)
+        } else {
+            drag.lift.animateTo(0f, tween(OeMotion.EDIT_DRAG_LIFT_MS, easing = OeMotion.easeOutCubicEasing))
+            drag.dragOffset.animateTo(0f, tween(OeMotion.EDIT_DRAG_LIFT_MS, easing = OeMotion.easeOutCubicEasing))
+        }
         drag.draggingKey = null
     }
 }

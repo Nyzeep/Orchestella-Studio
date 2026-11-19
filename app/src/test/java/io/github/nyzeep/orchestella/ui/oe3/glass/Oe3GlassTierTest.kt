@@ -7,8 +7,8 @@ import org.junit.Test
 /**
  * UI-06 分层降级的纯函数契约（v4 spec §1.7）：
  *
- * - [Oe3GlassStrategy.resolveTier] 按「全局开关 → 省电 → 低内存 → API → 设备
- *   档位缓存」的顺序落档；本波上限 L1，L2 枚举位保留但不可达（UI-06b）。
+ * - [Oe3GlassStrategy.resolveTier] 按「全局开关 → 减少动态/省电 → 低内存 → API
+ *   → 设备档位缓存」的顺序落档（31–32 → L1，33+ → L2）。
  * - [Oe3GlassStrategy.resolveLevel] 把用户模式（off/auto/always）与旧档位键的
  *   显式意图解析为请求风格；「null = 从未选择」与「显式 none = 明确关闭」是
  *   两个不同的输入。
@@ -85,8 +85,8 @@ class Oe3GlassTierTest {
     }
 
     @Test
-    fun api31AndAboveWithACleanCapReachesL1() {
-        listOf(31, 32, 33, 35).forEach { api ->
+    fun api31To32WithACleanCapReachesL1() {
+        listOf(31, 32).forEach { api ->
             assertEquals(
                 "api $api",
                 GlassTier.L1,
@@ -116,22 +116,31 @@ class Oe3GlassTierTest {
     }
 
     @Test
-    fun l2IsReservedButUnreachableThisWave() {
-        // UI-06b 接管前，任何生产输入都不得落到 L2（真机补测 research/04：
-        // L1 的 P90 已达预算×0.7 边界，AGSL 折射无余量）。
-        for (api in 31..36) {
-            for (cap in GlassDeviceCap.entries) {
-                for (level in Oe3GlassLevel.entries) {
-                    val tier = Oe3GlassStrategy.resolveTier(
-                        level = level,
-                        enabled = level != Oe3GlassLevel.None,
-                        apiLevel = api,
-                        isLowRamDevice = false,
-                        deviceCap = cap,
-                    )
-                    org.junit.Assert.assertNotEquals(GlassTier.L2, tier)
-                }
-            }
+    fun api33AndAboveWithCleanGatesReachesL2AndReducedMotionDropsToL0() {
+        listOf(33, 35, 36).forEach { api ->
+            assertEquals(
+                "api $api",
+                GlassTier.L2,
+                Oe3GlassStrategy.resolveTier(
+                    level = Oe3GlassLevel.Standard,
+                    enabled = true,
+                    apiLevel = api,
+                    isLowRamDevice = false,
+                    deviceCap = GlassDeviceCap.Unlimited,
+                ),
+            )
+            assertEquals(
+                "reduced motion api $api",
+                GlassTier.L0,
+                Oe3GlassStrategy.resolveTier(
+                    level = Oe3GlassLevel.Standard,
+                    enabled = true,
+                    apiLevel = api,
+                    isLowRamDevice = false,
+                    deviceCap = GlassDeviceCap.Unlimited,
+                    reducedMotion = true,
+                ),
+            )
         }
     }
 

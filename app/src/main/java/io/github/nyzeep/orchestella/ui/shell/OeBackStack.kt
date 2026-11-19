@@ -1,13 +1,15 @@
 package io.github.nyzeep.orchestella.ui.shell
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.SpringSpec
+import kotlin.coroutines.cancellation.CancellationException
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
@@ -240,8 +242,8 @@ private const val BASE_STATE_KEY = "oe-backstack-base"
 
 /**
  * 栈宿主：底层 pager 与推入目的地共同的可视容器，同时是系统返回键的
- * 拦截点（[BackHandler] 与 [OeBackStack.canPop] 同源，预测式返回手势经
- * 返回派发器同样落到 [OeBackStack.pop]）。
+ * 拦截点（[PredictiveBackHandler] 与 [OeBackStack.canPop] 同源，预测式返回手势
+ * 跟手搓动并提交或取消恢复）。
  */
 @Composable
 fun OeBackStackHost(
@@ -267,8 +269,28 @@ internal fun OeBackStackHost(
     val motion = Oe3ThemeValues.motion
     val pushSpring = motion.pagePushSpring
 
-    BackHandler(enabled = backStack.canPop) {
-        backStack.pop()
+    var predictiveProgress by remember(backStack) { mutableStateOf<Float?>(null) }
+    LaunchedEffect(backStack.canPop) {
+        if (!backStack.canPop) {
+            predictiveProgress = null
+        }
+    }
+    PredictiveBackHandler(enabled = backStack.canPop && gestureProgress == null) { progressFlow ->
+        try {
+            progressFlow.collect { event ->
+                predictiveProgress = event.progress
+            }
+            val releaseProgress = predictiveProgress
+            predictiveProgress = null
+            if (releaseProgress != null) {
+                backStack.popFromProgress(1f - releaseProgress)
+            } else {
+                backStack.pop()
+            }
+        } catch (cancelled: CancellationException) {
+            predictiveProgress = null
+            throw cancelled
+        }
     }
 
     val transition = backStack.transition
@@ -289,14 +311,17 @@ internal fun OeBackStackHost(
         backStack.animate(transition, pushSpring)
     }
 
-    val clampedGesture = gestureProgress?.coerceIn(0f, 1f)
-    val isScrubbing = clampedGesture != null &&
+    val hasGesture by remember(backStack, gestureProgress) {
+        derivedStateOf { (gestureProgress ?: predictiveProgress) != null }
+    }
+    val isScrubbing = hasGesture &&
         transition.flight == StackFlight.None &&
         transition.entries.isNotEmpty()
 
     val effectiveProgress: () -> Float = {
+        val currentGesture = (gestureProgress ?: predictiveProgress)?.coerceIn(0f, 1f)
         when {
-            isScrubbing -> 1f - clampedGesture!!
+            isScrubbing && currentGesture != null -> 1f - currentGesture
             transition.flight == StackFlight.None -> if (transition.entries.isEmpty()) 0f else 1f
             pushSpring == null -> if (transition.flight == StackFlight.Push) 1f else 0f
             else -> backStack.progressFor(transition)
