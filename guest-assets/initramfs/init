@@ -1014,7 +1014,7 @@ exec python3 -B /usr/local/lib/orchestella/profilectl.py "$@"
 ORCHESTELLA_FEATURE_CD40F0A801B93DAC
     chmod 0755 "$1/usr/local/lib/orchestella/profilectl.next" || return 1
     mv "$1/usr/local/lib/orchestella/profilectl.next" "$1/usr/local/lib/orchestella/profilectl" || return 1
-    cat > "$1/usr/local/lib/orchestella/profilectl.py.next" <<'ORCHESTELLA_FEATURE_9E3B6C368DF6F385' || return 1
+    cat > "$1/usr/local/lib/orchestella/profilectl.py.next" <<'ORCHESTELLA_FEATURE_35185F59C040F792' || return 1
 #!/usr/bin/env python3
 """Orchestella guest feature CLI, v1. Fixed commands; no host content transport."""
 import argparse
@@ -1046,7 +1046,10 @@ import time
 PROFILES = ("desktop-labwc", "podman", "code-server", "docker-cli")
 ACTIONS = ("probe", "install", "status", "start", "stop", "cancel", "confirm-frame", "resize", "expose", "unexpose")
 PACKAGES = {
-    "desktop-labwc": ("python3", "labwc", "wayvnc", "foot", "waybar", "fonts-dejavu-core", "fonts-noto-core", "dbus-user-session", "xwayland", "wayland-utils", "grim", "wlr-randr"),
+    # DW-04: pulseaudio belongs to the desktop profile. Without it the audio-relay
+    # unit restart-loops against a missing 127.0.0.1:9104 endpoint (PCM=0); the
+    # Debian desktop lane (orchestella-desktop-setup.sh) installs the same pair.
+    "desktop-labwc": ("python3", "labwc", "wayvnc", "foot", "waybar", "fonts-dejavu-core", "fonts-noto-core", "dbus-user-session", "pulseaudio", "pulseaudio-utils", "xwayland", "wayland-utils", "grim", "wlr-randr"),
     "podman": ("python3", "podman", "uidmap", "fuse-overlayfs", "slirp4netns", "passt", "netavark", "aardvark-dns", "dbus-user-session", "libseccomp2", "util-linux"),
     "code-server": ("python3", "ca-certificates", "libc6", "libstdc++6", "dbus-user-session"),
     "docker-cli": ("python3", "docker-cli"),
@@ -1056,6 +1059,47 @@ UNITS = {
     "code-server": ("orchestella-code-server.service", "orchestella-code-server-relay.service"),
     "podman": (), "docker-cli": (),
 }
+# DW-03: the compositor and wayvnc own the desktop session and are installed as
+# persistent user units (~/.config/systemd/user) under a lingered user manager,
+# so they survive the start session instead of being transient. The two relays
+# remain root system units: they are root supervisors (root-only token/device
+# FDs plus privilege drop) and cannot run inside the user manager.
+DESKTOP_USER_UNITS = ("orchestella-desktop-compositor.service", "orchestella-desktop-wayvnc.service")
+# DW-04: the guest payload cannot read repo files, so the PulseAudio session
+# configuration is embedded here. Mirrors scripts/desktop/pulseaudio/default.pa
+# (guarded by PulseAudioConfigVerifier); without it the stock session config
+# never opens the fixed 127.0.0.1:9104 simple-protocol endpoint audio-relay needs.
+PULSE_DEFAULT_PA = """#!/usr/bin/pulseaudio -nF
+#
+# DroidLayer Minimal Headless Audio Sink Configuration (PulseAudio)
+# Milestone: Phase 3 (M3) - ADR-0013 & ADR-0018
+#
+# Performance & Footprint Guarantees:
+# - Resident memory footprint <= 15MB
+# - Cold startup time <= 500ms
+# - Zero D-Bus / udev / systemd / native-TCP overhead
+# - Fixed uncompressed PCM stream: 48000Hz, 16-bit signed LE, stereo, on 127.0.0.1:9104
+#
+
+.fail
+
+# 1. High-efficiency headless null sink (acts as master virtual audio sink)
+load-module module-null-sink sink_name=droidlayer_sink sink_properties=device.description="DroidLayer-Audio"
+set-default-sink droidlayer_sink
+
+# 2. Maintain a sink at all times so client applications never stall
+load-module module-always-sink
+
+# 3. Stream monitor output over simple-protocol-tcp (fixed 48kHz s16le stereo)
+# Monitored source: droidlayer_sink.monitor
+# Single second throughput: 48000 * 2 * 2 = 192,000 bytes/sec (~187.5 KB/s)
+load-module module-simple-protocol-tcp rate=48000 format=s16le channels=2 source=droidlayer_sink.monitor record=true port=9104 listen=127.0.0.1
+
+# 4. Standard local UNIX domain socket for guest desktop applications (Firefox, media players, foot)
+load-module module-native-protocol-unix
+
+.nofail
+"""
 STATES = ("planned", "installing", "installed", "starting", "awaiting-frame", "ready", "failed", "cancelled")
 STATE_DIR = "/var/lib/orchestella/features"
 PAYLOAD = "/usr/local/lib/orchestella"
@@ -1554,6 +1598,80 @@ class Controller:
         version = self.inputs()["units_version"]
         atomic_bytes(path, (prefix + str(version) + "\n" + content).encode(), 0o644)
 
+    def user_unit(self, name, content):
+        # DW-03: persistent user unit under ~/.config/systemd/user, owned by the
+        # ordinary user; the user manager reads it across sessions and reboots.
+        uid, gid = self.user()
+        path = self.private_dir(self.home + "/.config/systemd/user", uid, gid) / name
+        prefix = "# Orchestella owned unit schema="
+        if path.is_symlink() or (path.exists() and not path.read_text().startswith(prefix)):
+            raise Failure("unit-collision")
+        version = self.inputs()["units_version"]
+        atomic_bytes(path, (prefix + str(version) + "\n" + content).encode(), 0o600)
+        if not self.testing:
+            os.chown(path, uid, gid)
+
+    def user_service_body(self, executable, extra="", dependency="", restart=False):
+        # User-manager units always run as the owning user: no User=/Group= lines,
+        # and the system dbus.service/user-runtime-dir@ ordering targets do not exist there.
+        return ("[Unit]\nDescription=Orchestella optional guest feature\n" + dependency +
+                "[Service]\nType=simple\n" +
+                "Environment=HOME=%s\nEnvironment=XDG_RUNTIME_DIR=/run/user/%d\n" % (self.home, self.user()[0]) +
+                "UMask=0077\n" + extra +
+                "ExecStart=" + executable + ("\nRestart=always\nRestartSec=2\n" if restart else "\nRestart=no\n") + "KillMode=control-group\nTimeoutStopSec=5\nStandardOutput=null\nStandardError=null\n")
+
+    def enable_linger(self):
+        # DW-03: without linger logind tears the user manager down with the start
+        # session and the persistent user units die with it. Honest failure: there
+        # is no silent degradation, a desktop without linger is never installed.
+        self.run(["loginctl", "enable-linger", self.username], timeout=15, reason="linger-enable-failed")
+        _, proof = self.run(["loginctl", "show-user", self.username, "--property=Linger"], timeout=15, reason="linger-enable-failed")
+        if proof.strip() != "Linger=yes":
+            raise Failure("linger-enable-failed")
+
+    def user_systemctl(self, args, timeout=30, required=True, reason="command-failed", cancellable=True):
+        uid, _ = self.user()
+        return self.run(["runuser", "--user", self.username, "--", "env", "HOME=" + self.home,
+                         "XDG_RUNTIME_DIR=/run/user/%d" % uid,
+                         "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%d/bus" % uid,
+                         "systemctl", "--user", *args], timeout, required, reason, cancellable)
+
+    def unit_ctl(self, args, timeout=30, required=True, reason="command-failed", cancellable=True):
+        # Route every unit operation to the manager that owns the unit named by the
+        # final argument: desktop-labwc compositor/wayvnc to the persistent user
+        # manager (DW-03), the relays and all code-server units to the system one.
+        if self.profile == "desktop-labwc" and args and args[-1] in DESKTOP_USER_UNITS:
+            return self.user_systemctl(args, timeout, required, reason, cancellable)
+        return self.run(["systemctl", *args], timeout, required, reason, cancellable)
+
+    def user_reload(self):
+        # enable-linger starts the user manager asynchronously; reload once it answers.
+        deadline = time.monotonic() + 15
+        while True:
+            self.check_cancel()
+            if not self.user_systemctl(["daemon-reload"], timeout=5, required=False)[0]:
+                return
+            if time.monotonic() >= deadline:
+                raise Failure("unit-reload-failed")
+            time.sleep(0.1)
+
+    def retire_desktop_system_units(self):
+        # DW-03 migration: compositor/wayvnc moved to the user manager, so stale
+        # root-manager copies from an earlier schema are stopped and retired before
+        # the user units are written; otherwise both managers would race for the
+        # same wayland/wayvnc sockets. Foreign unit files are never touched.
+        removed = False
+        for name in DESKTOP_USER_UNITS:
+            path = self.path("/etc/systemd/system/" + name)
+            if path.is_symlink() or not path.exists():
+                continue
+            if path.read_text().startswith("# Orchestella owned unit schema="):
+                self.run(["systemctl", "stop", name], timeout=10, required=False, cancellable=False)
+                path.unlink()
+                removed = True
+        if removed:
+            self.run(["systemctl", "daemon-reload"], timeout=15, required=False, reason="unit-reload-failed")
+
     def service_body(self, executable, extra="", user=True, dependency="", restart=False):
         uid, gid = self.user()
         return ("[Unit]\nDescription=Orchestella optional guest feature\nAfter=dbus.service user-runtime-dir@%d.service\n" % uid + dependency +
@@ -1566,19 +1684,30 @@ class Controller:
         uid, gid = self.user(create=True)
         self.private_dir(self.home + "/.config", uid, gid)
         if self.profile == "desktop-labwc":
+            self.retire_desktop_system_units()
             self.config(self.home + "/.config/labwc/rc.xml", '<?xml version="1.0"?><labwc_config><core><decoration>server</decoration></core><theme><name>Clearlooks</name></theme><keyboard><keybind key="W-Return"><action name="Execute" command="foot"/></keybind></keyboard></labwc_config>\n')
             self.config(self.home + "/.config/foot/foot.ini", "[main]\nfont=monospace:size=12\n")
             self.config(self.home + "/.config/waybar/config", '{"layer":"top","modules-left":["wlr/taskbar"],"modules-right":["clock"],"clock":{"format":"{:%H:%M}"}}\n')
             self.config(self.home + "/.config/orchestella/wayvnc.conf", "enable_auth=false\n")
+            # DW-04: the fixed 9104 endpoint for audio-relay is session configuration
+            # of the installed pulseaudio package; user edits of default.pa survive.
+            self.config(self.home + "/.config/pulse/default.pa", PULSE_DEFAULT_PA)
             extra = "Environment=WLR_BACKENDS=headless\nEnvironment=WLR_RENDERER=pixman\nEnvironment=WLR_HEADLESS_OUTPUTS=1\n"
-            self.unit(UNITS[self.profile][0], self.service_body("/usr/bin/dbus-run-session -- /usr/bin/labwc -C " + self.home + "/.config/labwc -S '/usr/bin/python3 -B /usr/local/lib/orchestella/feature-session.py desktop-apps'", extra))
-            self.unit(UNITS[self.profile][1], self.service_body("/usr/bin/python3 -B /usr/local/lib/orchestella/feature-session.py wayvnc", dependency="Requires=orchestella-desktop-compositor.service\nAfter=orchestella-desktop-compositor.service\nBindsTo=orchestella-desktop-compositor.service\n"))
-            self.unit(UNITS[self.profile][2], self.service_body("/usr/bin/python3 -B /usr/local/lib/orchestella/display-relay.py --user " + self.username + " --transport " + self.display_transport(), user=False, restart=True, dependency="Requires=orchestella-desktop-wayvnc.service\nAfter=orchestella-desktop-wayvnc.service\nBindsTo=orchestella-desktop-wayvnc.service\n"))
+            self.user_unit(UNITS[self.profile][0], self.user_service_body("/usr/bin/dbus-run-session -- /usr/bin/labwc -C " + self.home + "/.config/labwc -S '/usr/bin/python3 -B /usr/local/lib/orchestella/feature-session.py desktop-apps'", extra))
+            self.user_unit(UNITS[self.profile][1], self.user_service_body("/usr/bin/python3 -B /usr/local/lib/orchestella/feature-session.py wayvnc", dependency="Requires=orchestella-desktop-compositor.service\nAfter=orchestella-desktop-compositor.service\nBindsTo=orchestella-desktop-compositor.service\n"))
+            # The relays are root supervisors (root-only token/device FDs plus
+            # privilege drop) and stay persistent system units. wayvnc-name
+            # dependencies cannot cross the manager boundary, so readiness is
+            # sequenced by start (wait_socket) and Restart=always retries until the
+            # relay's backend returns; the STATUS gate still probes both managers.
+            self.unit(UNITS[self.profile][2], self.service_body("/usr/bin/python3 -B /usr/local/lib/orchestella/display-relay.py --user " + self.username + " --transport " + self.display_transport(), user=False, restart=True))
             # G-05: audio data plane. Same root supervisor + privilege drop as the display
             # relay; the worker exits with "unavailable" until the guest PulseAudio endpoint
             # (127.0.0.1:9104) exists, and systemd restarts it. Not a readiness gate:
             # the audio closure is unverified on real devices.
             self.unit(UNITS[self.profile][3], self.service_body("/usr/bin/python3 -B /usr/local/lib/orchestella/audio-relay.py --user " + self.username, user=False, restart=True))
+            self.enable_linger()
+            self.user_reload()
         elif self.profile == "podman":
             self.configure_subids()
         elif self.profile == "code-server":
@@ -1954,7 +2083,7 @@ class Controller:
                 info = path.stat()
                 if self.testing or stat.S_ISSOCK(info.st_mode) and info.st_uid == self.user()[0]:
                     return
-            self.run(["systemctl", "is-active", "--quiet", unit], timeout=2, reason="service-not-active")
+            self.unit_ctl(["is-active", "--quiet", unit], timeout=2, reason="service-not-active")
             time.sleep(0.1)
         raise Failure("display-socket-timeout")
 
@@ -1977,7 +2106,7 @@ class Controller:
                 if not self.fixture.get("vsock_supported"):
                     raise Failure("display-transport-unsupported")
             else:
-                rc, _ = self.run(["systemctl", "is-active", "--quiet", UNITS[self.profile][2]], required=False)
+                rc, _ = self.unit_ctl(["is-active", "--quiet", UNITS[self.profile][2]], required=False)
                 if rc:
                     try:
                         with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as probe:
@@ -2064,7 +2193,10 @@ class Controller:
             if not self.testing and not Path(PAYLOAD + "/display-relay.py").is_file():
                 raise Failure("display-relay-unavailable")
             self.save(phase="compositor", capture="unverified", protocols="unverified")
-            self.run(["systemctl", "start", UNITS[self.profile][0]], timeout=20, reason="compositor-start-failed")
+            # Linger keeps the user manager boot-persistent; starting it explicitly
+            # only closes the enable-linger race right after install or first boot.
+            self.run(["systemctl", "start", "user@%d.service" % uid], reason="user-service-unavailable")
+            self.unit_ctl(["start", UNITS[self.profile][0]], timeout=20, reason="compositor-start-failed")
             deadline = time.monotonic() + 30
             while True:
                 try:
@@ -2072,7 +2204,7 @@ class Controller:
                     break
                 except Failure:
                     self.check_cancel()
-                    self.run(["systemctl", "is-active", "--quiet", UNITS[self.profile][0]], reason="service-not-active")
+                    self.unit_ctl(["is-active", "--quiet", UNITS[self.profile][0]], reason="service-not-active")
                     if time.monotonic() >= deadline:
                         raise Failure("desktop-session-timeout") from None
                     time.sleep(0.1)
@@ -2094,19 +2226,19 @@ class Controller:
                     time.sleep(0.1)
             self.capture_desktop()
             self.save(phase="wayvnc")
-            self.run(["systemctl", "start", UNITS[self.profile][1]], timeout=20, reason="wayvnc-start-failed")
+            self.unit_ctl(["start", UNITS[self.profile][1]], timeout=20, reason="wayvnc-start-failed")
             self.wait_socket("/run/user/%d/orchestella/wayvnc.sock" % uid, UNITS[self.profile][1])
             self.prepare_display_transport()
-            self.run(["systemctl", "start", UNITS[self.profile][2]], timeout=20, reason="display-relay-start-failed")
+            self.unit_ctl(["start", UNITS[self.profile][2]], timeout=20, reason="display-relay-start-failed")
             # G-05: start the audio relay best-effort (unit Restart=always keeps probing
             # the guest PulseAudio endpoint). It is deliberately NOT in the readiness
             # gate below: the audio loop is unverified on real devices and must never
             # block the desktop from becoming ready.
             self.save(phase="audio-relay")
-            self.run(["systemctl", "start", UNITS[self.profile][3]], timeout=20, required=False,
-                     reason="audio-relay-start-failed")
+            self.unit_ctl(["start", UNITS[self.profile][3]], timeout=20, required=False,
+                          reason="audio-relay-start-failed")
             for unit in UNITS[self.profile][:3]:
-                self.run(["systemctl", "is-active", "--quiet", unit], reason="service-not-active")
+                self.unit_ctl(["is-active", "--quiet", unit], reason="service-not-active")
             self.check_cancel()
             self.save(state="awaiting-frame", phase="host-frame-confirmation", reason="awaiting-host-frame")
         elif self.profile == "code-server":
@@ -2198,8 +2330,8 @@ class Controller:
 
     def stop_profile(self):
         for unit in reversed(UNITS[self.profile]):
-            self.run(["systemctl", "stop", unit], timeout=10, required=False, cancellable=False)
-            rc, _ = self.run(["systemctl", "is-active", "--quiet", unit], timeout=2, required=False, cancellable=False)
+            self.unit_ctl(["stop", unit], timeout=10, required=False, cancellable=False)
+            rc, _ = self.unit_ctl(["is-active", "--quiet", unit], timeout=2, required=False, cancellable=False)
             if rc == 0:
                 raise Failure("service-stop-failed")
         uid, _ = self.user()
@@ -2369,7 +2501,7 @@ class Controller:
                     state = self.save(state="failed", reason="auth-unverified", authenticationConfigured=False, health="unverified")
             if state["state"] in ("awaiting-frame", "ready") and self.profile in ("desktop-labwc", "code-server"):
                 for unit in UNITS[self.profile][:3 if self.profile == "desktop-labwc" else 1]:
-                    rc, _ = self.run(["systemctl", "is-active", "--quiet", unit], timeout=0.7, required=False)
+                    rc, _ = self.unit_ctl(["is-active", "--quiet", unit], timeout=0.7, required=False)
                     if rc:
                         state = self.save(state="failed", reason="service-not-active", health="unverified", capture="unverified")
                         break
@@ -2418,7 +2550,7 @@ class Controller:
             if action == "start" and current["state"] in ("ready", "awaiting-frame") and current.get("user") == self.username and current.get("verified_boot") == self.boot_id():
                 running = True
                 for unit in UNITS[self.profile][:3 if self.profile == "desktop-labwc" else 1]:
-                    rc, _ = self.run(["systemctl", "is-active", "--quiet", unit], timeout=0.6, required=False)
+                    rc, _ = self.unit_ctl(["is-active", "--quiet", unit], timeout=0.6, required=False)
                     running = running and not rc
                 if self.profile == "code-server":
                     self.credentials()
@@ -2447,7 +2579,7 @@ class Controller:
             if state["state"] not in ("awaiting-frame", "ready") or state["capture"] != "verified" or state["protocols"] != "verified":
                 raise Failure("capture-unverified")
             for unit in UNITS[self.profile]:
-                self.run(["systemctl", "is-active", "--quiet", unit], timeout=0.6, reason="service-not-active")
+                self.unit_ctl(["is-active", "--quiet", unit], timeout=0.6, reason="service-not-active")
             with self.mutex():
                 # Service probes above may race STOP/CANCEL/RESIZE. Commit the same proof only.
                 current = self.state()
@@ -2543,13 +2675,13 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-ORCHESTELLA_FEATURE_9E3B6C368DF6F385
+ORCHESTELLA_FEATURE_35185F59C040F792
     chmod 0755 "$1/usr/local/lib/orchestella/profilectl.py.next" || return 1
     mv "$1/usr/local/lib/orchestella/profilectl.py.next" "$1/usr/local/lib/orchestella/profilectl.py" || return 1
-    cat > "$1/usr/local/lib/orchestella/inputs.json.next" <<'ORCHESTELLA_FEATURE_93D264B8B5E5CE9A' || return 1
+    cat > "$1/usr/local/lib/orchestella/inputs.json.next" <<'ORCHESTELLA_FEATURE_2DDF47EC6809EE7A' || return 1
 {
   "schema": 1,
-  "units_version": 2,
+  "units_version": 3,
   "desktop": {
     "distro": "debian",
     "version": "13",
@@ -2577,7 +2709,7 @@ ORCHESTELLA_FEATURE_9E3B6C368DF6F385
     "evidence": "OCI ARM64 manifest bytes and digest verified by coordinator; layers/run unverified"
   }
 }
-ORCHESTELLA_FEATURE_93D264B8B5E5CE9A
+ORCHESTELLA_FEATURE_2DDF47EC6809EE7A
     chmod 0644 "$1/usr/local/lib/orchestella/inputs.json.next" || return 1
     mv "$1/usr/local/lib/orchestella/inputs.json.next" "$1/usr/local/lib/orchestella/inputs.json" || return 1
     cat > "$1/usr/local/lib/orchestella/bootstrap-python.sh.next" <<'ORCHESTELLA_FEATURE_B7AC2FBDA4BD6347' || return 1

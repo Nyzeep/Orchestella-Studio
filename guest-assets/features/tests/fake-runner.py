@@ -38,34 +38,15 @@ def store(file, value):
 
 
 command = Path(args[0]).name
-if command == "apt-get":
-    if "install" in args:
-        packages = fixture.get("packages", {})
-        for package in args[args.index("install") + 1:]:
-            packages[package] = {"labwc": "0.8.3-1", "wayvnc": "0.9.1-1", "wlr-randr": "0.4.1-1"}.get(package, "1.0")
-        fixture["packages"] = packages
-        store(root / "fixture.json", fixture)
-elif command == "dpkg-query":
-    package = args[-1]
-    if package not in fixture.get("packages", {}) or package in fixture.get("missing_packages", []):
-        sys.exit(1)
-    print("install ok installed\t" + fixture["packages"][package])
-elif command == "dpkg":
-    sys.exit(0)
-elif command == "useradd":
-    file = path("/etc/passwd")
-    file.write_text("orchestella:x:1000:1000::/home/orchestella:/bin/bash\n", encoding="utf-8")
-    path("/home/orchestella").mkdir(parents=True, exist_ok=True)
-elif command == "usermod":
-    for option, file in (("--add-subuids", "/etc/subuid"), ("--add-subgids", "/etc/subgid")):
-        if option in args:
-            start, end = map(int, args[args.index(option) + 1].split("-"))
-            with path(file).open("a", encoding="utf-8") as output:
-                output.write("%s:%d:%d\n" % (args[-1], start, end - start + 1))
-elif command == "systemctl":
-    operation = args[1]
+
+
+def systemctl_fixture(service_args):
+    # Same synthetic manager behavior for root and --user scope; the unit names are
+    # unique across managers, so one services map models both.
+    service_args = [argument for argument in service_args if argument != "--user"]
+    operation = service_args[1]
     services = fixture.get("services", {})
-    name = args[-1]
+    name = service_args[-1]
     if operation in ("start", "restart"):
         if name == "orchestella-code-server.service" and not services.get(name) and fixture.get("http_port"):
             process = subprocess.Popen([sys.executable, "-B", str(Path(__file__).with_name("fixture-http.py")), str(root)], stdin=subprocess.DEVNULL,
@@ -73,6 +54,8 @@ elif command == "systemctl":
             fixture["http_pid"] = process.pid
         services[name] = True
         if name.startswith("user-runtime-dir@"):
+            path("/run/user/1000").mkdir(parents=True, exist_ok=True)
+        if name.startswith("user@"):
             path("/run/user/1000").mkdir(parents=True, exist_ok=True)
         if name == "orchestella-desktop-compositor.service":
             path("/run/user/1000/wayland-0").touch()
@@ -106,6 +89,49 @@ elif command == "systemctl":
         sys.exit(0 if services.get(name) else 3)
     fixture["services"] = services
     store(root / "fixture.json", fixture)
+
+
+if command == "apt-get":
+    if "install" in args:
+        packages = fixture.get("packages", {})
+        for package in args[args.index("install") + 1:]:
+            packages[package] = {"labwc": "0.8.3-1", "wayvnc": "0.9.1-1", "wlr-randr": "0.4.1-1"}.get(package, "1.0")
+        fixture["packages"] = packages
+        store(root / "fixture.json", fixture)
+elif command == "dpkg-query":
+    package = args[-1]
+    if package not in fixture.get("packages", {}) or package in fixture.get("missing_packages", []):
+        sys.exit(1)
+    print("install ok installed\t" + fixture["packages"][package])
+elif command == "dpkg":
+    sys.exit(0)
+elif command == "useradd":
+    file = path("/etc/passwd")
+    file.write_text("orchestella:x:1000:1000::/home/orchestella:/bin/bash\n", encoding="utf-8")
+    path("/home/orchestella").mkdir(parents=True, exist_ok=True)
+elif command == "usermod":
+    for option, file in (("--add-subuids", "/etc/subuid"), ("--add-subgids", "/etc/subgid")):
+        if option in args:
+            start, end = map(int, args[args.index(option) + 1].split("-"))
+            with path(file).open("a", encoding="utf-8") as output:
+                output.write("%s:%d:%d\n" % (args[-1], start, end - start + 1))
+elif command == "systemctl":
+    systemctl_fixture(args)
+elif command == "loginctl":
+    # DW-03: synthetic logind. fail_linger models an unavailable/insufficient
+    # logind; linger_untracked models enable-linger returning success without
+    # actually persisting the linger flag (proof mismatch).
+    if fixture.get("fail_linger"):
+        print("synthetic logind unavailable")
+        sys.exit(1)
+    if "enable-linger" in args:
+        linger = path("/var/lib/systemd/linger") / args[-1]
+        linger.parent.mkdir(parents=True, exist_ok=True)
+        if not fixture.get("linger_untracked"):
+            linger.touch()
+    elif "show-user" in args:
+        linger = path("/var/lib/systemd/linger") / args[args.index("show-user") + 1]
+        print("Linger=%s" % ("yes" if linger.exists() else "no"))
 elif command == "runuser":
     nested = args[args.index("--") + 1:]
     if nested and nested[0] == "env":
@@ -113,7 +139,9 @@ elif command == "runuser":
         while nested and "=" in nested[0]:
             nested = nested[1:]
     nested_command = Path(nested[0]).name
-    if nested_command == "wayland-info":
+    if nested_command == "systemctl":
+        systemctl_fixture(nested)
+    elif nested_command == "wayland-info":
         print("zwlr_virtual_pointer_manager_v1 zwp_virtual_keyboard_manager_v1 zwlr_screencopy_manager_v1" if not fixture.get("missing_protocol") else "wl_compositor")
     elif nested_command == "grim":
         capture = path(nested[-1])
