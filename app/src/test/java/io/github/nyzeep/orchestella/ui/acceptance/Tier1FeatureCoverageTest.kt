@@ -1,14 +1,15 @@
 package io.github.nyzeep.orchestella.ui.acceptance
 
+import android.app.Activity
 import android.app.Application
-import android.os.Build
+import android.os.Looper
 import android.view.ViewGroup
 import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
-import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,22 +17,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -44,12 +46,12 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.nyzeep.orchestella.ConnectionPagesActivity
-import io.github.nyzeep.orchestella.InstanceCreationWizardModel
+import io.github.nyzeep.orchestella.MainActivity
+import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3BackButton
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
@@ -66,10 +68,8 @@ import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassTierOverride
 import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassFrameGate
 import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassStrategy
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
-import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors
-import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Glass
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Motion
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
@@ -82,9 +82,9 @@ import io.github.nyzeep.orchestella.ui.screens.config.SectionMotion
 import io.github.nyzeep.orchestella.ui.screens.dashboard.DashboardCardId
 import io.github.nyzeep.orchestella.ui.screens.dashboard.DashboardEditState
 import io.github.nyzeep.orchestella.ui.screens.theme.HomePreview
+import io.github.nyzeep.orchestella.ui.screens.theme.NavStyleOption
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemeOptionRow
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemeStudioController
-import io.github.nyzeep.orchestella.ui.screens.theme.ThemeStudioEvent
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemeStudioScreen
 import io.github.nyzeep.orchestella.ui.screens.theme.rememberThemeStudioHandle
 import io.github.nyzeep.orchestella.ui.screens.wizard.HardwareBadge
@@ -92,8 +92,6 @@ import io.github.nyzeep.orchestella.ui.screens.wizard.StorageGate
 import io.github.nyzeep.orchestella.ui.screens.wizard.WizardController
 import io.github.nyzeep.orchestella.ui.screens.wizard.WizardScreen
 import io.github.nyzeep.orchestella.ui.screens.wizard.WizardUiState
-import io.github.nyzeep.orchestella.ui.shell.LocalOeBackStack
-import io.github.nyzeep.orchestella.ui.shell.LocalOeSurfaceAlpha
 import io.github.nyzeep.orchestella.ui.shell.Oe3App
 import io.github.nyzeep.orchestella.ui.shell.Oe3NavStyle
 import io.github.nyzeep.orchestella.ui.shell.Oe3Pages
@@ -111,7 +109,6 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -119,6 +116,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
+import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
@@ -604,16 +602,19 @@ class Tier1FeatureCoverageTest {
             assertTrue("${theme.id}: L(bg) < L(surface)", lBg < lSurf)
             assertTrue("${theme.id}: L(surface) < L(raised)", lSurf < lRaised)
             assertTrue("${theme.id}: L(raised) < L(high)", lRaised < lHigh)
-            // M2 F8: widened dark tonal steps (>= 12 RGB units per step for clear hierarchy)
-            val step1 = AcceptanceTestSupport.rgbChannelDistance(c.surface, c.surfaceRaised)
-            val step2 = AcceptanceTestSupport.rgbChannelDistance(c.surfaceRaised, c.surfaceHigh)
+            // HCT tone is CIE L*. The 15 → 21 → 27 reference allows two units
+            // of variation per step to accommodate a preset's own palette.
+            val step1 = AcceptanceTestSupport.perceptualTone(c.surfaceRaised) -
+                AcceptanceTestSupport.perceptualTone(c.surface)
+            val step2 = AcceptanceTestSupport.perceptualTone(c.surfaceHigh) -
+                AcceptanceTestSupport.perceptualTone(c.surfaceRaised)
             assertTrue(
-                "${theme.id}: M2 dark tonal step surface->raised too narrow ($step1 < 12.0)",
-                step1 >= 12.0,
+                "${theme.id}: surface → raised needs at least 4 L* of separation, measured $step1",
+                step1 >= 4.0,
             )
             assertTrue(
-                "${theme.id}: M2 dark tonal step raised->high too narrow ($step2 < 12.0)",
-                step2 >= 12.0,
+                "${theme.id}: raised → high needs at least 4 L* of separation, measured $step2",
+                step2 >= 4.0,
             )
         }
 
@@ -648,6 +649,7 @@ class Tier1FeatureCoverageTest {
             Triple(ThemeCatalog.mascotDark, true, Oe3NavStyle.Floating),
             Triple(ThemeCatalog.mascotLight, false, Oe3NavStyle.Floating),
             Triple(ThemeCatalog.mascotDark, false, Oe3NavStyle.Fixed),
+            Triple(ThemeCatalog.mascotLight, false, Oe3NavStyle.Fixed),
         )
         var activeIndex by mutableIntStateOf(0)
         compose.setContent {
@@ -681,21 +683,7 @@ class Tier1FeatureCoverageTest {
         }
 
         configs.forEachIndexed { idx, (theme, pureBlack, navStyle) ->
-            val tokens = Oe3Colors.resolve(theme, pureBlack = pureBlack)
-            val glassTokens = Oe3Glass.resolve(theme, Oe3GlassLevel.Standard, pureBlack = pureBlack)
-            assertNotEquals(
-                "Dock glass tint (${Integer.toHexString(glassTokens.tint)}) must differ from card surface (${Integer.toHexString(tokens.surface)}) for ${theme.id}/pb=$pureBlack",
-                tokens.surface,
-                glassTokens.tint,
-            )
-            val solidTokens = Oe3Glass.resolve(theme, Oe3GlassLevel.None, pureBlack = pureBlack)
-            assertNotEquals(
-                "Solid dock tint must differ from card surface for ${theme.id}/pb=$pureBlack",
-                tokens.surface,
-                solidTokens.tint,
-            )
-
-            activeIndex = idx
+            compose.runOnUiThread { activeIndex = idx }
             compose.waitForIdle()
 
             val rootBounds = compose.onRoot().fetchSemanticsNode().boundsInRoot
@@ -708,7 +696,7 @@ class Tier1FeatureCoverageTest {
                 assertEquals("Fixed nav must dock to bottom", rootBounds.bottom, navBounds.bottom, 2.0f)
             }
 
-            val img = AcceptanceTestSupport.captureRootBitmap(compose, "t1_r2_03_$idx")
+            val img = AcceptanceTestSupport.captureRootBitmap(compose)
             val cardSample = AcceptanceTestSupport.sampleAverageColor(
                 img,
                 xRange = (navBounds.left.roundToInt() + 20)..(navBounds.right.roundToInt() - 20),
@@ -729,38 +717,33 @@ class Tier1FeatureCoverageTest {
 
     @Test
     fun t1_r2_04_designSystemSpacingAndRadiusTokensPropagateToCards_m2() {
-        var observedCorner: Dp? = null
-        var observedAlpha: Float = -1f
+        var radius by mutableIntStateOf(0)
+        val theme = ThemeCatalog.constructivistWorkstation
         compose.setContent {
             Oe3App(
                 selectedTab = Oe3Tab.Workstation,
                 onTabSelected = {},
-                theme = ThemeCatalog.constructivistWorkstation,
-                cornerRadiusDp = 12,
+                theme = theme,
+                cornerRadiusDp = radius,
                 surfaceAlpha = 0.55f,
                 reduceMotion = true,
                 pages = Oe3Pages(
                     workstation = {
-                        observedCorner = LocalOe3CornerRadius.current
-                        observedAlpha = LocalOeSurfaceAlpha.current
                         Box(Modifier.fillMaxSize().background(Color.Magenta)) {
                             Column(Modifier.fillMaxSize().padding(Oe3Spacing.pageInset)) {
                                 Oe3Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(140.dp)
+                                        .height(80.dp)
                                         .testTag("probe:alpha-card"),
                                 ) {
-                                    Text("Alpha Card")
                                 }
                                 Spacer(Modifier.height(Oe3Spacing.gridGap))
-                                OeListGroup(modifier = Modifier.fillMaxWidth()) {
-                                    Oe3ListRow(title = "Group Row")
+                                OeListGroup(Modifier.fillMaxWidth().testTag("probe:group")) {
+                                    Spacer(Modifier.height(80.dp))
                                 }
                                 Spacer(Modifier.height(Oe3Spacing.gridGap))
-                                Oe3GridCard(modifier = Modifier.fillMaxWidth()) {
-                                    Text("Grid Card")
-                                }
+                                Oe3GridCard(Modifier.fillMaxWidth().height(80.dp).testTag("probe:grid")) {}
                             }
                         }
                     },
@@ -768,27 +751,36 @@ class Tier1FeatureCoverageTest {
             )
         }
         compose.waitForIdle()
-        assertEquals(12.dp, observedCorner)
-        assertEquals(0.55f, observedAlpha, 0.001f)
+        val mixed = Color(Oe3Colors.resolve(theme).surface).copy(alpha = 0.55f).compositeOver(Color.Magenta)
+        val squareFrame = AcceptanceTestSupport.captureRootBitmap(compose)
+        listOf("probe:alpha-card", "probe:group").forEach { tag ->
+            val center = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.center
+            val sampled = Color(squareFrame.getPixel(center.x.roundToInt(), center.y.roundToInt()))
+            assertTrue("$tag must mix the 55% surface with the backdrop, observed $sampled",
+                AcceptanceTestSupport.colorDistance(sampled, mixed) <= 4.0)
+        }
 
-        // Verify Oe3Card genuinely consumes LocalOeSurfaceAlpha (pixel blends with Magenta backdrop)
-        val cardBounds = compose.onNodeWithTag("probe:alpha-card").fetchSemanticsNode().boundsInRoot
-        val img = AcceptanceTestSupport.captureRootBitmap(compose, "t1_r2_04")
-        val sampled = AcceptanceTestSupport.sampleAverageColor(
-            img,
-            xRange = (cardBounds.left.roundToInt() + 30)..(cardBounds.right.roundToInt() - 30),
-            yRange = (cardBounds.top.roundToInt() + 40)..(cardBounds.bottom.roundToInt() - 20),
-        )
-        // Magenta contributes high red & blue when alpha = 0.55f; opaque #14151A has low red (<0.15)
-        assertTrue(
-            "Oe3Card must apply LocalOeSurfaceAlpha=0.55f over backdrop, observed red=${sampled.red}",
-            sampled.red >= 0.30f,
-        )
+        val gridBounds = compose.onNodeWithTag("probe:grid").fetchSemanticsNode().boundsInRoot
+        val cornerProbe = with(compose.density) { 2.dp.roundToPx() }
+        val cornerX = gridBounds.left.roundToInt() + cornerProbe
+        val cornerY = gridBounds.top.roundToInt() + cornerProbe
+        val squareCorner = Color(squareFrame.getPixel(cornerX, cornerY))
+        assertTrue("A grid card with a custom 0dp radius must fill its square corner",
+            AcceptanceTestSupport.colorDistance(squareCorner, mixed) <= 4.0)
+
+        compose.runOnUiThread { radius = 24 }
+        compose.waitForIdle()
+        val roundFrame = AcceptanceTestSupport.captureRootBitmap(compose)
+        val roundCorner = Color(roundFrame.getPixel(cornerX, cornerY))
+        assertTrue("A grid card with a custom 24dp radius must expose the backdrop at its corner",
+            AcceptanceTestSupport.colorDistance(roundCorner, Color.Magenta) <= 4.0)
     }
 
     @Test
     fun t1_r2_05_typographyRolesAndWcagContrastPassAcrossAll41Presets_baseline() {
-        assertEquals(8, Oe3TextRole.entries.size)
+        val shippedRoles = setOf("Brand", "PageTitle", "Section", "Body", "BodyStrong", "Caption", "NavLabel", "Mono")
+        assertTrue("Existing typography roles must remain available",
+            Oe3TextRole.entries.map { it.name }.containsAll(shippedRoles))
         assertEquals(1.30f, Oe3TypeScale.effective(1.0f, 1.50f), 0.001f)
         assertEquals(0.85f, Oe3TypeScale.effective(1.0f, 0.50f), 0.001f)
         assertTrue("Catalog must contain >= 41 presets", ThemeCatalog.presets.size >= 41)
@@ -843,32 +835,33 @@ class Tier1FeatureCoverageTest {
         store.setMode(ThemeStore.Mode.DARK)
         store.setBackgroundUri("content://test/wallpaper/excluded")
 
-        val activity = Robolectric.buildActivity(
+        val main = Robolectric.buildActivity(MainActivity::class.java).create()
+        val connections = Robolectric.buildActivity(
             ConnectionPagesActivity::class.java,
             ConnectionPagesActivity.sshIntent(app),
-        ).setup().get()
-        val content = activity.findViewById<ViewGroup>(android.R.id.content)
-        val composeRoot = content.getChildAt(0)
-        assertNotNull(composeRoot)
-        val initialBackground = composeRoot.background
-        assertEquals(android.graphics.Color.TRANSPARENT, activity.window.statusBarColor)
-        assertEquals(android.graphics.Color.TRANSPARENT, activity.window.navigationBarColor)
+        ).create()
+        try {
+            listOf(main.get(), connections.get()).forEach { activity: Activity ->
+                val name = activity.javaClass.simpleName
+                val content = activity.findViewById<ViewGroup>(android.R.id.content)
+                val composeRoot = checkNotNull(content.getChildAt(0))
+                val initialBackground = composeRoot.background
+                assertEquals("$name starts with a transparent status bar", 0, activity.window.statusBarColor)
+                assertEquals("$name starts with a transparent navigation bar", 0, activity.window.navigationBarColor)
 
-        // Mutate theme + mode and explicitly invoke ThemeApplier.bind(activity)
-        store.setThemeId(ThemeCatalog.mascotLight.id)
-        store.setMode(ThemeStore.Mode.LIGHT)
-        ThemeApplier.bind(activity)
-        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+                ThemeApplier.bind(activity)
+                store.setThemeId(ThemeCatalog.mascotLight.id)
+                store.setMode(ThemeStore.Mode.LIGHT)
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
 
-        assertEquals(android.graphics.Color.TRANSPARENT, activity.window.statusBarColor)
-        assertEquals(android.graphics.Color.TRANSPARENT, activity.window.navigationBarColor)
-        assertFalse(composeRoot.background is android.graphics.drawable.LayerDrawable)
-        assertEquals(
-            "ThemeApplier must NOT overwrite Compose-hosted Activity root background",
-            initialBackground,
-            composeRoot.background,
-        )
-        activity.finish()
+                assertEquals("$name keeps its status bar transparent", 0, activity.window.statusBarColor)
+                assertEquals("$name keeps its navigation bar transparent", 0, activity.window.navigationBarColor)
+                assertEquals("$name keeps its original root background", initialBackground, composeRoot.background)
+            }
+        } finally {
+            connections.destroy()
+            main.destroy()
+        }
     }
 
     @Test
@@ -910,21 +903,34 @@ class Tier1FeatureCoverageTest {
         }
         compose.waitForIdle()
 
-        // Push A
-        compose.runOnUiThread {
-            backStack.push(OeDestination("dest-a", "页面 A") { Box(Modifier.fillMaxSize().testTag("dest-a")) })
-        }
-        compose.waitForIdle()
-        compose.onNodeWithTag("dest-a").assertIsDisplayed()
-        compose.onNodeWithTag("pager:base").assertDoesNotExist()
+        val rootBounds = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        val tolerancePx = with(compose.density) { 2.dp.toPx() }
 
-        // Push B
-        compose.runOnUiThread {
-            backStack.push(OeDestination("dest-b", "页面 B") { Box(Modifier.fillMaxSize().testTag("dest-b")) })
+        fun pushAndCheckFrameZero(entering: String, previous: String) {
+            compose.mainClock.autoAdvance = false
+            try {
+                compose.runOnUiThread {
+                    Snapshot.withMutableSnapshot {
+                        backStack.push(OeDestination(entering, entering) {
+                            Box(Modifier.fillMaxSize().testTag(entering))
+                        })
+                    }
+                }
+                compose.mainClock.advanceTimeByFrame()
+                val left = compose.onNodeWithTag(entering).fetchSemanticsNode().boundsInRoot.left
+                assertTrue("$entering must start offscreen at the right edge, left=$left",
+                    left >= rootBounds.right - tolerancePx)
+                compose.onNodeWithTag(previous).assertExists()
+            } finally {
+                compose.mainClock.autoAdvance = true
+            }
+            compose.waitForIdle()
+            compose.onNodeWithTag(entering).assertIsDisplayed()
+            compose.onNodeWithTag(previous).assertDoesNotExist()
         }
-        compose.waitForIdle()
-        compose.onNodeWithTag("dest-b").assertIsDisplayed()
-        compose.onNodeWithTag("dest-a").assertDoesNotExist()
+
+        pushAndCheckFrameZero(entering = "dest-a", previous = "pager:base")
+        pushAndCheckFrameZero(entering = "dest-b", previous = "dest-a")
 
         // Pop B (2 -> 1): mid-flight must reveal A (under layer), never base pager bleed-through
         compose.mainClock.autoAdvance = false
@@ -933,6 +939,13 @@ class Tier1FeatureCoverageTest {
                 Snapshot.withMutableSnapshot { backStack.pop() }
             }
             compose.mainClock.advanceTimeByFrame()
+            val leaving = compose.onNodeWithTag("dest-b")
+            val initialLeft = leaving.fetchSemanticsNode().boundsInRoot.left
+            assertEquals("Leaving destination starts in place at the first pop frame", rootBounds.left, initialLeft, tolerancePx)
+            compose.mainClock.advanceTimeBy(64)
+            val midLeft = leaving.fetchSemanticsNode().boundsInRoot.left
+            assertTrue("Leaving destination must remain on screen and move during pop, left=$midLeft",
+                midLeft > initialLeft + tolerancePx && midLeft < rootBounds.right - tolerancePx)
             compose.onNodeWithTag("dest-a").assertExists()
             compose.onNodeWithTag("pager:base").assertDoesNotExist()
         } finally {
@@ -961,28 +974,40 @@ class Tier1FeatureCoverageTest {
                 selectedTab = controller.selectedTab,
                 onTabSelected = controller::select,
                 theme = ThemeCatalog.constructivistWorkstation,
-                reduceMotion = true,
+                reduceMotion = false,
                 backStack = backStack,
                 pages = AcceptanceTestSupport.samplePages(),
             )
         }
         compose.waitForIdle()
 
-        compose.runOnUiThread {
-            backStack.push(OeDestination("lvl1", "一级") { Box(Modifier.testTag("stack:lvl1")) })
-            backStack.push(OeDestination("lvl2", "二级") { Box(Modifier.testTag("stack:lvl2")) })
+        fun push(key: String, label: String) {
+            compose.runOnUiThread {
+                Snapshot.withMutableSnapshot {
+                    backStack.push(OeDestination(key, label) { Box(Modifier.fillMaxSize().testTag("stack:$key")) })
+                }
+            }
         }
+        push("lvl1", "一级")
         compose.waitForIdle()
-        assertEquals(2, backStack.size)
-        compose.onNodeWithTag("stack:lvl2").assertExists()
+        compose.mainClock.autoAdvance = false
+        try {
+            push("lvl2", "二级")
+            compose.mainClock.advanceTimeBy(64)
+            assertEquals(2, backStack.size)
+            compose.onNodeWithTag("stack:lvl1").assertExists()
+            compose.onNodeWithTag("stack:lvl2").assertIsDisplayed()
 
-        compose.onNodeWithText(Oe3Tab.Instances.label).performClick()
-        compose.waitForIdle()
+            compose.onNodeWithText(Oe3Tab.Instances.label).performClick()
+            compose.mainClock.advanceTimeByFrame()
 
-        assertEquals(0, backStack.size)
-        assertFalse(backStack.canPop)
-        compose.onNodeWithTag("stack:lvl1").assertDoesNotExist()
-        compose.onNodeWithTag("stack:lvl2").assertDoesNotExist()
+            assertEquals(0, backStack.size)
+            assertFalse(backStack.canPop)
+            compose.onNodeWithTag("stack:lvl1").assertDoesNotExist()
+            compose.onNodeWithTag("stack:lvl2").assertDoesNotExist()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
         compose.onNodeWithTag("instances-list").assertIsDisplayed()
     }
 
@@ -1034,13 +1059,14 @@ class Tier1FeatureCoverageTest {
         val store = ThemeStore(AcceptanceTestSupport.InMemorySharedPreferences())
         store.setBackgroundUri("content://committed/wallpaper.png")
         val controller = ThemeStudioController(store)
+        val committedTheme = ThemeCatalog.mascotLight
         val draftTheme = ThemeCatalog.catppuccin
 
         compose.setContent {
-            Oe3Theme(theme = ThemeCatalog.mascotLight, reduceMotion = true) {
+            Oe3Theme(theme = committedTheme, reduceMotion = true) {
                 HomePreview(
                     theme = draftTheme,
-                    pureBlack = true,
+                    pureBlack = false,
                     cornerDp = 24,
                     surfaceOpacityPercent = 70,
                     fontFamily = FontFamily.Monospace,
@@ -1049,9 +1075,62 @@ class Tier1FeatureCoverageTest {
             }
         }
         compose.waitForIdle()
-        compose.onNodeWithTag("theme-preview:home").assertIsDisplayed()
+        val rendered = homePreviewBackground()
+        val draft = Color(Oe3Colors.resolve(draftTheme).background)
+        val committed = Color(Oe3Colors.resolve(committedTheme).background)
+        assertTrue("Preview must show the draft background, observed $rendered",
+            AcceptanceTestSupport.colorDistance(rendered, draft) <= 3.0)
+        assertTrue("Preview must differ from the committed shell background",
+            AcceptanceTestSupport.colorDistance(rendered, committed) > 20.0)
         assertEquals("content://committed/wallpaper.png", store.backgroundUri())
-        assertEquals(ThemeCatalog.mascotLight.id, controller.read().theme.id)
+        assertEquals(committedTheme.id, controller.read().theme.id)
+    }
+
+    @Test
+    fun t1_r3_07_homePreviewAnimatesDraftChangeAndRetiresOutgoingDock_baseline() {
+        var darkDraft by mutableStateOf(false)
+        val light = ThemeCatalog.mascotLight
+        val dark = ThemeCatalog.catppuccin
+        compose.setContent {
+            Oe3Theme(theme = light, reduceMotion = false) {
+                HomePreview(
+                    theme = if (darkDraft) dark else light,
+                    pureBlack = false,
+                    cornerDp = 24,
+                    navStyle = if (darkDraft) NavStyleOption.Fixed else NavStyleOption.Floating,
+                )
+            }
+        }
+        val start = homePreviewBackground()
+        val target = Color(Oe3Colors.resolve(dark).background)
+        compose.onNodeWithTag("theme-preview:nav-floating").assertIsDisplayed()
+
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.runOnUiThread { Snapshot.withMutableSnapshot { darkDraft = true } }
+            compose.mainClock.advanceTimeBy(120)
+            val intermediate = homePreviewBackground()
+            assertTrue("Animated preset switch must progress beyond the starting palette",
+                AcceptanceTestSupport.colorDistance(start, intermediate) > 8.0)
+            assertTrue("Animated preset switch must leave an intermediate palette before settling",
+                AcceptanceTestSupport.colorDistance(target, intermediate) > 8.0)
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+        val end = homePreviewBackground()
+        assertTrue("Preview must settle on the last selected palette",
+            AcceptanceTestSupport.colorDistance(target, end) <= 3.0)
+        compose.onNodeWithTag("theme-preview:nav-fixed").assertIsDisplayed()
+        compose.onNodeWithTag("theme-preview:nav-floating").assertDoesNotExist()
+    }
+
+    private fun homePreviewBackground(): Color {
+        val preview = compose.onNodeWithTag("theme-preview:home")
+        preview.assertIsDisplayed()
+        val bounds = preview.fetchSemanticsNode().boundsInRoot
+        val offset = with(compose.density) { 12.dp.roundToPx() }
+        val img = AcceptanceTestSupport.captureRootBitmap(compose)
+        return Color(img.getPixel((bounds.left + bounds.width * 0.75f).roundToInt(), bounds.top.roundToInt() + offset))
     }
 
     // =========================================================================
@@ -1071,7 +1150,7 @@ class Tier1FeatureCoverageTest {
         }
         compose.waitForIdle()
         compose.onAllNodesWithText("Orchestella").assertCountEquals(0)
-        // Title exists in header (plus nav label "工作站" in dock = 2; no 3rd duplicate)
+        compose.onAllNodesWithText(Oe3Tab.Workstation.label).assertCountEquals(2)
         val cardsBounds = compose.onNodeWithTag("dashboard:cards").fetchSemanticsNode().boundsInRoot
         // R4 overlaid Box: scrollable content container starts at root top (<= 4dp), NOT pushed down 72dp by a Column bar
         val maxTopPx = with(compose.density) { 4.dp.toPx() }
@@ -1093,14 +1172,10 @@ class Tier1FeatureCoverageTest {
                     workstation = {
                         OeScaffold(title = "滚动融合") {
                             LazyColumn(Modifier.fillMaxSize().testTag("r4:scroll-list")) {
-                                items(30) { idx ->
-                                    Box(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .height(64.dp)
-                                            .background(if (idx % 2 == 0) Color(0xFF00AAFF) else Color(0xFF22DD88)),
-                                    ) {
-                                        Text("Row #$idx")
+                                items(30) {
+                                    Row(Modifier.fillMaxWidth().height(64.dp)) {
+                                        Spacer(Modifier.weight(1f).fillMaxSize().background(Color(0xFF00AAFF)))
+                                        Spacer(Modifier.weight(1f).fillMaxSize().background(Color(0xFF22DD88)))
                                     }
                                 }
                             }
@@ -1120,14 +1195,19 @@ class Tier1FeatureCoverageTest {
         compose.onNodeWithTag("r4:scroll-list").performTouchInput { swipeUp() }
         compose.waitForIdle()
 
-        // Verify top 72dp region is NOT an opaque flat colors.surface rectangle blocking scrolled content
-        val img = AcceptanceTestSupport.captureRootBitmap(compose, "t1_r4_02")
-        val barSurfaceColor = Color(Oe3Colors.resolve(ThemeCatalog.constructivistWorkstation).surface)
-        val topBandSample = AcceptanceTestSupport.sampleAverageColor(img, 200..300, 12..30)
-        val dist = AcceptanceTestSupport.colorDistance(topBandSample, barSurfaceColor)
+        // The two colours must still contribute to the same header row. A
+        // gradient or blur is allowed, including an opaque edge at the very top.
+        val img = AcceptanceTestSupport.captureRootBitmap(compose)
+        val title = compose.onNodeWithText("滚动融合").fetchSemanticsNode().boundsInRoot
+        val leftX = (listBounds.left + listBounds.width * 0.42f).roundToInt()
+        val rightX = (listBounds.left + listBounds.width * 0.8f).roundToInt()
+        val rowDeltas = listOf(0.25f, 0.50f, 0.85f).map { position ->
+            val y = (title.top + title.height * position).roundToInt()
+            AcceptanceTestSupport.colorDistance(Color(img.getPixel(leftX, y)), Color(img.getPixel(rightX, y)))
+        }
         assertTrue(
-            "Header must blend/scroll-under rather than rendering an opaque solid surface bar (dist=$dist)",
-            dist >= 8.0,
+            "Content beneath the title should contribute to header pixels after scrolling, deltas=$rowDeltas",
+            rowDeltas.count { it >= 8.0 } >= 2,
         )
     }
 
@@ -1205,7 +1285,8 @@ class Tier1FeatureCoverageTest {
         val minInsetPx = with(compose.density) { Oe3Spacing.pageInset.toPx() } - 2f
         assertTrue("act2 must respect right pageInset (${rootBounds.right - act2Bounds.right}px >= $minInsetPx)", rootBounds.right - act2Bounds.right >= minInsetPx)
         // Overlaid Box contract: content fills from root top underneath header
-        assertTrue("Content must overlay under header (top=${contentBounds.top})", contentBounds.top <= 4f)
+        val maxTopPx = with(compose.density) { 4.dp.toPx() }
+        assertTrue("Content must overlay under header (top=${contentBounds.top})", contentBounds.top <= maxTopPx)
     }
 
     @Test
@@ -1222,12 +1303,23 @@ class Tier1FeatureCoverageTest {
         }
         compose.waitForIdle()
 
-        val expectedContentTags = mapOf(
+        val viewportTags = mapOf(
             Oe3Tab.Workstation to "dashboard:cards",
             Oe3Tab.Instances to "instances-list",
-            Oe3Tab.Hardware to "hardware:screen",
             Oe3Tab.Distros to "distros-grid",
             Oe3Tab.Config to "config:screen",
+        )
+        val context = compose.activity
+        val dock = hasAnyAncestor(hasTestTag("shell:nav-bar"))
+        val dashboard = AcceptanceTestSupport.sampleDashboardState()
+        val firstItems = mapOf(
+            Oe3Tab.Workstation to hasText(
+                context.getString(R.string.ui3_dashboard_meta_summary, dashboard.instanceCount, dashboard.runningCount),
+            ),
+            Oe3Tab.Instances to hasTestTag("instances-create"),
+            Oe3Tab.Hardware to hasTestTag("hardware:summary"),
+            Oe3Tab.Distros to hasText(context.getString(R.string.ui3_distros_meta_line)),
+            Oe3Tab.Config to hasText(context.getString(R.string.config_page_meta)),
         )
         val maxTopPx = with(compose.density) { 4.dp.toPx() }
 
@@ -1235,12 +1327,19 @@ class Tier1FeatureCoverageTest {
             compose.runOnUiThread { controller.select(tab) }
             compose.waitForIdle()
             compose.onAllNodesWithText("Orchestella").assertCountEquals(0)
-            val contentTag = expectedContentTags.getValue(tab)
-            val top = compose.onNodeWithTag(contentTag).fetchSemanticsNode().boundsInRoot.top
-            assertTrue(
-                "${tab.key} ($contentTag) must render in M2 scroll-under Box (top=$top > $maxTopPx)",
-                top <= maxTopPx,
-            )
+            compose.onAllNodesWithText(tab.label, useUnmergedTree = true).assertCountEquals(2)
+            val title = compose.onNode(hasText(tab.label) and !dock, useUnmergedTree = true)
+            title.assertIsDisplayed()
+            val titleBottom = title.fetchSemanticsNode().boundsInRoot.bottom
+            val firstItem = compose.onNode(firstItems.getValue(tab), useUnmergedTree = true)
+            firstItem.assertIsDisplayed()
+            val itemTop = firstItem.fetchSemanticsNode().boundsInRoot.top
+            assertTrue("${tab.key} first content item at $itemTop overlaps title ending at $titleBottom", itemTop >= titleBottom)
+
+            viewportTags[tab]?.let { tag ->
+                val top = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.top
+                assertTrue("${tab.key} scroll viewport should begin under its title, top=$top", top <= maxTopPx)
+            }
         }
     }
 
@@ -1358,18 +1457,6 @@ class Tier1FeatureCoverageTest {
 
     @Test
     fun t1_r5_04_predictiveBackManifestAndBackStackGestureContract_m3() {
-        val manifest = File(AcceptanceTestSupport.appMainDir(), "AndroidManifest.xml").readText()
-        assertTrue(
-            "AndroidManifest.xml must declare android:enableOnBackInvokedCallback=\"true\" for M3 Predictive Back",
-            manifest.contains("android:enableOnBackInvokedCallback=\"true\""),
-        )
-
-        val backStackSource = File(AcceptanceTestSupport.uiSourceRoot(), "shell/OeBackStack.kt").readText()
-        assertTrue(
-            "OeBackStack.kt must wire PredictiveBackHandler for M3 gesture-driven back",
-            Regex("""PredictiveBackHandler\s*[({]""").containsMatchIn(backStackSource),
-        )
-
         val backStack = OeBackStack()
         compose.setContent {
             Oe3App(
@@ -1390,22 +1477,59 @@ class Tier1FeatureCoverageTest {
         compose.waitForIdle()
 
         val dispatcher = compose.activity.onBackPressedDispatcher
+        val topPage = compose.onNodeWithTag("pb:dest")
+        val settledBounds = topPage.fetchSemanticsNode().boundsInRoot
         compose.runOnUiThread {
             dispatcher.dispatchOnBackStarted(BackEventCompat(0f, 0f, 0f, BackEventCompat.EDGE_LEFT))
+        }
+        compose.waitForIdle()
+        compose.runOnUiThread {
+            dispatcher.dispatchOnBackProgressed(BackEventCompat(20f, 0f, 0.20f, BackEventCompat.EDGE_LEFT))
+        }
+        compose.waitForIdle()
+        val earlyBounds = topPage.fetchSemanticsNode().boundsInRoot
+        compose.runOnUiThread {
             dispatcher.dispatchOnBackProgressed(BackEventCompat(40f, 0f, 0.45f, BackEventCompat.EDGE_LEFT))
         }
         compose.waitForIdle()
-        val midBounds = compose.onNodeWithTag("pb:dest").fetchSemanticsNode().boundsInRoot
+        val midBounds = topPage.fetchSemanticsNode().boundsInRoot
         assertTrue(
-            "Predictive back progress (0.45) should visually offset/scale top destination (left=${midBounds.left})",
-            midBounds.left > 0f,
+            "Top destination must follow both observed predictive back progress events",
+            earlyBounds.left > settledBounds.left && midBounds.left > earlyBounds.left,
         )
+        val underneath = compose.onNodeWithTag("pb:base")
+        val underMidBounds = underneath.fetchSemanticsNode().boundsInRoot
 
         compose.runOnUiThread { dispatcher.onBackPressed() }
         compose.waitForIdle()
         assertFalse(backStack.canPop)
         compose.onNodeWithTag("pb:dest").assertDoesNotExist()
-        compose.onNodeWithTag("pb:base").assertIsDisplayed()
+        underneath.assertIsDisplayed()
+        val underRestBounds = underneath.fetchSemanticsNode().boundsInRoot
+        assertTrue("Underlying page must show parallax while the gesture is active",
+            underMidBounds.width < underRestBounds.width || underMidBounds.left != underRestBounds.left)
+
+        val manifest = File(AcceptanceTestSupport.appMainDir(), "AndroidManifest.xml").readText()
+        assertTrue("Manifest must opt into system predictive back", manifest.contains("android:enableOnBackInvokedCallback=\"true\""))
+    }
+
+    @Test
+    fun t1_r5_06_api33GlassUsesRuntimeShaderAndHalfSizeHazeInput_m3() {
+        assertEquals(
+            GlassTier.L2,
+            Oe3GlassStrategy.resolveTier(Oe3GlassLevel.Standard, true, 33, false, GlassDeviceCap.Unlimited),
+        )
+
+        // Host screenshots cannot certify GPU AGSL refraction. Guard the two
+        // Android/Haze integration calls independently of file placement.
+        val glassSources = File(AcceptanceTestSupport.uiSourceRoot(), "oe3/glass").walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .map(File::readText)
+            .toList()
+        assertTrue("L2 must create a RenderEffect from an Android RuntimeShader",
+            glassSources.any { "createRuntimeShaderEffect" in it } && glassSources.any { "RuntimeShader(" in it })
+        assertTrue("The Haze backdrop must draw from a half-resolution input",
+            glassSources.any { "HazeInputScale.Fixed(0.5f)" in it })
     }
 
     @Test

@@ -1,10 +1,16 @@
 package io.github.nyzeep.orchestella.ui.acceptance
 
+import android.content.ContentProvider
+import android.content.ContentValues
+import android.content.res.AssetFileDescriptor
+import android.database.Cursor
+import android.graphics.Bitmap
+import android.net.Uri
+import android.os.ParcelFileDescriptor
 import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,14 +24,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -33,12 +40,15 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ListRow
 import io.github.nyzeep.orchestella.ui.oe3.components.OeListGroup
 import io.github.nyzeep.orchestella.ui.oe3.glass.GlassDeviceCap
@@ -64,6 +74,7 @@ import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareScreen
 import io.github.nyzeep.orchestella.ui.screens.instances.InstancesActions
 import io.github.nyzeep.orchestella.ui.screens.instances.InstancesScreen
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemePresetScreen
+import io.github.nyzeep.orchestella.ui.screens.theme.TerminalPreview
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemeStudioController
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemeStudioEvent
 import io.github.nyzeep.orchestella.ui.screens.theme.rememberThemeStudioHandle
@@ -85,17 +96,19 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
 /**
@@ -247,7 +260,7 @@ class Tier2BoundaryCasesTest {
 
     @Test
     @Config(sdk = [35], qualifiers = "zh-rCN-w343dp-h800dp-mdpi")
-    fun t2_r2_01_narrowViewport343DpAt130PercentFontScaleNoTruncation_baseline() {
+    fun t2_r2_01_narrowViewport343DpAt130PercentFontScaleNoTruncation_m2() {
         val longEngine = "QEMU/TCG 兼容回退引擎 (Software Emulation)"
         compose.setContent {
             Oe3App(
@@ -269,6 +282,8 @@ class Tier2BoundaryCasesTest {
         compose.waitForIdle()
 
         val density = compose.density
+        val rootWidthDp = with(density) { compose.onRoot().fetchSemanticsNode().boundsInRoot.width.toDp() }
+        assertEquals("Test must exercise the narrow 343dp viewport", 343f, rootWidthDp.value, 1f)
         Oe3Tab.entries.forEach { tab ->
             assertTrue(tab.label.isNotBlank())
             val tabNode = compose.onNode(
@@ -276,6 +291,23 @@ class Tier2BoundaryCasesTest {
             )
             tabNode.assertIsDisplayed()
             AcceptanceTestSupport.assertTouchTargetAtLeast48Dp(tabNode, density, "narrow-tab:${tab.key}")
+
+            val textNode = compose.onNode(
+                hasText(tab.label) and hasAnyAncestor(hasTestTag("shell:nav-bar")),
+                useUnmergedTree = true,
+            )
+            val layouts = mutableListOf<TextLayoutResult>()
+            textNode.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { read ->
+                assertTrue("${tab.label} must expose its laid-out text", read(layouts))
+            }
+            val layout = layouts.single()
+            val diagnostics = "root=$rootWidthDp, size=${layout.size}, " +
+                "paragraph=${layout.multiParagraph.width}×${layout.multiParagraph.height}, " +
+                "constraints=${layout.layoutInput.constraints}, scale=${layout.layoutInput.density.fontScale}, " +
+                "widthOverflow=${layout.didOverflowWidth}, heightOverflow=${layout.didOverflowHeight}, " +
+                "ellipsized=${layout.isLineEllipsized(0)}"
+            assertFalse("${tab.label} must fit its dock cell at 343dp / 130%, $diagnostics", layout.hasVisualOverflow)
+            assertFalse("${tab.label} must be shown without ellipsis, $diagnostics", layout.isLineEllipsized(0))
         }
 
         // Verify BadgeRow wraps engine badge onto second line below status chip
@@ -401,8 +433,18 @@ class Tier2BoundaryCasesTest {
                             onBack = {},
                         )
                     }
-                    else -> Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = true) {
+                    2 -> Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = true) {
                         WizardScreen(controller = wizardCtrl, onExit = {})
+                    }
+                    else -> Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = true) {
+                        TerminalPreview(
+                            theme = ThemeCatalog.constructivistWorkstation,
+                            fontSizeSp = 12,
+                            letterSpacingEm = 0f,
+                            lineSpacingPx = 0f,
+                            cursorBlink = false,
+                            renderAndroidView = false,
+                        )
                     }
                 }
             }
@@ -410,22 +452,15 @@ class Tier2BoundaryCasesTest {
             assertEquals(24.dp, observedCorner)
             assertEquals(0.dp, Oe3Shapes.groupedInner)
 
-            // M2 F9: ConfigBackButton and WizardBackButton must be unified to 48dp touch floor
-            stage = 1
-            compose.waitForIdle()
-            AcceptanceTestSupport.assertTouchTargetAtLeast48Dp(
-                compose.onNodeWithTag("config:back", useUnmergedTree = true),
-                compose.density,
-                "config:back",
-            )
-
-            stage = 2
-            compose.waitForIdle()
-            AcceptanceTestSupport.assertTouchTargetAtLeast48Dp(
-                compose.onNodeWithTag("wizard:back", useUnmergedTree = true),
-                compose.density,
-                "wizard:back",
-            )
+            listOf("config:back", "wizard:back", "theme-terminal:send").forEachIndexed { index, tag ->
+                compose.runOnUiThread { stage = index + 1 }
+                compose.waitForIdle()
+                AcceptanceTestSupport.assertControlLayoutAtLeast48Dp(
+                    compose.onNodeWithTag(tag, useUnmergedTree = true),
+                    compose.density,
+                    tag,
+                )
+            }
         } finally {
             wizardCtrl.dispose()
         }
@@ -450,6 +485,90 @@ class Tier2BoundaryCasesTest {
         compose.waitForIdle()
         compose.onNodeWithTag("dashboard:cards").assertIsDisplayed()
         compose.onNodeWithTag("shell:nav-bar").assertIsDisplayed()
+    }
+
+    @Test
+    fun t2_r3_06_validWallpaperRemountRendersCachedImageBeforeProviderReturns_baseline() {
+        val authority = "acceptance.wallpaper.test"
+        val fixture = File.createTempFile("wallpaper", ".fixture", compose.activity.cacheDir)
+        val provider = Robolectric.setupContentProvider(SyntheticWallpaperProvider::class.java, authority)
+        provider.fixture = fixture
+        val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(android.graphics.Color.MAGENTA)
+        try {
+            fixture.outputStream().use { output -> check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) }
+        } finally {
+            bitmap.recycle()
+        }
+
+        val uri = "content://$authority/sample"
+        val store = ThemeStore(AcceptanceTestSupport.InMemorySharedPreferences())
+        store.setThemeId(ThemeCatalog.mascotDark.id)
+        store.setBackgroundUri(uri)
+        var showingWallpaper by mutableStateOf(true)
+        var isDarkPreset by mutableStateOf(false)
+
+        fun wallpaperIsRendered(): Boolean {
+            val screenshot = AcceptanceTestSupport.captureRootBitmap(compose)
+            val color = Color(screenshot.getPixel(screenshot.width / 2, screenshot.height / 2))
+            return color.red - color.green > 0.20f && color.blue - color.green > 0.20f
+        }
+
+        val revalidationGate = CountDownLatch(1)
+        try {
+            compose.setContent {
+                Oe3App(
+                    selectedTab = Oe3Tab.Workstation,
+                    onTabSelected = {},
+                    theme = if (isDarkPreset) store.resolveForMode(systemDark = true) else ThemeCatalog.mascotDark,
+                    backgroundUri = if (showingWallpaper) store.backgroundUri() else null,
+                    reduceMotion = true,
+                    pages = Oe3Pages(workstation = { Box(Modifier.fillMaxSize()) }),
+                )
+            }
+            compose.waitUntil(timeoutMillis = 5_000) { wallpaperIsRendered() }
+
+            compose.runOnUiThread {
+                store.setThemeId(ThemeCatalog.catppuccin.id)
+                store.setMode(ThemeStore.Mode.DARK)
+                isDarkPreset = true
+            }
+            compose.waitForIdle()
+            assertEquals(uri, store.backgroundUri())
+            assertTrue("Wallpaper pixels must survive a preset and mode change", wallpaperIsRendered())
+
+            compose.runOnUiThread { showingWallpaper = false }
+            compose.waitForIdle()
+            assertFalse("Without an active wallpaper the shell must show its theme background", wallpaperIsRendered())
+
+            provider.openGate = revalidationGate
+            compose.runOnUiThread { showingWallpaper = true }
+            compose.waitForIdle()
+            assertTrue("Previously decoded wallpaper must render while its provider is still blocked", wallpaperIsRendered())
+        } finally {
+            revalidationGate.countDown()
+            compose.runOnUiThread { showingWallpaper = false }
+            compose.waitForIdle()
+            fixture.delete()
+        }
+    }
+
+    class SyntheticWallpaperProvider : ContentProvider() {
+        lateinit var fixture: File
+        @Volatile var openGate: CountDownLatch? = null
+
+        override fun onCreate() = true
+        override fun getType(uri: Uri) = "image/png"
+        override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? = null
+        override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+        override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = 0
+        override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = 0
+
+        override fun openAssetFile(uri: Uri, mode: String): AssetFileDescriptor {
+            openGate?.let { check(it.await(10, TimeUnit.SECONDS)) { "Wallpaper test left its provider blocked" } }
+            val descriptor = ParcelFileDescriptor.open(fixture, ParcelFileDescriptor.MODE_READ_ONLY)
+            return AssetFileDescriptor(descriptor, 0, fixture.length())
+        }
     }
 
     @Test
@@ -686,42 +805,56 @@ class Tier2BoundaryCasesTest {
     fun t2_r4_04_oeScaffoldScrollBackToTopRestoresZeroOverlayFade_m2() {
         compose.setContent {
             Oe3App(
-                selectedTab = Oe3Tab.Workstation,
+                selectedTab = Oe3Tab.Config,
                 onTabSelected = {},
                 theme = ThemeCatalog.constructivistWorkstation,
                 reduceMotion = true,
-                pages = Oe3Pages(
-                    workstation = {
-                        OeScaffold(title = "顶栏回弹") {
-                            LazyColumn(Modifier.fillMaxSize().testTag("r4:bounce-list")) {
-                                items(30) { idx ->
-                                    Box(Modifier.fillMaxWidth().height(64.dp)) {
-                                        Text("Item $idx")
-                                    }
-                                }
-                            }
-                        }
-                    },
-                ),
+                pages = AcceptanceTestSupport.samplePages(),
             )
         }
         compose.waitForIdle()
+        val list = compose.onNodeWithTag("config:screen")
         val maxTopPx = with(compose.density) { 4.dp.toPx() }
         assertTrue(
             "M2 R4 requires overlaid Box content top <= 4dp",
-            compose.onNodeWithTag("r4:bounce-list").fetchSemanticsNode().boundsInRoot.top <= maxTopPx,
+            list.fetchSemanticsNode().boundsInRoot.top <= maxTopPx,
         )
 
-        val restImg = AcceptanceTestSupport.captureRootBitmap(compose, "t2_r4_04_rest")
-        val restSample = AcceptanceTestSupport.sampleAverageColor(restImg, 250..320, 12..30)
+        val configTitle = compose.onNode(
+            hasText(Oe3Tab.Config.label) and !hasAnyAncestor(hasTestTag("shell:nav-bar")),
+            useUnmergedTree = true,
+        )
+        val firstItem = compose.onNodeWithText(compose.activity.getString(R.string.config_page_meta))
+        val firstItemTop = firstItem.fetchSemanticsNode().boundsInRoot.top
+        fun sampleHeader(): Color {
+            val title = configTitle.fetchSemanticsNode().boundsInRoot
+            val image = AcceptanceTestSupport.captureRootBitmap(compose)
+            return AcceptanceTestSupport.sampleAverageColor(
+                image,
+                (image.width * 0.70f).roundToInt()..(image.width * 0.90f).roundToInt(),
+                title.top.roundToInt()..title.bottom.roundToInt(),
+            )
+        }
+        fun scrollPosition(): Float {
+            val range = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+            return compose.runOnIdle { range.value() }
+        }
 
-        compose.onNodeWithTag("r4:bounce-list").performTouchInput { swipeUp() }
+        val restSample = sampleHeader()
+        list.performTouchInput { swipeUp() }
         compose.waitForIdle()
-        compose.onNodeWithTag("r4:bounce-list").performTouchInput { swipeDown() }
-        compose.waitForIdle()
+        assertTrue("Test must genuinely scroll away from the top", scrollPosition() > 0f)
+        val scrolledSample = sampleHeader()
+        assertTrue("Scrolled header should have a visually distinguishable backdrop",
+            AcceptanceTestSupport.colorDistance(restSample, scrolledSample) > 4.0)
 
-        val restoredImg = AcceptanceTestSupport.captureRootBitmap(compose, "t2_r4_04_restored")
-        val restoredSample = AcceptanceTestSupport.sampleAverageColor(restoredImg, 250..320, 12..30)
+        list.performScrollToIndex(0)
+        compose.waitForIdle()
+        assertEquals("List must return exactly to the top", 0f, scrollPosition(), 0f)
+        assertEquals("The first item must recover its original resting frame", firstItemTop,
+            firstItem.fetchSemanticsNode().boundsInRoot.top, 0f)
+
+        val restoredSample = sampleHeader()
         assertTrue(
             "Header backdrop did not restore cleanly to rest appearance (delta=${AcceptanceTestSupport.colorDistance(restSample, restoredSample)})",
             AcceptanceTestSupport.colorDistance(restSample, restoredSample) <= 3.0,
@@ -903,12 +1036,6 @@ class Tier2BoundaryCasesTest {
         assertTrue(Oe3MotionSystem.isReducedMotion("0"))
         assertFalse(Oe3MotionSystem.isReducedMotion("0.5"))
 
-        val backStackSource = File(AcceptanceTestSupport.uiSourceRoot(), "shell/OeBackStack.kt").readText()
-        assertTrue(
-            "OeBackStack.kt must integrate PredictiveBackHandler for M3",
-            Regex("""PredictiveBackHandler\s*[({]""").containsMatchIn(backStackSource),
-        )
-
         val backStack = OeBackStack()
         compose.setContent {
             Oe3App(
@@ -927,17 +1054,27 @@ class Tier2BoundaryCasesTest {
         compose.waitForIdle()
 
         val dispatcher = compose.activity.onBackPressedDispatcher
+        val topPage = compose.onNodeWithTag("pbc:top")
+        val restingBounds = topPage.fetchSemanticsNode().boundsInRoot
         compose.runOnUiThread {
             dispatcher.dispatchOnBackStarted(BackEventCompat(0f, 0f, 0f, BackEventCompat.EDGE_LEFT))
+        }
+        compose.waitForIdle()
+        compose.runOnUiThread {
             dispatcher.dispatchOnBackProgressed(BackEventCompat(50f, 0f, 0.5f, BackEventCompat.EDGE_LEFT))
         }
         compose.waitForIdle()
+        assertTrue("The top destination must move before the cancelled gesture",
+            topPage.fetchSemanticsNode().boundsInRoot.left > restingBounds.left)
+        compose.onNodeWithTag("pbc:base").assertExists()
+
         compose.runOnUiThread { dispatcher.dispatchOnBackCancelled() }
         compose.waitForIdle()
 
         assertTrue("Cancelled predictive back must keep destination on stack", backStack.canPop)
         assertEquals(1, backStack.size)
-        val topBounds = compose.onNodeWithTag("pbc:top").fetchSemanticsNode().boundsInRoot
-        assertEquals(0f, topBounds.left, 1.0f)
+        val topBounds = topPage.fetchSemanticsNode().boundsInRoot
+        assertEquals(restingBounds, topBounds)
+        compose.onNodeWithTag("pbc:base").assertDoesNotExist()
     }
 }

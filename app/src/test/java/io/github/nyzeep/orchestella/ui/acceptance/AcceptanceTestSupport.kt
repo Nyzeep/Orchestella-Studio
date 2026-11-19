@@ -2,14 +2,15 @@ package io.github.nyzeep.orchestella.ui.acceptance
 
 import android.content.SharedPreferences
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.view.ViewGroup
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.ComposeTestRule
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import com.github.takahirom.roborazzi.captureRoboImage
 import io.github.nyzeep.orchestella.HostHardwareProfile
 import io.github.nyzeep.orchestella.InstanceCreationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
@@ -306,35 +307,25 @@ object AcceptanceTestSupport {
         return (hi + 0.05) / (lo + 0.05)
     }
 
-    fun rgbChannelDistance(firstArgb: Int, secondArgb: Int): Double {
-        val dr = ((firstArgb ushr 16) and 0xFF) - ((secondArgb ushr 16) and 0xFF)
-        val dg = ((firstArgb ushr 8) and 0xFF) - ((secondArgb ushr 8) and 0xFF)
-        val db = (firstArgb and 0xFF) - (secondArgb and 0xFF)
-        return sqrt((dr * dr + dg * dg + db * db).toDouble())
+    fun perceptualTone(argb: Int): Double {
+        val luminance = wcagLuminance(argb)
+        return if (luminance <= 216.0 / 24389.0) {
+            luminance * (24389.0 / 27.0)
+        } else {
+            116.0 * Math.cbrt(luminance) - 16.0
+        }
     }
 
-    fun captureRootBitmap(compose: ComposeTestRule, tag: String): Bitmap {
-        val pluginOwnsMode = System.getProperty("roborazzi.test.record") != null ||
-            System.getProperty("roborazzi.test.verify") != null ||
-            System.getProperty("roborazzi.test.compare") != null
-        if (!pluginOwnsMode) {
-            System.setProperty("roborazzi.test.record", "true")
-        }
-        val tmpDir = File(projectRoot(), "app/build/tmp/oe3-acceptance").apply { mkdirs() }
-        val tempFile = File(tmpDir, "${tag}_${System.nanoTime()}.png")
-        try {
-            compose.onRoot().captureRoboImage(tempFile.absolutePath)
-            assertTrue("Captured image missing or empty: ${tempFile.absolutePath}", tempFile.exists() && tempFile.length() > 0)
-            return checkNotNull(BitmapFactory.decodeFile(tempFile.absolutePath)) {
-                "BitmapFactory.decodeFile returned null for ${tempFile.absolutePath}"
-            }
-        } finally {
-            tempFile.delete()
-            if (!pluginOwnsMode) {
-                System.clearProperty("roborazzi.test.record")
+    fun captureRootBitmap(compose: AndroidComposeTestRule<*, out ComponentActivity>): Bitmap =
+        compose.runOnIdle {
+            // Robolectric cannot commit a real PixelCopy frame. Draw the same
+            // Compose host into memory, where boundsInRoot and pixels share an origin.
+            val content = compose.activity.findViewById<ViewGroup>(android.R.id.content)
+            val host = checkNotNull(content.getChildAt(0))
+            Bitmap.createBitmap(host.width, host.height, Bitmap.Config.ARGB_8888).also { image ->
+                host.draw(Canvas(image))
             }
         }
-    }
 
     fun sampleAverageColor(bitmap: Bitmap, xRange: IntRange, yRange: IntRange): Color {
         val xs = xRange.first.coerceIn(0, bitmap.width - 1)..xRange.last.coerceIn(0, bitmap.width - 1)
@@ -403,6 +394,19 @@ object AcceptanceTestSupport {
         assertTrue(
             "$label touch height ${bounds.height}px < 48dp (${floor}px)",
             bounds.height >= floor,
+        )
+    }
+
+    fun assertControlLayoutAtLeast48Dp(
+        node: SemanticsNodeInteraction,
+        density: Density,
+        label: String,
+    ) {
+        val floor = with(density) { 48.dp.toPx() } - 0.5f
+        val bounds = node.fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "$label must occupy at least 48dp × 48dp in layout, measured ${bounds.width}px × ${bounds.height}px",
+            bounds.width >= floor && bounds.height >= floor,
         )
     }
 

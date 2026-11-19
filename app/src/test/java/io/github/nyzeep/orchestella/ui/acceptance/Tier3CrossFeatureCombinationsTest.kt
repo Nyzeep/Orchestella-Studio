@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -43,7 +44,6 @@ import io.github.nyzeep.orchestella.ui.oe3.glass.GlassTier
 import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassLowRam
 import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassTierOverride
 import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassStrategy
-import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors
@@ -66,7 +66,6 @@ import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
 import io.github.nyzeep.orchestella.ui.shell.OeBackStack
 import io.github.nyzeep.orchestella.ui.shell.OeDestination
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
-import io.github.nyzeep.orchestella.ui.shell.OeScaffoldAction
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import org.junit.Assert.assertEquals
@@ -77,7 +76,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import java.io.File
 import kotlin.math.roundToInt
 
 /**
@@ -131,7 +129,7 @@ class Tier3CrossFeatureCombinationsTest {
         }
         compose.waitForIdle()
         val navBounds = compose.onNodeWithTag("shell:nav-bar").fetchSemanticsNode().boundsInRoot
-        val img = AcceptanceTestSupport.captureRootBitmap(compose, "t3_01")
+        val img = AcceptanceTestSupport.captureRootBitmap(compose)
         val cardSample = AcceptanceTestSupport.sampleAverageColor(
             img,
             (navBounds.left.roundToInt() + 20)..(navBounds.right.roundToInt() - 20),
@@ -199,7 +197,7 @@ class Tier3CrossFeatureCombinationsTest {
                 assertEquals(rootBounds.bottom, navBounds.bottom, 2.0f)
             }
 
-            val img = AcceptanceTestSupport.captureRootBitmap(compose, "t3_02_$idx")
+            val img = AcceptanceTestSupport.captureRootBitmap(compose)
             val cardSample = AcceptanceTestSupport.sampleAverageColor(
                 img,
                 (navBounds.left.roundToInt() + 20)..(navBounds.right.roundToInt() - 20),
@@ -259,12 +257,6 @@ class Tier3CrossFeatureCombinationsTest {
 
     @Test
     fun t3_04_predictiveBackAndTabSwitchDuringBackStackTransition_m3() {
-        val backStackSource = File(AcceptanceTestSupport.uiSourceRoot(), "shell/OeBackStack.kt").readText()
-        assertTrue(
-            "M3 requires PredictiveBackHandler in OeBackStack.kt",
-            Regex("""PredictiveBackHandler\s*[({]""").containsMatchIn(backStackSource),
-        )
-
         val controller = Oe3ShellController(Oe3Tab.Workstation)
         val backStack = OeBackStack()
         compose.setContent {
@@ -288,10 +280,18 @@ class Tier3CrossFeatureCombinationsTest {
         val dispatcher = compose.activity.onBackPressedDispatcher
         compose.runOnUiThread {
             dispatcher.dispatchOnBackStarted(BackEventCompat(0f, 0f, 0f, BackEventCompat.EDGE_LEFT))
-            dispatcher.dispatchOnBackProgressed(BackEventCompat(40f, 0f, 0.4f, BackEventCompat.EDGE_LEFT))
-            dispatcher.dispatchOnBackCancelled()
         }
+        compose.waitForIdle()
+        compose.runOnUiThread {
+            dispatcher.dispatchOnBackProgressed(BackEventCompat(40f, 0f, 0.4f, BackEventCompat.EDGE_LEFT))
+        }
+        compose.waitForIdle()
+        assertTrue("The gesture must be visibly underway before switching tabs",
+            compose.onNodeWithTag("t304:s1").fetchSemanticsNode().boundsInRoot.left > 0f)
+
         compose.onNodeWithText(Oe3Tab.Config.label).performClick()
+        compose.waitForIdle()
+        compose.runOnUiThread { dispatcher.dispatchOnBackCancelled() }
         compose.waitForIdle()
 
         assertEquals(0, backStack.size)
@@ -383,6 +383,7 @@ class Tier3CrossFeatureCombinationsTest {
 
     @Test
     fun t3_07_scrolledContentUnderHeaderAndAboveFloatingDockSimultaneously_m2() {
+        val dashboard = AcceptanceTestSupport.sampleDashboardState()
         compose.setContent {
             Oe3App(
                 selectedTab = Oe3Tab.Workstation,
@@ -390,7 +391,7 @@ class Tier3CrossFeatureCombinationsTest {
                 theme = ThemeCatalog.constructivistWorkstation,
                 navStyle = Oe3NavStyle.Floating,
                 reduceMotion = true,
-                pages = AcceptanceTestSupport.samplePages(),
+                pages = AcceptanceTestSupport.samplePages(dashboardState = dashboard),
             )
         }
         compose.waitForIdle()
@@ -399,12 +400,18 @@ class Tier3CrossFeatureCombinationsTest {
         val maxTopPx = with(compose.density) { 4.dp.toPx() }
         assertTrue("Top content must slide behind overlaid header (top=${cardsBounds.top})", cardsBounds.top <= maxTopPx)
 
-        // Scroll to bottom of Dashboard and verify last card / restore clears floating dock
+        // The last recent-instance row sits at the bottom edge of the last card.
         compose.onNodeWithTag("dashboard:cards").performScrollToIndex(4)
         compose.waitForIdle()
+        val lastRow = compose.onNodeWithText(dashboard.recent.last().name)
+        lastRow.assertIsDisplayed()
+        val lastRowBounds = lastRow.fetchSemanticsNode().boundsInRoot
         val navBounds = compose.onNodeWithTag("shell:nav-bar").fetchSemanticsNode().boundsInRoot
         val rootBounds = compose.onRoot().fetchSemanticsNode().boundsInRoot
         assertTrue(rootBounds.bottom - navBounds.bottom >= with(compose.density) { 20.dp.toPx() })
+        val minGap = with(compose.density) { 4.dp.toPx() }
+        assertTrue("Dashboard's last card must clear the dock, gap=${navBounds.top - lastRowBounds.bottom}px",
+            navBounds.top - lastRowBounds.bottom >= minGap)
     }
 
     @Test
@@ -550,7 +557,7 @@ class Tier3CrossFeatureCombinationsTest {
 
         val cardBounds = compose.onNodeWithTag("t311:card").fetchSemanticsNode().boundsInRoot
         val navBounds = compose.onNodeWithTag("shell:nav-bar").fetchSemanticsNode().boundsInRoot
-        val img = AcceptanceTestSupport.captureRootBitmap(compose, "t3_11")
+        val img = AcceptanceTestSupport.captureRootBitmap(compose)
 
         val cardSample = AcceptanceTestSupport.sampleAverageColor(
             img,
@@ -573,11 +580,6 @@ class Tier3CrossFeatureCombinationsTest {
 
     @Test
     fun t3_12_progressiveScrollEdgeBlurAtApi33PlusVsGradientFallbackAtApi29_m3() {
-        val scaffoldSrc = File(AcceptanceTestSupport.uiSourceRoot(), "shell/OeScaffold.kt").readText()
-        assertTrue(
-            "M3 requires HazeProgressive integration in OeScaffold.kt for API 31+ scroll-edge fade",
-            scaffoldSrc.contains("HazeProgressive"),
-        )
         assertEquals(
             GlassTier.L0,
             Oe3GlassStrategy.resolveTier(Oe3GlassLevel.Standard, true, 29, false, GlassDeviceCap.Unlimited),
@@ -586,5 +588,71 @@ class Tier3CrossFeatureCombinationsTest {
             GlassTier.L2,
             Oe3GlassStrategy.resolveTier(Oe3GlassLevel.Standard, true, 33, false, GlassDeviceCap.Unlimited),
         )
+        // GPU blur strength is device-dependent. The host test can still guard the
+        // actual progressive Android integration independently of implementation layout.
+        val usesVerticalHaze = AcceptanceTestSupport.uiSourceRoot().walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .any { "HazeProgressive.verticalGradient" in it.readText() }
+        assertTrue("API 31+ scroll edge must use a vertical Haze progression", usesVerticalHaze)
+    }
+
+    @Test
+    fun t3_13_dockDragTracksFingerThenCommitsOneDestination_m3() {
+        var selected by mutableStateOf(Oe3Tab.Workstation)
+        val selections = mutableListOf<Oe3Tab>()
+        compose.setContent {
+            Oe3App(
+                selectedTab = selected,
+                onTabSelected = {
+                    selections += it
+                    selected = it
+                },
+                theme = ThemeCatalog.constructivistWorkstation,
+                reduceMotion = false,
+                pages = AcceptanceTestSupport.samplePages(),
+            )
+        }
+        compose.waitForIdle()
+
+        fun dockTab(tab: Oe3Tab) = compose.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab) and hasText(tab.label),
+        )
+
+        val dock = compose.onNodeWithTag("shell:nav-bar")
+        val origin = dock.fetchSemanticsNode().boundsInRoot.topLeft
+        val start = dockTab(Oe3Tab.Workstation).fetchSemanticsNode().boundsInRoot.center - origin
+        val middleTab = dockTab(Oe3Tab.Hardware).fetchSemanticsNode().boundsInRoot
+        val middle = middleTab.center - origin
+        val end = dockTab(Oe3Tab.Config).fetchSemanticsNode().boundsInRoot.center - origin
+        val probeX = (middleTab.center.x + middleTab.width * 0.25f).roundToInt()
+        val probeY = middleTab.center.y.roundToInt()
+
+        fun middleHighlight(): Color = AcceptanceTestSupport.sampleAverageColor(
+            AcceptanceTestSupport.captureRootBitmap(compose),
+            (probeX - 2)..(probeX + 2),
+            (probeY - 3)..(probeY + 3),
+        )
+
+        val rest = middleHighlight()
+        dock.performTouchInput {
+            down(start)
+            moveTo(start + Offset((middle.x - start.x) * 0.25f, 0f))
+            moveTo(middle)
+        }
+        compose.waitForIdle()
+        val duringDrag = middleHighlight()
+        assertTrue("The dock must show a moving highlight while the finger is down",
+            AcceptanceTestSupport.colorDistance(rest, duringDrag) >= 3.0)
+        assertTrue("Dragging over a tab must leave the current page selected until release",
+            compose.runOnIdle { selections.isEmpty() && selected == Oe3Tab.Workstation })
+
+        dock.performTouchInput {
+            moveTo(end)
+            up()
+        }
+        compose.waitForIdle()
+        assertEquals(listOf(Oe3Tab.Config), compose.runOnIdle { selections.toList() })
+        dockTab(Oe3Tab.Config).assertIsSelected()
+        compose.onNodeWithTag("config:screen").assertIsDisplayed()
     }
 }
