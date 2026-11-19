@@ -564,14 +564,23 @@ class MainActivity : AppCompatActivity() {
         }
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
         val listener = object : android.view.Window.OnFrameMetricsAvailableListener {
+            // 回调只会在传入的 handler（主线程）派发，此标志单线程可见即可。
+            var removed = false
             override fun onFrameMetricsAvailable(
                 window: android.view.Window,
                 frameMetrics: android.view.FrameMetrics,
                 eventType: Int,
             ) {
+                if (removed) return
                 val durationMs = frameMetrics.getMetric(android.view.FrameMetrics.TOTAL_DURATION) / 1_000_000.0
                 if (gate.onFrame(durationMs)) {
-                    window.removeOnFrameMetricsAvailableListener(this)
+                    removed = true
+                    try {
+                        window.removeOnFrameMetricsAvailableListener(this)
+                    } catch (_: IllegalArgumentException) {
+                        // 帧突发下平台会在移除完成前继续派发已入队的回调（bench-a 设备窗
+                        // 20261119 P0：二次 remove 抛 "never added" 直接 FATAL）。兜底幂等。
+                    }
                 }
             }
         }
