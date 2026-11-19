@@ -2,6 +2,8 @@ package io.github.nyzeep.orchestella.ui.acceptance
 
 import android.app.ActivityManager
 import android.content.Context
+import android.net.Uri
+import java.io.ByteArrayInputStream
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -80,6 +82,10 @@ class Tier4UserJourneysTest {
 
     @Test
     fun t4_01_configToThemeStudioPresetAndModeAndBackWithoutFlickerOrBackgroundLoss_m2() {
+        Shadows.shadowOf(compose.activity.contentResolver).registerInputStream(
+            Uri.parse("content://test/journey1.png"),
+            ByteArrayInputStream(ByteArray(0)),
+        )
         val prefs = AcceptanceTestSupport.InMemorySharedPreferences()
         val store = ThemeStore(prefs).apply {
             setMode(ThemeStore.Mode.SYSTEM)

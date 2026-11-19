@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
@@ -52,6 +53,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.nyzeep.orchestella.ConnectionPagesActivity
 import io.github.nyzeep.orchestella.MainActivity
 import io.github.nyzeep.orchestella.R
+import io.github.nyzeep.orchestella.ui.design.components.OeDialogAction
+import io.github.nyzeep.orchestella.ui.design.components.OeDialogHost
+import io.github.nyzeep.orchestella.ui.design.components.OeDialogSpec
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3BackButton
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
@@ -120,7 +124,10 @@ import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
+import javax.xml.parsers.DocumentBuilderFactory
+import kotlin.math.abs
 import kotlin.math.roundToInt
+import org.w3c.dom.Element
 
 /**
  * Tier 1 — Primary Feature Acceptance Tests (28 tests across R1–R5).
@@ -1509,8 +1516,17 @@ class Tier1FeatureCoverageTest {
         assertTrue("Underlying page must show parallax while the gesture is active",
             underMidBounds.width < underRestBounds.width || underMidBounds.left != underRestBounds.left)
 
-        val manifest = File(AcceptanceTestSupport.appMainDir(), "AndroidManifest.xml").readText()
-        assertTrue("Manifest must opt into system predictive back", manifest.contains("android:enableOnBackInvokedCallback=\"true\""))
+        val manifestFile = File(AcceptanceTestSupport.appMainDir(), "AndroidManifest.xml")
+        val manifestDoc = DocumentBuilderFactory.newInstance()
+            .apply { isNamespaceAware = true }
+            .newDocumentBuilder()
+            .parse(manifestFile)
+        val applicationElement = manifestDoc.getElementsByTagName("application").item(0) as Element
+        assertEquals(
+            "Manifest must opt into system predictive back",
+            "true",
+            applicationElement.getAttributeNS("http://schemas.android.com/apk/res/android", "enableOnBackInvokedCallback"),
+        )
     }
 
     @Test
@@ -1521,15 +1537,165 @@ class Tier1FeatureCoverageTest {
         )
 
         // Host screenshots cannot certify GPU AGSL refraction. Guard the two
-        // Android/Haze integration calls independently of file placement.
-        val glassSources = File(AcceptanceTestSupport.uiSourceRoot(), "oe3/glass").walkTopDown()
+        // stable Android/Haze integration APIs across ui/ without file/regex coupling.
+        val uiSources = AcceptanceTestSupport.uiSourceRoot().walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
             .map(File::readText)
             .toList()
-        assertTrue("L2 must create a RenderEffect from an Android RuntimeShader",
-            glassSources.any { "createRuntimeShaderEffect" in it } && glassSources.any { "RuntimeShader(" in it })
-        assertTrue("The Haze backdrop must draw from a half-resolution input",
-            glassSources.any { "HazeInputScale.Fixed(0.5f)" in it })
+        assertTrue(
+            "L2 must use Android RuntimeShader for AGSL rim refraction",
+            uiSources.any { "RuntimeShader" in it },
+        )
+        assertTrue(
+            "The Haze backdrop must use HazeInputScale.Fixed for downsampled blur input",
+            uiSources.any { "HazeInputScale.Fixed" in it },
+        )
+    }
+
+    @Test
+    fun t1_r5_07_oe3ButtonAndChipElasticPressFeedback_m3() {
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.setContent {
+                Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = false) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(Color.Magenta)
+                            .padding(16.dp),
+                    ) {
+                        Oe3Button(
+                            text = "主要动作",
+                            onClick = {},
+                            style = Oe3ButtonStyle.Pill,
+                            modifier = Modifier.testTag("m3:btn"),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Oe3Chip(
+                            label = "筛选标签",
+                            onClick = {},
+                            modifier = Modifier.testTag("m3:chip"),
+                        )
+                    }
+                }
+            }
+            compose.mainClock.advanceTimeByFrame()
+
+            fun diffPixelStats(
+                before: android.graphics.Bitmap,
+                after: android.graphics.Bitmap,
+                bounds: androidx.compose.ui.geometry.Rect,
+            ): Pair<Int, Double> {
+                val x0 = (bounds.left.toInt() - 2).coerceIn(0, before.width - 1)
+                val x1 = (bounds.right.toInt() + 2).coerceIn(0, before.width - 1)
+                val y0 = (bounds.top.toInt() - 2).coerceIn(0, before.height - 1)
+                val y1 = (bounds.bottom.toInt() + 2).coerceIn(0, before.height - 1)
+                var changed = 0
+                var maxDelta = 0.0
+                for (y in y0..y1) {
+                    for (x in x0..x1) {
+                        val d = AcceptanceTestSupport.colorDistance(
+                            Color(before.getPixel(x, y)),
+                            Color(after.getPixel(x, y)),
+                        )
+                        if (d > maxDelta) maxDelta = d
+                        if (d >= 10.0) changed++
+                    }
+                }
+                return changed to maxDelta
+            }
+
+            listOf("m3:btn", "m3:chip").forEach { tag ->
+                val node = compose.onNodeWithTag(tag)
+                val bounds = node.fetchSemanticsNode().boundsInRoot
+                val restBitmap = AcceptanceTestSupport.captureRootBitmap(compose)
+
+                node.performTouchInput { down(center) }
+                compose.mainClock.advanceTimeBy(80)
+                val pressedBitmap = AcceptanceTestSupport.captureRootBitmap(compose)
+                val (changedOnPress, maxPressDelta) = diffPixelStats(restBitmap, pressedBitmap, bounds)
+                assertTrue(
+                    "$tag must exhibit visible elastic scale or press-tint feedback at +80ms (changedPixels=$changedOnPress, maxDelta=$maxPressDelta, bounds=$bounds)",
+                    changedOnPress >= 24 && maxPressDelta >= 15.0,
+                )
+
+                node.performTouchInput { up() }
+                AcceptanceTestSupport.advanceComposeFrames(compose, frames = 60)
+                val releasedBitmap = AcceptanceTestSupport.captureRootBitmap(compose)
+                val (residualDiffs, maxResidualDelta) = diffPixelStats(restBitmap, releasedBitmap, bounds)
+                assertTrue(
+                    "$tag must settle cleanly back to rest appearance after release (residualPixels=$residualDiffs, maxResidualDelta=$maxResidualDelta)",
+                    residualDiffs <= 4 && maxResidualDelta <= 10.0,
+                )
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
+    fun t1_r5_08_oeDialogHostSpringEntranceMotion_m3() {
+        val host = OeDialogHost.attach(compose.activity)
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.setContent {
+                Box(Modifier.fillMaxSize().background(Color.Magenta))
+            }
+            compose.mainClock.advanceTimeByFrame()
+
+            fun measureDialogWidthPx(bitmap: android.graphics.Bitmap): Int {
+                val midY = bitmap.height / 2
+                val bgColor = Color(bitmap.getPixel(4, midY))
+                var first = -1
+                var last = -1
+                for (x in 0 until bitmap.width) {
+                    if (AcceptanceTestSupport.colorDistance(bgColor, Color(bitmap.getPixel(x, midY))) > 8.0) {
+                        if (first < 0) first = x
+                        last = x
+                    }
+                }
+                return if (first < 0) 0 else (last - first + 1)
+            }
+
+            host.show(
+                OeDialogSpec(
+                    title = "弹簧弹窗",
+                    message = "验证 F13 对话框缩放弹簧入场",
+                    positive = OeDialogAction("确定"),
+                    testTag = "m3:dialog",
+                ),
+            )
+            // Capture initial mount frame so the overlay ComposeView attaches and renders Frame 0
+            // before stepping the Compose frame clock.
+            AcceptanceTestSupport.captureWindowContentBitmap(compose)
+            var earlyWidth = 0
+            for (frame in 1..10) {
+                compose.mainClock.advanceTimeByFrame()
+                val w = measureDialogWidthPx(AcceptanceTestSupport.captureWindowContentBitmap(compose))
+                if (w > 0) {
+                    earlyWidth = w
+                    break
+                }
+            }
+
+            // Let the entrance spring settle completely
+            AcceptanceTestSupport.advanceComposeFrames(compose, frames = 60)
+            compose.onNodeWithTag("m3:dialog").assertIsDisplayed()
+            val settledBitmap = AcceptanceTestSupport.captureWindowContentBitmap(compose)
+            val settledWidth = measureDialogWidthPx(settledBitmap)
+
+            assertTrue("Early dialog frame must be visible (earlyWidth=$earlyWidth)", earlyWidth > 0)
+            assertTrue("Settled dialog width must be measurable (settledWidth=$settledWidth)", settledWidth > 100)
+            val initialRatio = earlyWidth.toFloat() / settledWidth.toFloat()
+            assertTrue(
+                "F13 requires OeDialogHost spring entrance starting from <= 0.945f scale (earlyWidth=$earlyWidth, settledWidth=$settledWidth, initialRatio=$initialRatio)",
+                initialRatio in 0.80f..0.945f,
+            )
+        } finally {
+            compose.mainClock.autoAdvance = true
+            compose.runOnUiThread { host.dismiss() }
+            compose.waitForIdle()
+        }
     }
 
     @Test

@@ -260,7 +260,7 @@ class Tier2BoundaryCasesTest {
 
     @Test
     @Config(sdk = [35], qualifiers = "zh-rCN-w343dp-h800dp-mdpi")
-    fun t2_r2_01_narrowViewport343DpAt130PercentFontScaleNoTruncation_m2() {
+    fun t2_r2_01_narrowViewport343DpAt130PercentFontScaleNoTruncation_baseline() {
         val longEngine = "QEMU/TCG 兼容回退引擎 (Software Emulation)"
         compose.setContent {
             Oe3App(
@@ -301,12 +301,19 @@ class Tier2BoundaryCasesTest {
                 assertTrue("${tab.label} must expose its laid-out text", read(layouts))
             }
             val layout = layouts.single()
+            val lineRight = layout.getLineRight(0)
+            val maxWidth = layout.layoutInput.constraints.maxWidth
+            val fitsCell = !layout.didOverflowHeight &&
+                !layout.isLineEllipsized(0) &&
+                lineRight <= maxWidth + 0.5f &&
+                layout.size.width <= maxWidth
             val diagnostics = "root=$rootWidthDp, size=${layout.size}, " +
                 "paragraph=${layout.multiParagraph.width}×${layout.multiParagraph.height}, " +
+                "lineRight=$lineRight, maxWidth=$maxWidth, " +
                 "constraints=${layout.layoutInput.constraints}, scale=${layout.layoutInput.density.fontScale}, " +
                 "widthOverflow=${layout.didOverflowWidth}, heightOverflow=${layout.didOverflowHeight}, " +
                 "ellipsized=${layout.isLineEllipsized(0)}"
-            assertFalse("${tab.label} must fit its dock cell at 343dp / 130%, $diagnostics", layout.hasVisualOverflow)
+            assertTrue("${tab.label} must fit its dock cell at 343dp / 130%, $diagnostics", fitsCell)
             assertFalse("${tab.label} must be shown without ellipsis, $diagnostics", layout.isLineEllipsized(0))
         }
 
@@ -472,19 +479,30 @@ class Tier2BoundaryCasesTest {
 
     @Test
     fun t2_r3_01_invalidOrRevokedWallpaperUriFallsBackToGradientWithoutCrash_baseline() {
-        compose.setContent {
-            Oe3App(
-                selectedTab = Oe3Tab.Workstation,
-                onTabSelected = {},
-                theme = ThemeCatalog.mascotDark,
-                backgroundUri = "content://missing.authority.test/revoked_wallpaper.png",
-                reduceMotion = true,
-                pages = AcceptanceTestSupport.samplePages(),
-            )
+        val authority = "acceptance.revoked.wallpaper.test"
+        val provider = Robolectric.setupContentProvider(SyntheticWallpaperProvider::class.java, authority)
+        val attempted = CountDownLatch(1)
+        provider.openError = SecurityException("Permission Denial: revoked wallpaper URI")
+        provider.attemptedLatch = attempted
+        try {
+            compose.setContent {
+                Oe3App(
+                    selectedTab = Oe3Tab.Workstation,
+                    onTabSelected = {},
+                    theme = ThemeCatalog.mascotDark,
+                    backgroundUri = "content://$authority/revoked_wallpaper.png",
+                    reduceMotion = true,
+                    pages = AcceptanceTestSupport.samplePages(),
+                )
+            }
+            assertTrue("Wallpaper loader must attempt the revoked URI", attempted.await(5, TimeUnit.SECONDS))
+            compose.waitForIdle()
+            compose.onNodeWithTag("dashboard:cards").assertIsDisplayed()
+            compose.onNodeWithTag("shell:nav-bar").assertIsDisplayed()
+        } finally {
+            provider.openError = null
+            provider.attemptedLatch = null
         }
-        compose.waitForIdle()
-        compose.onNodeWithTag("dashboard:cards").assertIsDisplayed()
-        compose.onNodeWithTag("shell:nav-bar").assertIsDisplayed()
     }
 
     @Test
@@ -556,6 +574,8 @@ class Tier2BoundaryCasesTest {
     class SyntheticWallpaperProvider : ContentProvider() {
         lateinit var fixture: File
         @Volatile var openGate: CountDownLatch? = null
+        @Volatile var openError: RuntimeException? = null
+        @Volatile var attemptedLatch: CountDownLatch? = null
 
         override fun onCreate() = true
         override fun getType(uri: Uri) = "image/png"
@@ -565,6 +585,8 @@ class Tier2BoundaryCasesTest {
         override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = 0
 
         override fun openAssetFile(uri: Uri, mode: String): AssetFileDescriptor {
+            attemptedLatch?.countDown()
+            openError?.let { throw it }
             openGate?.let { check(it.await(10, TimeUnit.SECONDS)) { "Wallpaper test left its provider blocked" } }
             val descriptor = ParcelFileDescriptor.open(fixture, ParcelFileDescriptor.MODE_READ_ONLY)
             return AssetFileDescriptor(descriptor, 0, fixture.length())
@@ -826,27 +848,46 @@ class Tier2BoundaryCasesTest {
         )
         val firstItem = compose.onNodeWithText(compose.activity.getString(R.string.config_page_meta))
         val firstItemTop = firstItem.fetchSemanticsNode().boundsInRoot.top
-        fun sampleHeader(): Color {
+        val fadeExtensionPx = with(compose.density) { 14.dp.toPx() }
+        fun sampleHeaderBands(): Pair<Color, Color> {
             val title = configTitle.fetchSemanticsNode().boundsInRoot
             val image = AcceptanceTestSupport.captureRootBitmap(compose)
-            return AcceptanceTestSupport.sampleAverageColor(
+            val xRange = (image.width * 0.55f).roundToInt()..(image.width * 0.90f).roundToInt()
+            val titleSample = AcceptanceTestSupport.sampleAverageColor(
                 image,
-                (image.width * 0.70f).roundToInt()..(image.width * 0.90f).roundToInt(),
+                xRange,
                 title.top.roundToInt()..title.bottom.roundToInt(),
             )
+            val lowerTop = title.bottom.roundToInt()
+            val lowerBottom = minOf(
+                title.bottom + fadeExtensionPx,
+                maxOf(title.bottom + 2f, firstItemTop - 2f),
+            ).roundToInt()
+            val fadeBandSample = AcceptanceTestSupport.sampleAverageColor(
+                image,
+                xRange,
+                lowerTop..lowerBottom,
+            )
+            return titleSample to fadeBandSample
         }
         fun scrollPosition(): Float {
             val range = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
             return compose.runOnIdle { range.value() }
         }
 
-        val restSample = sampleHeader()
+        val (restTitleSample, restFadeSample) = sampleHeaderBands()
         list.performTouchInput { swipeUp() }
         compose.waitForIdle()
         assertTrue("Test must genuinely scroll away from the top", scrollPosition() > 0f)
-        val scrolledSample = sampleHeader()
-        assertTrue("Scrolled header should have a visually distinguishable backdrop",
-            AcceptanceTestSupport.colorDistance(restSample, scrolledSample) > 4.0)
+        val (scrolledTitleSample, scrolledFadeSample) = sampleHeaderBands()
+        val scrolledDelta = maxOf(
+            AcceptanceTestSupport.colorDistance(restTitleSample, scrolledTitleSample),
+            AcceptanceTestSupport.colorDistance(restFadeSample, scrolledFadeSample),
+        )
+        assertTrue(
+            "Scrolled header/fade band should reflect scrolled content beneath it (delta=$scrolledDelta)",
+            scrolledDelta > 4.0,
+        )
 
         list.performScrollToIndex(0)
         compose.waitForIdle()
@@ -854,10 +895,12 @@ class Tier2BoundaryCasesTest {
         assertEquals("The first item must recover its original resting frame", firstItemTop,
             firstItem.fetchSemanticsNode().boundsInRoot.top, 0f)
 
-        val restoredSample = sampleHeader()
+        val (restoredTitleSample, restoredFadeSample) = sampleHeaderBands()
+        val restoredTitleDelta = AcceptanceTestSupport.colorDistance(restTitleSample, restoredTitleSample)
+        val restoredFadeDelta = AcceptanceTestSupport.colorDistance(restFadeSample, restoredFadeSample)
         assertTrue(
-            "Header backdrop did not restore cleanly to rest appearance (delta=${AcceptanceTestSupport.colorDistance(restSample, restoredSample)})",
-            AcceptanceTestSupport.colorDistance(restSample, restoredSample) <= 3.0,
+            "Header backdrop did not restore cleanly to rest appearance (titleDelta=$restoredTitleDelta, fadeDelta=$restoredFadeDelta)",
+            restoredTitleDelta <= 3.0 && restoredFadeDelta <= 3.0,
         )
     }
 

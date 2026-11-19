@@ -2,13 +2,16 @@ package io.github.nyzeep.orchestella.ui.acceptance
 
 import android.content.SharedPreferences
 import android.graphics.Bitmap
-import android.graphics.Canvas
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.ComposeTestRule
+import org.robolectric.Shadows
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.HostHardwareProfile
@@ -316,16 +319,75 @@ object AcceptanceTestSupport {
         }
     }
 
-    fun captureRootBitmap(compose: AndroidComposeTestRule<*, out ComponentActivity>): Bitmap =
+    fun captureRootBitmap(compose: AndroidComposeTestRule<*, out ComponentActivity>): Bitmap {
+        var result: Bitmap? = null
+        var copyStatus = -1
         compose.runOnIdle {
-            // Robolectric cannot commit a real PixelCopy frame. Draw the same
-            // Compose host into memory, where boundsInRoot and pixels share an origin.
             val content = compose.activity.findViewById<ViewGroup>(android.R.id.content)
             val host = checkNotNull(content.getChildAt(0))
-            Bitmap.createBitmap(host.width, host.height, Bitmap.Config.ARGB_8888).also { image ->
-                host.draw(Canvas(image))
-            }
+            val loc = IntArray(2)
+            host.getLocationInWindow(loc)
+            val srcRect = android.graphics.Rect(
+                loc[0],
+                loc[1],
+                loc[0] + host.width,
+                loc[1] + host.height,
+            )
+            val bitmap = Bitmap.createBitmap(host.width, host.height, Bitmap.Config.ARGB_8888)
+            PixelCopy.request(
+                compose.activity.window,
+                srcRect,
+                bitmap,
+                { status ->
+                    copyStatus = status
+                    result = bitmap
+                },
+                Handler(Looper.getMainLooper()),
+            )
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
         }
+        check(copyStatus == PixelCopy.SUCCESS && result != null) {
+            "PixelCopy failed with status=$copyStatus"
+        }
+        return checkNotNull(result)
+    }
+
+    fun captureWindowContentBitmap(
+        compose: AndroidComposeTestRule<*, out ComponentActivity>,
+    ): Bitmap {
+        val content = compose.activity.findViewById<ViewGroup>(android.R.id.content)
+        val loc = IntArray(2)
+        content.getLocationInWindow(loc)
+        val srcRect = android.graphics.Rect(
+            loc[0],
+            loc[1],
+            loc[0] + content.width,
+            loc[1] + content.height,
+        )
+        val bitmap = Bitmap.createBitmap(content.width, content.height, Bitmap.Config.ARGB_8888)
+        var copyStatus = -1
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val thread = android.os.HandlerThread("oe3-pixelcopy").apply { start() }
+        try {
+            PixelCopy.request(
+                compose.activity.window,
+                srcRect,
+                bitmap,
+                { status ->
+                    copyStatus = status
+                    latch.countDown()
+                },
+                Handler(thread.looper),
+            )
+            check(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)) { "Timed out waiting for PixelCopy" }
+        } finally {
+            thread.quitSafely()
+        }
+        check(copyStatus == PixelCopy.SUCCESS) {
+            "PixelCopy failed with status=$copyStatus"
+        }
+        return bitmap
+    }
 
     fun sampleAverageColor(bitmap: Bitmap, xRange: IntRange, yRange: IntRange): Color {
         val xs = xRange.first.coerceIn(0, bitmap.width - 1)..xRange.last.coerceIn(0, bitmap.width - 1)
