@@ -99,6 +99,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -128,6 +129,16 @@ class Tier2BoundaryCasesTest {
 
     @Test
     fun t2_r1_01_checkTokensDetectsShadowViolationAndMissingPath_baseline() {
+        // W1-02：check_tokens.py 与 oe3.tokens.json 的唯一事实源在规格仓检出
+        // （/docs/* 整树 gitignore，CI 只检出 Studio 时不存在——此前这里会确定性
+        // 抛 IllegalArgumentException）。没有规格仓检出时显式跳过；权威执行点
+        // 在 Specs 仓自己的独立校验 workflow。
+        assumeTrue(
+            "Specs checkout required for check_tokens.py "
+                + "(ORCHESTELLA_SPECS_ROOT / adjacent Orchestella-Specs|Orchestella_spec / docs/design-system); "
+                + "CI-enforced by the Specs repo workflow",
+            AcceptanceTestSupport.specsToolRoot() != null,
+        )
         val missingTokens = File(AcceptanceTestSupport.projectRoot(), "docs/design-system/tokens/nonexistent_oe3.json")
         val missingResult = AcceptanceTestSupport.runCheckTokens(tokensFile = missingTokens)
         assertEquals(1, missingResult.exitCode)

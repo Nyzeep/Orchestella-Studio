@@ -239,6 +239,35 @@ object AcceptanceTestSupport {
         } ?: error("Cannot locate Orchestella_dev root from ${cwd.absolutePath}")
     }
 
+    /**
+     * W1-02（A4-M1）：`check_tokens.py` 与 `oe3.tokens.json` 的唯一事实源在
+     * 规格仓（Orchestella-Specs / 本地目录名 Orchestella_spec），不在 Studio
+     * 仓内（docs/ 整树 gitignore，CI 检出天然没有）。按以下顺序解析：
+     * 环境变量 `ORCHESTELLA_SPECS_ROOT` → Studio 相邻/子级检出（
+     * `../Orchestella-Specs`、`../Orchestella_spec`、`./Orchestella-Specs`、
+     * `./Orchestella_spec`）→ Studio 内旧 `docs/design-system` 本地副本。
+     * 返回 null 表示环境里没有任何规格仓检出——token-gate 类测试必须先用
+     * `assumeTrue` 跳过（CI 上的权威执行点是 Specs 仓自己的独立校验
+     * workflow），而不是抛 IllegalArgumentException 假红。
+     */
+    fun specsToolRoot(): File? {
+        val root = projectRoot()
+        val candidates = buildList {
+            System.getenv("ORCHESTELLA_SPECS_ROOT")?.let { add(File(it)) }
+            root.parentFile?.let { parent ->
+                add(File(parent, "Orchestella-Specs"))
+                add(File(parent, "Orchestella_spec"))
+            }
+            add(File(root, "Orchestella-Specs"))
+            add(File(root, "Orchestella_spec"))
+            add(File(root, "docs/design-system"))
+        }
+        return candidates.firstOrNull { candidate ->
+            File(candidate, "tools/check_tokens.py").isFile &&
+                File(candidate, "tokens/oe3.tokens.json").isFile
+        }
+    }
+
     fun appMainDir(): File = File(projectRoot(), "app/src/main")
 
     fun uiSourceRoot(): File = File(appMainDir(), "java/io/github/nyzeep/orchestella/ui")
@@ -251,10 +280,11 @@ object AcceptanceTestSupport {
 
     fun runCheckTokens(
         kotlinRoot: File = uiSourceRoot(),
-        tokensFile: File = File(projectRoot(), "docs/design-system/tokens/oe3.tokens.json"),
+        tokensFile: File = File(specsToolRoot() ?: File(projectRoot(), "docs/design-system"), "tokens/oe3.tokens.json"),
     ): CheckTokensResult {
         val root = projectRoot()
-        val script = File(root, "docs/design-system/tools/check_tokens.py")
+        val script = specsToolRoot()?.let { File(it, "tools/check_tokens.py") }
+            ?: File(root, "docs/design-system/tools/check_tokens.py")
         require(script.isFile) { "Missing check_tokens.py at ${script.absolutePath}" }
 
         val executables = listOf(
