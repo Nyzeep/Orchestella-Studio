@@ -1,7 +1,6 @@
 package io.github.nyzeep.orchestella.terminal;
 
 import io.github.nyzeep.orchestella.TerminalSpan;
-import io.github.nyzeep.orchestella.DraculaPalette;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
@@ -34,6 +33,15 @@ final class ShellCommandTranscript {
     private String submitted;
     private int continuationStart = -1;
     private final List<int[]> continuationPrompts = new ArrayList<>();
+    /**
+     * PS2 text captured between the continuation markers, index-aligned with
+     * [continuationPrompts]. Readline re-sends the whole PS2 on every redraw
+     * (Ctrl+L, window resize), so an absolute range recorded once can later
+     * point at command text; deleting on the range alone silently ate real
+     * characters. Matching the captured text before deleting keeps a stale
+     * range from touching anything it did not create.
+     */
+    private final List<String> continuationTexts = new ArrayList<>();
     private final StringBuilder bufferedOutput = new StringBuilder();
 
     ShellCommandTranscript(int columns, int rows) { this.columns = columns; this.rows = rows; }
@@ -66,6 +74,7 @@ final class ShellCommandTranscript {
             } else if (phase == Phase.OUTPUT) finishOutput();
             prompt = new ArrayList<>(); submitted = null;
             pane = newPane(); phase = Phase.PROMPT;
+            continuationStart = -1; continuationPrompts.clear(); continuationTexts.clear();
             return;
         }
         if (!enabled) return;
@@ -73,13 +82,19 @@ final class ShellCommandTranscript {
             TerminalScreenModel.Snapshot snapshot = pane.snapshot();
             prompt = slice(snapshot.spans, 0, snapshot.cursorOffset);
             pane = newPane(); phase = Phase.INPUT;
-            continuationStart = -1; continuationPrompts.clear();
+            continuationStart = -1; continuationPrompts.clear(); continuationTexts.clear();
         } else if (value.equals("133;B;continuation=1") && phase == Phase.INPUT) {
+            // A second opening marker without a closing one means a redraw
+            // invalidated the previous pair: drop it rather than keeping a
+            // range that now points at command text.
             continuationStart = pane.snapshot().cursorOffset;
         } else if (value.equals("133;B;continuation=2") && phase == Phase.INPUT) {
+            String text = pane.snapshot().text();
             int end = pane.snapshot().cursorOffset;
-            if (continuationStart >= 0 && end >= continuationStart)
+            if (continuationStart >= 0 && end >= continuationStart && end <= text.length()) {
                 continuationPrompts.add(new int[]{continuationStart, end});
+                continuationTexts.add(text.substring(continuationStart, end));
+            }
             continuationStart = -1;
         } else if (value.equals("133;C") || value.startsWith("133;C;cmd=")) {
             if (phase != Phase.INPUT) return;
@@ -90,9 +105,16 @@ final class ShellCommandTranscript {
                 StringBuilder echo = new StringBuilder(trimText(pane.snapshot().text()));
                 // Strip only PS2 ranges explicitly bracketed by the guest. A literal
                 // '>' in command/output text is never used as a classification rule.
+                // Each range must still contain the text captured between its markers:
+                // readline re-sends PS2 on redraw, and an unverified stale range can
+                // sit on top of real command characters.
                 for (int i = continuationPrompts.size() - 1; i >= 0; i--) {
                     int[] range = continuationPrompts.get(i);
-                    if (range[0] <= range[1] && range[1] <= echo.length()) echo.delete(range[0], range[1]);
+                    String expected = continuationTexts.get(i);
+                    if (range[0] > range[1] || range[1] > echo.length()) continue;
+                    if (range[1] - range[0] != expected.length()) continue;
+                    if (!echo.substring(range[0], range[1]).equals(expected)) continue;
+                    echo.delete(range[0], range[1]);
                 }
                 String observed = echo.toString();
                 int echoedAt = observed.lastIndexOf(submitted);
@@ -106,6 +128,7 @@ final class ShellCommandTranscript {
             else if (phase == Phase.BETWEEN && pane != null) addCompleted(trim(pane.snapshot().spans));
             // Ctrl+C and empty input have no C payload. Discard unsubmitted echo.
             pane = newPane(); prompt = new ArrayList<>(); submitted = null; phase = Phase.BETWEEN;
+            continuationStart = -1; continuationPrompts.clear(); continuationTexts.clear();
         }
     }
 
@@ -208,19 +231,11 @@ final class ShellCommandTranscript {
 
     private List<TerminalSpan> command() {
         List<TerminalSpan> result = new ArrayList<>(prompt);
-        int background = DraculaPalette.themedForeground();
-        double luminance = 0.2126 * linear((background >> 16) & 255)
-                + 0.7152 * linear((background >> 8) & 255) + 0.0722 * linear(background & 255);
-        int ink = luminance > 0.179 ? 0xff000000 : 0xffffffff;
-        // Inverse span: effective ink is its background field. Choosing black/white
-        // against the theme foreground guarantees at least WCAG 4.5:1 contrast.
-        result.add(new TerminalSpan(submitted, background, ink, true, false, false, true));
+        // 只靠字重强调：此前的反色块把命令画成"主题前景色底 + 黑/白字"，
+        // 深色主题下是一条近白色横条，比输出更抢眼（用户反馈）。粗体无底色
+        // 走 TerminalSpan 的 softenForeground()，与系统日志的粗体同一语言。
+        result.add(new TerminalSpan(submitted, null, null, true, false, false, false));
         return result;
-    }
-
-    private static double linear(int component) {
-        double value = component / 255.0;
-        return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
     }
 
     private void addCompleted(List<TerminalSpan> block) {

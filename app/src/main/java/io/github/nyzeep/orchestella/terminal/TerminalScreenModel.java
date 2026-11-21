@@ -448,7 +448,8 @@ public final class TerminalScreenModel {
             evictedHistoryRows += history.size();
             history.clear(); historyCells = 0;
             if (screen == primary && commandTranscript != null && commandTranscript.enabled()) {
-                commandTranscript.clearVisibleHistory(false);
+                // 3J 只清回看，编辑中的输入必须留下来。
+                commandTranscript.clearVisibleHistory(true);
                 displayEpoch++;
             }
             return;
@@ -458,7 +459,9 @@ public final class TerminalScreenModel {
             // alone do not erase committed blocks; clear's explicit 3J does.
             if (screen == primary && screen.row == 0 && screen.column == 0
                     && commandTranscript != null && commandTranscript.enabled() && commandTranscript.isEditingPrompt()) {
-                commandTranscript.clearVisibleHistory(false);
+                // Readline 的 Ctrl+L 就是 HOME + 2J。此前这里丢弃编辑态，
+                // 随后的 133;C 落到 BETWEEN 被丢弃，PS2 的 "> " 变成裸文本残留。
+                commandTranscript.clearVisibleHistory(true);
                 displayEpoch++;
             }
             for (int row = 0; row < rows; row++) screen.lines[row] = blankLine();
@@ -469,7 +472,7 @@ public final class TerminalScreenModel {
             // redraws keep their existing grid and semantic-history behavior.
             if (screen == primary && screen.row == 0 && screen.column == 0
                     && commandTranscript != null && commandTranscript.enabled()) {
-                commandTranscript.clearVisibleHistory(false);
+                commandTranscript.clearVisibleHistory(true);
                 displayEpoch++;
             }
             eraseLine(0);

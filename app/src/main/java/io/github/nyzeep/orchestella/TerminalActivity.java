@@ -847,20 +847,37 @@ public class TerminalActivity extends ComponentActivity {
         detachTerminalListener();
         final int generation = bindingGeneration;
         final String boundInstanceId = instanceId;
+        // One in-flight UI task per attachment. Posting per PTY chunk made the
+        // main queue grow without bound under flood output (README: 4 fps on
+        // flood_seq); coalescing keeps the first-post ordering guarantee — the
+        // attach snapshot still precedes every live chunk — while collapsing N
+        // chunks into one render pass.
+        final StringBuilder pendingOutput = new StringBuilder();
+        final boolean[] outputScheduled = {false};
         terminalOutputListener = chunk -> {
             if (chunk == null || chunk.isEmpty()) return;
-            // Posting before rendering guarantees attach's locked snapshot precedes all live
-            // chunks on the UI thread. No clear() can race a pump callback anymore.
+            synchronized (pendingOutput) {
+                pendingOutput.append(chunk);
+                if (outputScheduled[0]) return;
+                outputScheduled[0] = true;
+            }
             ui.post(() -> {
+                String batch;
+                synchronized (pendingOutput) {
+                    batch = pendingOutput.toString();
+                    pendingOutput.setLength(0);
+                    outputScheduled[0] = false;
+                }
                 if (generation != bindingGeneration || attachedHolder != holder) return;
+                if (batch.isEmpty()) return;
                 TerminalSessionInstance active = multiManager.getActiveSession(boundInstanceId);
-                if (active != null) active.appendOutput(chunk);
-                terminalView.appendOutput(chunk);
+                if (active != null) active.appendOutput(batch);
+                terminalView.appendOutput(batch);
                 // Background sessions share one guest console, so they get the same
                 // bytes — but each parses them into its own screen model, which is
                 // why switching terminals restores that session's own viewport.
-                feedBackgroundScreens(boundInstanceId, active, chunk);
-                LogViewerActivity.appendGuestConsole(this, boundInstanceId, chunk);
+                feedBackgroundScreens(boundInstanceId, active, batch);
+                LogViewerActivity.appendGuestConsole(this, boundInstanceId, batch);
             });
         };
         attachedHolder = holder;
