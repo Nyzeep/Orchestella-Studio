@@ -39,6 +39,7 @@ skills-lock.json
 # explicitly tracked; do not force-add these directories as a whole.
 /docs/
 temp/
+/参考项目/
 
 # Private developer assets, screenshots, and logs
 *.png
