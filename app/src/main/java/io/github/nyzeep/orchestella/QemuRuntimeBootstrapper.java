@@ -202,12 +202,19 @@ public final class QemuRuntimeBootstrapper {
             distroManifest.requireExpectedSize(Files.size(rootfsPath));
         }
         RuntimeAssetInstaller installer = new RuntimeAssetInstaller();
+        // W1-04 (R-08): phase baselines measure only the full assembly path (the
+        // 3.45–10.51 s first-provision branch); the credentials-only fast path is
+        // ~90 ms end to end and stays out of the diagnostics.
+        boolean measurePhases = timeline != null && !credentialsOnly;
+        long assetsStart = System.nanoTime();
         Path kernel = installer.install(manifest, "Image",
                 () -> assetStreams.apply("Image"), runtimeDir);
         Path baseInitramfs = installer.install(manifest, "initramfs.cpio.gz",
                 () -> resourceStreams.apply("initramfs.cpio.gz"), runtimeDir);
         if (timeline != null) timeline.mark(LaunchTimeline.Stage.ASSETS_VERIFIED);
+        if (measurePhases) timeline.notePhase("assets-verify", elapsedMs(assetsStart));
 
+        long guestPayloadStart = System.nanoTime();
         byte[] guestInit = null;
         try (InputStream in = resourceStreams.apply("guest_init")) {
             if (in != null) {
@@ -231,15 +238,19 @@ public final class QemuRuntimeBootstrapper {
             degradations.accept("proxy-relay-unreadable: " + failure);
             throw new IOException("proxy-relay-unavailable", failure);
         }
+        if (measurePhases) timeline.notePhase("guest-payload", elapsedMs(guestPayloadStart));
 
         // The manifest is the trust anchor; observed download metadata is used only for comparison.
         long rootfsSize = distroManifest.sizeBytes();
         Path initramfs = runtimeDir.resolve("initramfs-embedded.cpio.gz");
         Path partial = runtimeDir.resolve("initramfs-embedded.cpio.gz.partial");
         try {
+            long baseCopyStart = System.nanoTime();
             try (InputStream base = Files.newInputStream(baseInitramfs)) {
                 Files.copy(base, partial);
             }
+            if (measurePhases) timeline.notePhase("base-copy", elapsedMs(baseCopyStart));
+            long segmentStart = System.nanoTime();
             if (credentialsOnly) {
                 try (java.io.OutputStream out = Files.newOutputStream(partial,
                         java.nio.file.StandardOpenOption.APPEND)) {
@@ -281,6 +292,8 @@ public final class QemuRuntimeBootstrapper {
                             out);
                 }
             }
+            if (measurePhases) timeline.notePhase("segment-write", elapsedMs(segmentStart));
+            long moveStart = System.nanoTime();
             if (credentialsOnly
                     && Files.size(partial) - Files.size(baseInitramfs)
                             > EmbeddedProvisionInput.CREDENTIALS_ONLY_MAX_BYTES) {
@@ -288,6 +301,7 @@ public final class QemuRuntimeBootstrapper {
             }
             Files.move(partial, initramfs, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                     java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            if (measurePhases) timeline.notePhase("atomic-move", elapsedMs(moveStart));
         } catch (IOException | RuntimeException failure) {
             try {
                 Files.deleteIfExists(partial);
@@ -300,6 +314,11 @@ public final class QemuRuntimeBootstrapper {
             timeline.markInitramfsBuilt(credentialsOnly ? 0L : rootfsSize, Files.size(initramfs));
         }
         return new RuntimePaths(kernel, initramfs, instanceRootVolume);
+    }
+
+    /** Phase baselines only cover the full assembly path (see bootstrap). */
+    private static long elapsedMs(long startedAt) {
+        return Math.max(0L, (System.nanoTime() - startedAt) / 1_000_000L);
     }
 
     private static byte[] readGuestScript(InputStream input) throws IOException {

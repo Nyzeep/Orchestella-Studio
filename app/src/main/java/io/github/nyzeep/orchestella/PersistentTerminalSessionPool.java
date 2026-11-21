@@ -162,6 +162,12 @@ public final class PersistentTerminalSessionPool {
 
         private void pumpLoop() {
             ProvisioningSignal provisioningSignal = new ProvisioningSignal();
+            // W1-04 (R-08): the same live console stream carries the shell
+            // handover markers, so the launch timeline's T0 → SHELL_READY chain
+            // closes from the only host-side point that observes the guest
+            // console from the first boot byte. Best-effort: engines without a
+            // timeline answer markShellReady() as a no-op.
+            ShellHandoverSignal shellHandover = new ShellHandoverSignal();
             boolean reachedEof = false;
             try {
                 // One decoder owns the whole stream: read boundaries may split a UTF-8
@@ -177,6 +183,9 @@ public final class PersistentTerminalSessionPool {
                     if (count == 0) continue;
                     String chunk = new String(buffer, 0, count);
                     boolean provisioned = provisioningSignal.accept(chunk);
+                    if (shellHandover.accept(chunk)) {
+                        session.markShellReady();
+                    }
                     // Append and deliver under one write lock so attach() snapshots can
                     // never overlap delivery: a chunk is either in the snapshot or handed
                     // to the listener, never both and never neither.
@@ -209,6 +218,11 @@ public final class PersistentTerminalSessionPool {
                 // a host-side close is not evidence that the guest finished Provisioning.
                 if (reachedEof && provisioningSignal.finish()) {
                     notifyProvisioning(ProvisioningSignal.MARKER_VERSION);
+                }
+                // W1-04 (R-08): the same end-of-stream rule closes a handover marker
+                // whose trailing whitespace never arrived.
+                if (reachedEof && shellHandover.finish()) {
+                    session.markShellReady();
                 }
                 pumpFinished.set(true);
                 notifySessionEnded();

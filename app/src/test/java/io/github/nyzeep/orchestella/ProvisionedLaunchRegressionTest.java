@@ -91,17 +91,20 @@ public final class ProvisionedLaunchRegressionTest {
                 fixture.rootVolume, VmHardwareConfig.defaultConfig(),
                 new InstanceUserConfig("developer", PASSWORD, false, "Dev-Box"));
 
-        assertFalse("no evidence must keep the launcher on the full path",
-                QemuInstanceLauncher.credentialsOnlyLaunch(
+        assertEquals("no evidence must keep the launcher on the full path",
+                LaunchTimeline.CredentialsOnlyOutcome.FIRST_PROVISION,
+                QemuLaunchEvidence.credentialsOnlyOutcome(
                         instances, created.id(), catalog.rootfsFileName()));
 
         controller.recordProvisioning(created.id(), new InstanceLifecycle.ProvisioningEvidence(
                 1, catalog.sha256(), 1_700_000_000_000L));
-        assertTrue("matching evidence must unlock the production decision",
-                QemuInstanceLauncher.credentialsOnlyLaunch(
+        assertEquals("matching evidence must unlock the production decision",
+                LaunchTimeline.CredentialsOnlyOutcome.HIT,
+                QemuLaunchEvidence.credentialsOnlyOutcome(
                         instances, created.id(), catalog.rootfsFileName()));
-        assertFalse("an unknown file name must not unlock the production decision",
-                QemuInstanceLauncher.credentialsOnlyLaunch(
+        assertEquals("an unknown file name must not unlock the production decision",
+                LaunchTimeline.CredentialsOnlyOutcome.CATALOG_UNRESOLVED,
+                QemuLaunchEvidence.credentialsOnlyOutcome(
                         instances, created.id(), "unknown.tar.gz"));
 
         QemuRuntimeBootstrapper bootstrapper = new QemuRuntimeBootstrapper(manifest(fixture.kernel),

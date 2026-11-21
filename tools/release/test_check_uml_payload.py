@@ -5,7 +5,12 @@ The gate was rewritten for the 2026-11-14 single-package round: two accounting
 manifests (fast profile + net helper), the --fullpkg single-package smoke
 (UML four libraries + embedded rootfs tar + pVM compiler manifest pins + QEMU
 manifest + NOTICE.UML), and the both-manifests hard requirement in
---require-payload/--fullpkg modes. This file pins that contract case by case
+--require-payload/--fullpkg modes. W1-04 (R-08, 2026-11-22) extends the
+--fullpkg smoke with the NOTICE.UML <-> APK reconciliation: the packaged
+notice's declared UML-lane entries (the libuml_* native libraries and the
+Alpine rootfs tar) must all be really shipped, and every shipped
+lib/<abi>/libuml_* entry must be declared — fail-closed in both directions.
+This file pins that contract case by case
 for CI (tools/release unittest discover); it mirrors
 tools/release/test_check_runtime_payload.py's paradigm — synthetic zip-as-APK
 fixtures built in a temporary directory, no binary fixtures, no network. The
@@ -40,6 +45,13 @@ PASST_ENTRY = LIB + "libuml_passt.so"
 ROOTFS_ENTRY = gate.FULLPKG_ROOTFS_TAR
 QEMU_LIB_ENTRY = LIB + "libdroidlayer_qemu.so"
 NOTICE_UML_ENTRY = "assets/NOTICE.UML"
+# The verified packaging path of the notice is `assets/NOTICE.UML` (AGP ships
+# app/src/main/assets/** at assets/**; the gate itself requires that entry),
+# so the fullpkg fixture carries the repo asset's real bytes: the fixture APK
+# and the real packaging then agree by construction, and a NOTICE.UML edit
+# that drifts from the payload fails here instead of at release time.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+NOTICE_UML_ASSET = REPO_ROOT / "app" / "src" / "main" / "assets" / "NOTICE.UML"
 
 
 def _sha(data: bytes) -> str:
@@ -263,7 +275,12 @@ class CheckApkTest(unittest.TestCase):
 
 
 class FullpkgSmokeTest(unittest.TestCase):
-    """--fullpkg: the single-package completeness smoke (15 reconciled entries)."""
+    """--fullpkg: the single-package completeness smoke.
+
+    15 digest-verified entries plus, since W1-04 (R-08, 2026-11-22), the
+    NOTICE.UML <-> shipped-entries declaration reconciliation (presence-level:
+    the notice pins no digests, so it contributes problems, not Verified).
+    """
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -347,7 +364,11 @@ class FullpkgSmokeTest(unittest.TestCase):
             "assets/QEMU-GPL-SOURCES.md": b"qemu-gpl-sources",
             "assets/LICENSE.GPL-2.0": b"qemu-license",
             "assets/NOTICE.QEMU": b"qemu-notice",
-            NOTICE_UML_ENTRY: b"uml-notice",
+            # The real shipped notice bytes, not a placeholder: the fullpkg
+            # gate parses the packaged text and reconciles its declarations
+            # against this fixture's payload, so the fixture must carry a
+            # notice that actually declares the entries the fixture ships.
+            NOTICE_UML_ENTRY: NOTICE_UML_ASSET.read_bytes(),
             FAST_MANIFEST: fast,
             NET_MANIFEST: net,
             PVM_MANIFEST: self._pvm_manifest(),
@@ -396,12 +417,88 @@ class FullpkgSmokeTest(unittest.TestCase):
         self.assertEqual("fail", result.status)
         self.assertTrue(any(NOTICE_UML_ENTRY in p.entry for p in result.problems))
 
+    # --- the W1-04 (R-08) NOTICE.UML <-> APK reconciliation ---------------------
+
+    def test_missing_notice_declared_uml_entry_fails(self) -> None:
+        # Direction (a): NOTICE.UML declares libuml_passt.so but the APK no
+        # longer ships it — the notice and the payload disagree, fail-closed.
+        # The accounting manifests flag the same drift; this pins that the
+        # notice reconciliation flags it too, with its own named reason.
+        entries = self._fullpkg_entries()
+        del entries[PASST_ENTRY]
+        result = gate.check_apk(self._apk(entries), False, True)
+        self.assertEqual("fail", result.status)
+        self.assertTrue(any(
+            PASST_ENTRY in p.entry and NOTICE_UML_ENTRY in p.reason
+            for p in result.problems))
+
+    def test_undeclared_uml_library_fails(self) -> None:
+        # Direction (b): a new libuml_*.so ships without a NOTICE.UML
+        # declaration — an incomplete GPL notice must block the release.
+        entries = self._fullpkg_entries()
+        undeclared = LIB + "libuml_extra.so"
+        entries[undeclared] = b"undeclared-uml-bytes"
+        result = gate.check_apk(self._apk(entries), False, True)
+        self.assertEqual("fail", result.status)
+        self.assertTrue(any(
+            undeclared in p.entry and NOTICE_UML_ENTRY in p.reason
+            for p in result.problems))
+
+    def test_unreadable_notice_uml_fails(self) -> None:
+        # A notice that cannot be read as text cannot prove anything: the
+        # gate must not wave it through as "no evidence of a problem".
+        entries = self._fullpkg_entries()
+        entries[NOTICE_UML_ENTRY] = b"\xff\xfe\x00not-utf8"
+        result = gate.check_apk(self._apk(entries), False, True)
+        self.assertEqual("fail", result.status)
+        self.assertTrue(any(NOTICE_UML_ENTRY in p.entry for p in result.problems))
+
     def test_missing_net_helper_entry_fails(self) -> None:
         entries = self._fullpkg_entries()
         del entries[PASST_ENTRY]
         result = gate.check_apk(self._apk(entries), False, True)
         self.assertEqual("fail", result.status)
         self.assertTrue(any(PASST_ENTRY in p.entry for p in result.problems))
+
+
+class NoticeUmlDeclarationTest(unittest.TestCase):
+    """The NOTICE.UML text parser (W1-04, R-08).
+
+    The gate carries no copy of the notice's contents — the packaged notice
+    text is the one declaration source, and this parser only recognizes the
+    grammar the real notice uses. These tests pin that grammar against the
+    real repo asset, so a NOTICE.UML edit that changes the declaration form
+    fails here before it can silently weaken the gate.
+    """
+
+    def test_real_repo_notice_declares_exactly_the_uml_lane(self) -> None:
+        text = NOTICE_UML_ASSET.read_text(encoding="utf-8")
+        declared_libs, declared_tars = gate.parse_notice_uml_entries(text)
+        self.assertEqual(
+            {KERNEL_ENTRY, STUB_ENTRY, NET_ENTRY, PASST_ENTRY}, declared_libs)
+        self.assertEqual({ROOTFS_ENTRY}, declared_tars)
+
+    def test_bare_names_map_to_the_arm64_lib_entries(self) -> None:
+        # The real notice also names components in bare form ("libuml_net.so
+        # (the umnet supervisor ...)"); bare names reconcile through the
+        # jniLibs unpacking rule, same as the accounting manifests do.
+        text = (
+            "the kernel libuml_kernel.so and its stub libuml_stub.so ship, "
+            "plus libuml_net.so and libuml_passt.so\n"
+        )
+        declared_libs, declared_tars = gate.parse_notice_uml_entries(text)
+        self.assertEqual(
+            {KERNEL_ENTRY, STUB_ENTRY, NET_ENTRY, PASST_ENTRY}, declared_libs)
+        self.assertEqual(set(), declared_tars)
+
+    def test_path_tokens_are_taken_literally_including_the_abi(self) -> None:
+        # A declared lib/<abi>/libuml_* path is the declared APK entry, ABI
+        # included: a notice declaring lib/x86/... while the APK ships
+        # lib/arm64-v8a/... must surface as a disagreement, not a match.
+        text = "ships lib/x86/libuml_kernel.so and lib/arm64-v8a/libuml_net.so"
+        declared_libs, declared_tars = gate.parse_notice_uml_entries(text)
+        self.assertEqual({"lib/x86/libuml_kernel.so", NET_ENTRY}, declared_libs)
+        self.assertEqual(set(), declared_tars)
 
 
 class CommandLineTest(unittest.TestCase):

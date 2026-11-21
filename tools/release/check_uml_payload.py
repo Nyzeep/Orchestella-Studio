@@ -46,7 +46,15 @@ payload at the artifact level, from the APK alone:
     reconciled against the shipped APK entries) and the QEMU manifest
     (`assets/runtime-artifacts-v1.sha256`, every entry reconciled) in one
     pass. A fullpkg build carries every engine in one APK; this is the
-    artifact-level proof that nothing was left behind.
+    artifact-level proof that nothing was left behind. W1-04 (R-08,
+    2026-11-22) adds the GPL notice itself to that proof: the packaged
+    `assets/NOTICE.UML` text is parsed for its declared UML-lane entries
+    (the `lib/<abi>/libuml_*.so` native libraries and the declared Alpine
+    rootfs tar) and reconciled against the APK in both directions — every
+    declared entry must be really shipped, and every shipped `lib/<abi>/`
+    `libuml_*` entry must be declared. Missing notice, missing entries or
+    undeclared entries all fail the gate. The declaration set is read from
+    the shipped notice text; this script pins no notice content of its own.
 
 Standard library only; no network.
 """
@@ -56,6 +64,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import string
 import sys
 import tempfile
@@ -99,6 +108,19 @@ QEMU_ENTRY_FOR_KEY: dict[str, str] = {
     "LICENSE.GPL-2.0": "assets/LICENSE.GPL-2.0",
     "NOTICE.QEMU": "assets/NOTICE.QEMU",
 }
+# The GPL notice of record for the UML lane (W1-04, R-08): AGP ships
+# app/src/main/assets/NOTICE.UML at assets/NOTICE.UML, and the fullpkg smoke
+# reconciles its declarations against the shipped entries.
+NOTICE_UML_ENTRY = "assets/NOTICE.UML"
+# Shipped UML native libraries are exactly the APK entries matching
+# lib/<abi>/libuml_*; every one of them must be declared by the notice.
+_APK_UML_LIB_ENTRY = re.compile(r"lib/[^/]+/libuml_")
+# The declaration grammar NOTICE.UML actually uses (pinned by the tests
+# against the real asset): path tokens `lib/<abi>/libuml_*.so`, bare packaged
+# names `libuml_*.so` in running text, and the declared `.tar.gz` baseline.
+_NOTICE_LIB_PATH_TOKEN = re.compile(r"lib/[^/\s]+/libuml_[A-Za-z0-9._+-]+\.so")
+_NOTICE_LIB_NAME_TOKEN = re.compile(r"libuml_[A-Za-z0-9._+-]+\.so")
+_NOTICE_TAR_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\.tar\.gz")
 
 
 @dataclass(frozen=True)
@@ -298,6 +320,73 @@ def check_qemu_manifest(archive: zipfile.ZipFile) -> tuple[list[Problem], list[V
     return problems, verified
 
 
+def parse_notice_uml_entries(text: str) -> tuple[set[str], set[str]]:
+    """NOTICE.UML text -> (declared APK entries, declared rootfs tars).
+
+    Dynamic by design: the notice is the GPL declaration of record, so this
+    gate pins none of its contents — the packaged text is the one source and
+    this parser only recognizes the grammar the notice actually uses. Path
+    tokens (`lib/<abi>/libuml_*.so`) are declared APK entries verbatim, ABI
+    included; bare packaged names (`libuml_*.so`) reconcile through the same
+    jniLibs unpacking rule the accounting manifests use (apk_entry_for), so
+    both spellings land on the same APK entry.
+    """
+    declared: set[str] = set()
+    for token in _NOTICE_LIB_PATH_TOKEN.findall(text):
+        declared.add(token)
+    # Remove the path-form matches first so a path token is not also re-read
+    # as a bare name with the default ABI (which would mask a declared ABI
+    # the APK does not ship).
+    remainder = _NOTICE_LIB_PATH_TOKEN.sub(" ", text)
+    for name in _NOTICE_LIB_NAME_TOKEN.findall(remainder):
+        declared.add(apk_entry_for(name))
+    return declared, set(_NOTICE_TAR_TOKEN.findall(text))
+
+
+def check_notice_uml_consistency(archive: zipfile.ZipFile) -> list[Problem]:
+    """assets/NOTICE.UML's declared UML lane <-> the APK's shipped entries.
+
+    W1-04 (R-08, 2026-11-22): the notice says "Shipped bytes and this notice
+    must never disagree", so the fullpkg smoke enforces exactly that, in both
+    directions: every entry the packaged notice declares (the libuml_* native
+    libraries and the Alpine rootfs tar) must be really shipped, and every
+    shipped `lib/<abi>/libuml_*` entry must be declared. The notice carries
+    no digests, so this check is presence/declaration-level — the digest
+    proof stays with the accounting manifests — and it only appends problems,
+    no Verified. Missing notice, unreadable notice, or any disagreement all
+    fail closed.
+    """
+    problems: list[Problem] = []
+    names = archive.namelist()
+    if NOTICE_UML_ENTRY not in names:
+        problems.append(Problem(
+            NOTICE_UML_ENTRY,
+            "the single-package build ships the UML engine and must ship its notice",
+        ))
+        return problems
+    try:
+        text = archive.read(NOTICE_UML_ENTRY).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        problems.append(Problem(NOTICE_UML_ENTRY, f"unreadable notice text: {exc}"))
+        return problems
+    declared_libs, declared_tars = parse_notice_uml_entries(text)
+    for entry in sorted(declared_libs | declared_tars):
+        if entry not in names:
+            problems.append(Problem(
+                entry,
+                f"declared by {NOTICE_UML_ENTRY} but missing from the APK "
+                "(the notice and the shipped payload must never disagree)",
+            ))
+    for entry in sorted(names):
+        if _APK_UML_LIB_ENTRY.match(entry) and entry not in declared_libs:
+            problems.append(Problem(
+                entry,
+                f"shipped in the APK but not declared by {NOTICE_UML_ENTRY} "
+                "(the GPL notice of record is incomplete)",
+            ))
+    return problems
+
+
 def check_apk(apk: Path, require_payload: bool, fullpkg: bool) -> Result:
     """The artifact-level verdict: ok / skip / fail (error is the caller's)."""
     problems: list[Problem] = []
@@ -343,11 +432,10 @@ def check_apk(apk: Path, require_payload: bool, fullpkg: bool) -> Result:
             for name in REQUIRED_FAST_NAMES:
                 if LIB_DIR + name not in archive.namelist():
                     problems.append(Problem(LIB_DIR + name, "fast-profile entry missing from the APK"))
-            if "assets/NOTICE.UML" not in archive.namelist():
-                problems.append(Problem(
-                    "assets/NOTICE.UML",
-                    "the single-package build ships the UML engine and must ship its notice",
-                ))
+            # W1-04 (R-08): the GPL notice must agree with the shipped UML
+            # lane in both directions (declared-but-missing and
+            # shipped-but-undeclared both fail; missing notice fails too).
+            problems.extend(check_notice_uml_consistency(archive))
 
     if require_payload or fullpkg:
         # Single-package discipline (review fix, 2026-11-14): BOTH UML
@@ -447,6 +535,21 @@ def _qemu_manifest_text(qemu_lib: bytes) -> str:
     ])
 
 
+# The --selftest must run with zero inputs (packaging machine included), so
+# the fullpkg fixture embeds a synthetic equivalent of the declaration lines
+# app/src/main/assets/NOTICE.UML carries (same grammar, same entries, built
+# from the same constants as the rest of the fixture). The notice gate parses
+# whatever text the APK ships — it reads no pin from here.
+_SELFTEST_NOTICE_UML = (
+    "NOTICE — UML engine components shipped in this application\n"
+    f"the pinned fast-profile kernel pair ({LIB_DIR}libuml_kernel.so and "
+    f"{LIB_DIR}libuml_stub.so), the umnet/passt network helper pair "
+    f"({LIB_DIR}libuml_net.so and {LIB_DIR}libuml_passt.so) and the "
+    f"Alpine minirootfs baseline tar ({FULLPKG_ROOTFS_TAR},\n"
+    "packaged as a java resource at the APK root).\n"
+).encode("utf-8")
+
+
 def _fullpkg_entries(kernel, stub, rootfs, umnet, passt, llvm, cppshared, clang, payload, compiler, qemu_lib) -> dict[str, bytes]:
     return {
         LIB_DIR + "libuml_kernel.so": kernel,
@@ -462,7 +565,7 @@ def _fullpkg_entries(kernel, stub, rootfs, umnet, passt, llvm, cppshared, clang,
         LIB_DIR + "libdroidlayer_qemu.so": qemu_lib,
         "assets/Image": b"qemu-image-bytes",
         "initramfs.cpio.gz": b"qemu-initramfs-bytes",
-        "assets/NOTICE.UML": b"uml-notice",
+        NOTICE_UML_ENTRY: _SELFTEST_NOTICE_UML,
         "assets/QEMU-BUILD-INPUTS": b"qemu-build-inputs",
         "assets/QEMU-GPL-SOURCES.md": b"qemu-gpl-sources",
         "assets/LICENSE.GPL-2.0": b"qemu-license",
@@ -712,6 +815,34 @@ def run_selftest() -> int:
             ["--apk", apk("fullpkg_noqemu.apk", no_qemu_entries), "--fullpkg"],
             "1", "FULLPKG_GATE_FAIL",
         ))
+        # Fullpkg negatives, the W1-04 (R-08) NOTICE.UML reconciliation
+        # (mirrored by test_check_uml_payload.py): a notice-declared UML
+        # library missing from the APK, a shipped-but-undeclared libuml_*.so,
+        # and the notice itself absent.
+        no_passt_entries = _fullpkg_entries(kernel, stub, rootfs, umnet, passt, llvm,
+                                            cppshared, clang, payload, compiler, qemu_lib)
+        del no_passt_entries[passt_entry]
+        cases.append((
+            "fail-fullpkg-notice-declared-lib-missing",
+            ["--apk", apk("fullpkg_nopasst.apk", no_passt_entries), "--fullpkg"],
+            "1", "FULLPKG_GATE_FAIL",
+        ))
+        undeclared_entries = _fullpkg_entries(kernel, stub, rootfs, umnet, passt, llvm,
+                                              cppshared, clang, payload, compiler, qemu_lib)
+        undeclared_entries[LIB_DIR + "libuml_extra.so"] = b"undeclared-uml-bytes"
+        cases.append((
+            "fail-fullpkg-undeclared-uml-lib",
+            ["--apk", apk("fullpkg_undeclared.apk", undeclared_entries), "--fullpkg"],
+            "1", "FULLPKG_GATE_FAIL",
+        ))
+        no_notice_entries = _fullpkg_entries(kernel, stub, rootfs, umnet, passt, llvm,
+                                             cppshared, clang, payload, compiler, qemu_lib)
+        del no_notice_entries[NOTICE_UML_ENTRY]
+        cases.append((
+            "fail-fullpkg-no-notice-uml",
+            ["--apk", apk("fullpkg_nonotice.apk", no_notice_entries), "--fullpkg"],
+            "1", "FULLPKG_GATE_FAIL",
+        ))
         # Fullpkg require shape: neither manifest fails even without --fullpkg.
         cases.append((
             "fail-fullpkg-no-manifests",
@@ -770,9 +901,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                              "(packaging machine mode: the build DID stage the UML payloads)")
     parser.add_argument("--fullpkg", action="store_true",
                         help="single-package completeness smoke: both UML manifests, the "
-                             "embedded rootfs tar, the pVM compiler manifest pins and the "
-                             "QEMU manifest, all reconciled in one pass (implies "
-                             "--require-payload)")
+                             "embedded rootfs tar, the pVM compiler manifest pins, the "
+                             "QEMU manifest and the NOTICE.UML declaration "
+                             "reconciliation, all in one pass (implies --require-payload)")
     parser.add_argument("--json", type=Path, help="write a machine-readable result")
     parser.add_argument("--selftest", action="store_true",
                         help="run the built-in synthetic fixture cases and exit")
@@ -808,7 +939,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.fullpkg:
             print(f"FULLPKG_GATE_OK the single-package APK carries every engine it accounts "
                   f"for (UML fast profile, net helper, embedded rootfs tar, pVM compiler "
-                  f"manifest pins, QEMU manifest): {names}")
+                  f"manifest pins, QEMU manifest, NOTICE.UML declarations): {names}")
         else:
             print(f"UML_PAYLOAD_GATE_OK every accounted payload artifact is present "
                   f"and matches the in-APK manifest: {names}")
@@ -822,7 +953,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "accounts for. Rebuild with all staging parameters "
                 "(-Porchestella.uml.fastProfileDir / -Porchestella.uml.netHelperDir / "
                 "-Porchestella.fastlane.payloadLibDir / -Porchestella.pvmCompiler.libDir) "
-                "and rerun the repack pipeline; shipped bytes and manifests must agree.",
+                "and rerun the repack pipeline; shipped bytes, the manifests and "
+                "NOTICE.UML must all agree.",
                 file=sys.stderr,
             )
         else:

@@ -9,6 +9,8 @@ import java.nio.file.StandardOpenOption;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -34,6 +36,11 @@ public final class LaunchTimeline {
      * Schema 2 adds {@code stopAttempt}/{@code stopFinal}: an UNCONFIRMED stop
      * is written as a diagnostic record, and a later confirmed retry appends a
      * compensating record the consumer can identify as the final one.
+     *
+     * <p>W1-04 (R-08) extends schema 2 additively: {@link Stage#SHELL_READY} and
+     * {@code credentialsOnlyReason} are new optional members; the schema version
+     * stays 2 because existing consumers read stages and stop fields by name and
+     * tolerate absent members.
      */
     private static final int SCHEMA_VERSION = 2;
 
@@ -47,10 +54,36 @@ public final class LaunchTimeline {
         GATEWAY_READY,
         QEMU_STARTED,
         SESSION_REGISTERED,
+        /**
+         * W1-04 (R-08): the host observed the guest shell handover on the
+         * terminal stream (the guest init hands the console to the shell), the
+         * closest honest host-side proxy for "first prompt/command echo is
+         * ready". Closes the T0 → SHELL_READY chain next to SESSION_REGISTERED
+         * so the QEMU fast path and a future UML engine compare on one schema.
+         */
+        SHELL_READY,
         STOP_REQUESTED,
         STOP_CONFIRMED,
         STOP_UNCONFIRMED,
         EXIT_OBSERVED
+    }
+
+    /**
+     * W1-04 (R-08): why this launch hit or missed the {@code credentialsOnly}
+     * fast path. The JSON keeps the derived {@code credentialsOnly} boolean and
+     * adds the observed reason next to it; {@code null} stays "not recorded".
+     */
+    public enum CredentialsOnlyOutcome {
+        /** Persisted provisioning evidence matched the catalog digest. */
+        HIT,
+        /** No usable provisioning evidence for the instance: first-time full assembly. */
+        FIRST_PROVISION,
+        /** Evidence exists but its recorded digest is absent or differs. */
+        PAYLOAD_SHA_MISMATCH,
+        /** The launch filename resolved to no (or ambiguous) catalog digest. */
+        CATALOG_UNRESOLVED,
+        /** The instance record could not be loaded/parsed; conservative full path. */
+        EVIDENCE_UNAVAILABLE
     }
 
     /** Testable one-record destination. Implementations must append one complete line. */
@@ -71,6 +104,8 @@ public final class LaunchTimeline {
     private Instant startedAt;
     private Long rootfsBytes;
     private Long initramfsBytes;
+    /** W1-04: observed credentials-only hit/miss reason; null until recorded. */
+    private CredentialsOnlyOutcome credentialsOnlyOutcome;
     private StopResult stopResult;
     private int stopAttempt;
     private boolean finished;
@@ -94,13 +129,37 @@ public final class LaunchTimeline {
             int guestMemoryMb, int vcpuCount) {
         Objects.requireNonNull(runtimeDirectory, "runtimeDirectory");
         Path file = runtimeDirectory.resolve(FILE_NAME);
-        return new LaunchTimeline(instanceId, distroId, guestMemoryMb, vcpuCount, Clock.systemUTC(),
-                line -> {
+        return new LaunchTimeline(instanceId, distroId, guestMemoryMb, vcpuCount,
+                monotonicClock(), line -> {
                     Files.createDirectories(runtimeDirectory);
                     // Files.write keeps this usable on API 26 without desugaring java.nio.file additions.
                     Files.write(file, (line + "\n").getBytes(StandardCharsets.UTF_8),
                             StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                 });
+    }
+
+    /**
+     * W1-04 (R-08): one monotonic clock per launch. The recorder only ever
+     * consumes relative elapsed time between marks on the same clock, so the
+     * production recorder anchors {@link System#nanoTime()} (the JVM-portable
+     * monotonic source, same domain as {@code SystemClock.elapsedRealtimeNanos()})
+     * at open time; absolute instants never leave this class. Injected fake
+     * clocks in tests keep full control of the timeline's clock.
+     */
+    private static Clock monotonicClock() {
+        return new Clock() {
+            @Override public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override public Instant instant() {
+                return Instant.ofEpochSecond(0L, System.nanoTime());
+            }
+        };
     }
 
     /**
@@ -153,6 +212,21 @@ public final class LaunchTimeline {
             stopAttempt++;
             stopResult = result;
         }
+    }
+
+    /**
+     * W1-04 (R-08): records why this launch hit or missed the
+     * credentials-only fast path. The first recorded outcome wins so a launch
+     * keeps one honest reason; never marks a stage.
+     */
+    public synchronized void markCredentialsOnly(CredentialsOnlyOutcome outcome) {
+        if (outcome == null || credentialsOnlyOutcome != null) return;
+        credentialsOnlyOutcome = outcome;
+    }
+
+    /** The observed credentials-only hit/miss reason, or null when not recorded. */
+    public synchronized CredentialsOnlyOutcome credentialsOnlyOutcome() {
+        return credentialsOnlyOutcome;
     }
 
     /**
@@ -220,6 +294,22 @@ public final class LaunchTimeline {
         diagnostics.add(Objects.requireNonNull(note, "note"));
     }
 
+    /**
+     * W1-04 (R-08): records one sub-stage timing baseline (for example the
+     * base-copy / segment-write / atomic-move phases of the full initramfs
+     * assembly) into the {@code "diagnostics"} array, so the first-provision
+     * path cost can be compared across launches without a schema change.
+     * Recording a phase never fails a launch and never marks a stage; callers
+     * on the fast credentials-only path skip it to keep diagnostics meaningful.
+     *
+     * @param phase short phase name; must not carry secrets
+     * @param elapsedMillis measured duration of the phase, clamped to ≥ 0
+     */
+    public synchronized void notePhase(String phase, long elapsedMillis) {
+        if (phase == null || phase.isEmpty()) return;
+        diagnostics.add("phase:" + phase + "=" + Math.max(0L, elapsedMillis) + "ms");
+    }
+
     /** Canonical stage order; absent stages are simply omitted. */
     public synchronized List<Stage> stages() {
         return List.copyOf(elapsedMillis.keySet());
@@ -264,6 +354,9 @@ public final class LaunchTimeline {
                 .append(initramfsBytes == null ? "null" : initramfsBytes.toString())
                 .append(",\"credentialsOnly\":")
                 .append(rootfsBytes == null ? "null" : Boolean.toString(rootfsBytes == 0L))
+                .append(",\"credentialsOnlyReason\":")
+                .append(credentialsOnlyOutcome == null
+                        ? "null" : "\"" + credentialsOnlyOutcome.name() + "\"")
                 .append(",\"stopResult\":")
                 .append(stopResult == null ? "null" : "\"" + stopResult.name() + "\"")
                 .append(",\"stopAttempt\":").append(stopAttempt)

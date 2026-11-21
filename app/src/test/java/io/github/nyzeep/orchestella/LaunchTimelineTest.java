@@ -261,11 +261,104 @@ public final class LaunchTimelineTest {
         String line = timeline.toJsonLine();
 
         assertEquals(Set.of("schema", "instanceId", "distroId", "guestMemoryMb", "vcpuCount",
-                "stages", "rootfsBytes", "initramfsBytes", "credentialsOnly", "stopResult",
+                "stages", "rootfsBytes", "initramfsBytes", "credentialsOnly",
+                "credentialsOnlyReason", "stopResult",
                 "stopAttempt", "stopFinal", "diagnostics"), topLevelKeys(line));
-        assertTrue(line.contains("\"schema\":2"));
+        assertTrue("schema stays 2 for the W1-04 additive members", line.contains("\"schema\":2"));
         assertTrue(line.contains("\"stopAttempt\":1"));
         assertTrue(line.contains("\"stopFinal\":true"));
+    }
+
+    @Test
+    public void shellReadyIsRecordedOnceBetweenSessionRegisteredAndStopStages() {
+        FakeClock clock = new FakeClock(Instant.parse("2026-10-18T08:00:00Z"));
+        RecordingSink sink = new RecordingSink();
+        LaunchTimeline timeline = new LaunchTimeline(INSTANCE_ID, DISTRO_ID, 2048, 2, clock, sink);
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        clock.advanceMillis(120);
+        timeline.mark(LaunchTimeline.Stage.SESSION_REGISTERED);
+        clock.advanceMillis(90);
+        timeline.mark(LaunchTimeline.Stage.SHELL_READY);
+        clock.advanceMillis(50);
+        timeline.mark(LaunchTimeline.Stage.SHELL_READY);
+
+        assertEquals("duplicate SHELL_READY marks are dropped (mark is at-most-once)",
+                1, countOccurrences(timeline.toJsonLine(), "{\"stage\":\"SHELL_READY\""));
+        assertEquals(210, timeline.elapsedMs(LaunchTimeline.Stage.SHELL_READY));
+        assertEquals(120, timeline.elapsedMs(LaunchTimeline.Stage.SESSION_REGISTERED));
+        assertTrue("SHELL_READY is monotonic relative to earlier stages",
+                timeline.elapsedMs(LaunchTimeline.Stage.SHELL_READY)
+                        > timeline.elapsedMs(LaunchTimeline.Stage.SESSION_REGISTERED));
+    }
+
+    @Test
+    public void shellReadyBeforeLaunchStartIsDroppedWithADiagnostic() {
+        FakeClock clock = new FakeClock(Instant.parse("2026-10-18T08:00:00Z"));
+        RecordingSink sink = new RecordingSink();
+        LaunchTimeline timeline = new LaunchTimeline(INSTANCE_ID, DISTRO_ID, 2048, 2, clock, sink);
+        timeline.mark(LaunchTimeline.Stage.SHELL_READY);
+        assertEquals(-1, timeline.elapsedMs(LaunchTimeline.Stage.SHELL_READY));
+        assertTrue(timeline.diagnostics().contains("mark-before-launch-start: SHELL_READY"));
+    }
+
+    @Test
+    public void credentialsOnlyReasonRoundTripsAndStaysNullUntilRecorded() {
+        FakeClock clock = new FakeClock(Instant.parse("2026-10-18T08:00:00Z"));
+        RecordingSink sink = new RecordingSink();
+        LaunchTimeline timeline = new LaunchTimeline(INSTANCE_ID, DISTRO_ID, 2048, 2, clock, sink);
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        assertTrue(timeline.toJsonLine().contains("\"credentialsOnlyReason\":null"));
+        assertNull(timeline.credentialsOnlyOutcome());
+
+        timeline.markCredentialsOnly(LaunchTimeline.CredentialsOnlyOutcome.HIT);
+        timeline.markCredentialsOnly(LaunchTimeline.CredentialsOnlyOutcome.FIRST_PROVISION);
+        assertEquals("the first recorded outcome wins",
+                LaunchTimeline.CredentialsOnlyOutcome.HIT, timeline.credentialsOnlyOutcome());
+        String hitLine = timeline.toJsonLine();
+        assertTrue(hitLine.contains("\"credentialsOnlyReason\":\"HIT\""));
+
+        LaunchTimeline miss = new LaunchTimeline("instance-8b1c", "debian", 1024, 1, clock, sink);
+        miss.mark(LaunchTimeline.Stage.LAUNCH_START);
+        miss.markCredentialsOnly(LaunchTimeline.CredentialsOnlyOutcome.PAYLOAD_SHA_MISMATCH);
+        assertTrue(miss.toJsonLine().contains("\"credentialsOnlyReason\":\"PAYLOAD_SHA_MISMATCH\""));
+    }
+
+    @Test
+    public void phaseBaselinesLandInDiagnosticsWithoutTouchingStages() {
+        FakeClock clock = new FakeClock(Instant.parse("2026-10-18T08:00:00Z"));
+        RecordingSink sink = new RecordingSink();
+        LaunchTimeline timeline = new LaunchTimeline(INSTANCE_ID, DISTRO_ID, 2048, 2, clock, sink);
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        timeline.notePhase("base-copy", 123L);
+        timeline.notePhase("segment-write", 4_567L);
+        timeline.notePhase("segment-write", 4_567L);
+        timeline.notePhase("negative-is-clamped", -5L);
+        timeline.notePhase("", 10L);
+        timeline.notePhase(null, 10L);
+
+        assertTrue(timeline.diagnostics().contains("phase:base-copy=123ms"));
+        assertTrue(timeline.diagnostics().contains("phase:segment-write=4567ms"));
+        assertTrue(timeline.diagnostics().contains("phase:negative-is-clamped=0ms"));
+        assertEquals("duplicates append per call; empty and null phase names are ignored",
+                4, timeline.diagnostics().size());
+        assertEquals("a phase note never marks a stage", 1, timeline.stages().size());
+    }
+
+    @Test
+    public void productionOpenUsesAMonotonicClockSource() throws Exception {
+        Path runtimeDirectory = temporaryFolder.newFolder("monotonic").toPath();
+        LaunchTimeline timeline = LaunchTimeline.open(
+                runtimeDirectory, INSTANCE_ID, DISTRO_ID, 2048, 2);
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        timeline.mark(LaunchTimeline.Stage.ASSETS_VERIFIED);
+        Thread.sleep(15);
+        timeline.mark(LaunchTimeline.Stage.SHELL_READY);
+        assertTrue("the production clock must be monotonic: later marks never precede earlier ones",
+                timeline.elapsedMs(LaunchTimeline.Stage.SHELL_READY)
+                        >= timeline.elapsedMs(LaunchTimeline.Stage.ASSETS_VERIFIED));
+        assertTrue(timeline.elapsedMs(LaunchTimeline.Stage.SHELL_READY) >= 0);
+        timeline.markStopConfirmed(StopResult.CONFIRMED);
+        assertTrue(timeline.finish());
     }
 
     private static Set<String> topLevelKeys(String line) {

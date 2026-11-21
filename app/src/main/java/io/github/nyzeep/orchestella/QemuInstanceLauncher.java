@@ -396,6 +396,18 @@ public final class QemuInstanceLauncher {
             return supervisor.isRuntimeAlive();
         }
 
+        /**
+         * W1-04 (R-08): the terminal pump observed the guest shell handover
+         * marker; close the launch timeline's T0 → SHELL_READY chain. Idempotent
+         * at the recorder and a no-op when this session carries no timeline.
+         */
+        @Override
+        public void markShellReady() {
+            if (timeline != null) {
+                timeline.mark(LaunchTimeline.Stage.SHELL_READY);
+            }
+        }
+
         /** The watcher and every pool path use the same idempotent supervisor stop. */
         StopResult confirmRuntimeStopped() {
             return stopRuntime(EXIT_GRACE_MS);
@@ -613,6 +625,10 @@ public final class QemuInstanceLauncher {
 
     private static final long INSTANCE_MEMORY_MB = 512;
     private static final String TAG = "OrchestellaQemu";
+    /** W1-04: bounded join for the concurrent gateway start on the success path. */
+    private static final long GATEWAY_START_JOIN_TIMEOUT_MS = 30_000L;
+    /** W1-04: bounded join while stopping a possibly-started gateway after failure. */
+    private static final long GATEWAY_CLEANUP_JOIN_TIMEOUT_MS = 10_000L;
     /**
      * Cleanup outcome of the most recent failed launch for an instance. The
      * caller needs it to separate "definitely gone" from "stop unconfirmed"
@@ -688,9 +704,32 @@ public final class QemuInstanceLauncher {
         // Consume persisted guest evidence, not an in-memory instance: the caller may
         // hold a stale snapshot, and only the store's current record may unlock the
         // credentials-only path. Missing/ambiguous evidence stays on the full path.
-        boolean credentialsOnly = credentialsOnlyLaunch(
-                context.getFilesDir().toPath().resolve("instances"),
-                parameters.instanceId, parameters.rootfsFileName);
+        // W1-04 (R-08): the hit/miss reason is recorded on the timeline so the
+        // fast-path and full-path distributions stay distinguishable per launch.
+        LaunchTimeline.CredentialsOnlyOutcome credentialsOutcome = QemuLaunchEvidence
+                .credentialsOnlyOutcome(
+                        context.getFilesDir().toPath().resolve("instances"),
+                        parameters.instanceId, parameters.rootfsFileName);
+        boolean credentialsOnly = credentialsOutcome == LaunchTimeline.CredentialsOnlyOutcome.HIT;
+        timeline.markCredentialsOnly(credentialsOutcome);
+        Log.i(TAG, "credentials-only-launch outcome=" + credentialsOutcome.name()
+                + " fastPath=" + credentialsOnly);
+        // W1-04 (R-08): the network gateway (gvproxy) does not read any of the
+        // guest assets the bootstrapper verifies and repacks, so the gateway
+        // start and the bootstrap now run concurrently. Hard constraint: one
+        // unified failure recovery — every failure path below joins the start
+        // attempt (bounded) and stops a gateway that did start, so no
+        // half-started orphan gateway process survives a failed launch and the
+        // synchronous cleanup fence stays intact.
+        java.util.concurrent.ExecutorService gatewayExecutor =
+                java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
+                    Thread thread = new Thread(runnable, "qemu-gateway-" + parameters.instanceId);
+                    thread.setDaemon(true);
+                    return thread;
+                });
+        java.util.concurrent.Future<NetworkGatewayDaemon.Running> gatewayFuture =
+                gatewayExecutor.submit(() -> NetworkGatewayDaemon.start(context, parameters.instanceId,
+                        Paths.get(parameters.runtimeDirectory).toFile()));
         QemuRuntimeBootstrapper.RuntimePaths paths;
         stageTrace.onGate(ProductionStageRecorder.Stage.INPUTS_BEGIN);
         try {
@@ -705,6 +744,8 @@ public final class QemuInstanceLauncher {
             stageTrace.onGate(ProductionStageRecorder.Stage.INPUTS_VERIFIED);
         } catch (IOException | RuntimeException | Error failure) {
             stageTrace.onFailure(ProductionStageRecorder.Failure.CREATE_FAILED);
+            gatewayExecutor.shutdown();
+            stopStartedGatewayQuietly(gatewayFuture, GATEWAY_CLEANUP_JOIN_TIMEOUT_MS);
             timeline.finish();
             throw failure;
         }
@@ -715,17 +756,43 @@ public final class QemuInstanceLauncher {
         // Rootless network plane: gvproxy bridges the guest onto the host stack (the
         // packaged QEMU has no slirp; passt is blocked by Android SELinux). Guest
         // addressing rides the kernel command line so distros without a DHCP client
-        // still come up deterministically.
-        NetworkGatewayDaemon.Running gateway;
+        // still come up deterministically. W1-04 (R-08): the start ran concurrently
+        // with the bootstrap above; here it is only joined and marked.
+        NetworkGatewayDaemon.Running joinedGateway = null;
+        String gatewayFailureMessage = null;
+        Throwable gatewayFailure = null;
         try {
-            gateway = NetworkGatewayDaemon.start(context, parameters.instanceId,
-                    Paths.get(parameters.runtimeDirectory).toFile());
-        } catch (IOException | RuntimeException | Error failure) {
+            joinedGateway = gatewayFuture.get(GATEWAY_START_JOIN_TIMEOUT_MS,
+                    java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException timeout) {
+            gatewayFailure = timeout;
+            gatewayFailureMessage = "gateway-start-unconfirmed-timeout";
+        } catch (java.util.concurrent.ExecutionException
+                | java.util.concurrent.CancellationException execution) {
+            gatewayFailure = execution;
+            gatewayFailureMessage = "gateway-start-failed";
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            gatewayFailure = interrupted;
+            gatewayFailureMessage = "gateway-start-interrupted";
+        } finally {
+            gatewayExecutor.shutdown();
+        }
+        if (gatewayFailure != null) {
+            // W1-04: one fenced recovery for every gateway-start failure shape —
+            // same failure code, same bounded gateway stop, same honest record.
             stageTrace.onFailure(ProductionStageRecorder.Failure.READINESS_FAILED);
+            stopStartedGatewayQuietly(gatewayFuture, GATEWAY_CLEANUP_JOIN_TIMEOUT_MS);
             timeline.finish();
-            throw failure;
+            Throwable cause = gatewayFailure instanceof java.util.concurrent.ExecutionException
+                    && gatewayFailure.getCause() != null
+                    ? gatewayFailure.getCause() : gatewayFailure;
+            if (cause instanceof IOException) throw (IOException) cause;
+            throw new IOException(gatewayFailureMessage, cause);
         }
         timeline.mark(LaunchTimeline.Stage.GATEWAY_READY);
+        // Effectively-final snapshot for the lambda-captured launch path below.
+        NetworkGatewayDaemon.Running gateway = joinedGateway;
         java.util.concurrent.atomic.AtomicReference<QemuProcessLauncher.ProcessHandle> startingHandle =
                 new java.util.concurrent.atomic.AtomicReference<>();
         java.util.concurrent.atomic.AtomicReference<Session> startingSession =
@@ -917,6 +984,50 @@ public final class QemuInstanceLauncher {
     }
 
     /**
+     * W1-04 (R-08): bounded failure recovery for the concurrent gateway start.
+     * Joins the start attempt, stops a gateway that did start, and never lets a
+     * half-started orphan gateway survive a failed launch. Best-effort and
+     * honest: an unconfirmable stop or a start thread that misses the bounded
+     * join is logged, not pretended. Returns true when the recovery settled
+     * (nothing to stop, or a started gateway was stopped), false when the join
+     * could not be confirmed.
+     */
+    static boolean stopStartedGatewayQuietly(
+            java.util.concurrent.Future<? extends RuntimeGateway> gatewayFuture,
+            long joinTimeoutMs) {
+        RuntimeGateway started;
+        try {
+            started = gatewayFuture.get(joinTimeoutMs,
+                    java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException timeout) {
+            // The start thread is still running past the bounded join: interrupt it
+            // and say so. NetworkGatewayDaemon.start owns its own bounded setup, so
+            // this window is the honest residual risk, same class as an
+            // UNCONFIRMED stop elsewhere in the failure path.
+            gatewayFuture.cancel(true);
+            Log.w(TAG, "gateway-cleanup-join-unconfirmed");
+            return false;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (java.util.concurrent.ExecutionException
+                | java.util.concurrent.CancellationException failed) {
+            // The start failed or was cancelled: there is no gateway process to stop.
+            return true;
+        }
+        if (started == null) return true;
+        try {
+            if (!started.stop(2000L)) {
+                Log.w(TAG, "launch-cleanup-gateway-unconfirmed");
+            }
+            return true;
+        } catch (RuntimeException failure) {
+            Log.w(TAG, "launch-cleanup-gateway-stop-failed");
+            return false;
+        }
+    }
+
+    /**
      * Failure cleanup shared by launch bootstrap, Session construction and
      * registration. Returns the bounded outcome so the caller can keep RUNNING
      * metadata when the runtime could not be confirmed stopped.
@@ -991,12 +1102,6 @@ public final class QemuInstanceLauncher {
     static boolean isProvisionedForInstance(
             java.nio.file.Path instancesDirectory, String instanceId, String rootfsSha256) {
         return QemuLaunchEvidence.isProvisionedForInstance(instancesDirectory, instanceId, rootfsSha256);
-    }
-
-    /** Resolves the catalog digest for the launch filename, then checks persisted evidence. */
-    static boolean credentialsOnlyLaunch(
-            java.nio.file.Path instancesDirectory, String instanceId, String rootfsFileName) {
-        return QemuLaunchEvidence.credentialsOnlyLaunch(instancesDirectory, instanceId, rootfsFileName);
     }
 
     /**

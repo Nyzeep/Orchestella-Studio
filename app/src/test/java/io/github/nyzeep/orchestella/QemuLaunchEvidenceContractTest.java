@@ -64,8 +64,9 @@ public final class QemuLaunchEvidenceContractTest {
         controller.recordProvisioning(instance.id(), new InstanceLifecycle.ProvisioningEvidence(
                 1, known.sha256(), System.currentTimeMillis()));
 
-        assertTrue(QemuLaunchEvidence.credentialsOnlyLaunch(
-                instances, instance.id(), known.rootfsFileName()));
+        assertEquals(LaunchTimeline.CredentialsOnlyOutcome.HIT,
+                QemuLaunchEvidence.credentialsOnlyOutcome(
+                        instances, instance.id(), known.rootfsFileName()));
         assertTrue(QemuLaunchEvidence.isProvisionedForInstance(
                 instances, instance.id(), known.sha256()));
     }
@@ -83,15 +84,84 @@ public final class QemuLaunchEvidenceContractTest {
         controller.recordProvisioning(instance.id(), new InstanceLifecycle.ProvisioningEvidence(
                 1, OTHER_SHA256, System.currentTimeMillis()));
 
-        assertFalse("a digest drift must re-verify inputs, not trust stale evidence",
-                QemuLaunchEvidence.credentialsOnlyLaunch(
+        assertEquals("a digest drift must re-verify inputs, not trust stale evidence",
+                LaunchTimeline.CredentialsOnlyOutcome.PAYLOAD_SHA_MISMATCH,
+                QemuLaunchEvidence.credentialsOnlyOutcome(
                         instances, instance.id(), known.rootfsFileName()));
         assertFalse(QemuLaunchEvidence.isProvisionedForInstance(
                 instances, instance.id(), known.sha256()));
-        assertFalse("a missing record must not unlock credentials-only",
-                QemuLaunchEvidence.credentialsOnlyLaunch(
+        assertEquals("a missing record must not unlock credentials-only",
+                LaunchTimeline.CredentialsOnlyOutcome.FIRST_PROVISION,
+                QemuLaunchEvidence.credentialsOnlyOutcome(
                         instances, "11111111-1111-1111-1111-111111111111",
                         known.rootfsFileName()));
+    }
+
+    @Test
+    public void credentialsOnlyOutcomeDistinguishesTheHitFromEachMissShape() throws Exception {
+        DistroManifest known = DistroCatalogRegistry.createDefault().listAll().get(0);
+        java.nio.file.Path instances = temporaryFolder.newFolder("instances").toPath();
+        String missingInstance = "11111111-1111-1111-1111-111111111111";
+
+        assertEquals("a missing metadata file is a genuine first provisioning, not a read failure",
+                LaunchTimeline.CredentialsOnlyOutcome.FIRST_PROVISION,
+                QemuLaunchEvidence.credentialsOnlyOutcome(
+                        instances, missingInstance, known.rootfsFileName()));
+        assertEquals("an unknown rootfs name cannot resolve a catalog digest",
+                LaunchTimeline.CredentialsOnlyOutcome.CATALOG_UNRESOLVED,
+                QemuLaunchEvidence.credentialsOnlyOutcome(
+                        instances, missingInstance, "not-a-catalog-rootfs.tar.gz"));
+        assertEquals("a null instance id has no usable evidence",
+                LaunchTimeline.CredentialsOnlyOutcome.EVIDENCE_UNAVAILABLE,
+                QemuLaunchEvidence.credentialsOnlyOutcome(instances, null, known.rootfsFileName()));
+
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(instances);
+        InstanceLifecycle.Controller controller =
+                new InstanceLifecycle.Controller(store, Clock.systemUTC());
+        InstanceLifecycle.Instance instance = controller.create(
+                new InstanceLifecycle.DistroReference(known.id(), known.version()),
+                temporaryFolder.newFile("volume.raw").toPath());
+        assertEquals("an existing record without evidence stays on the full path",
+                LaunchTimeline.CredentialsOnlyOutcome.FIRST_PROVISION,
+                QemuLaunchEvidence.credentialsOnlyOutcome(
+                        instances, instance.id(), known.rootfsFileName()));
+
+        controller.recordProvisioning(instance.id(), new InstanceLifecycle.ProvisioningEvidence(
+                1, known.sha256(), System.currentTimeMillis()));
+        assertEquals(LaunchTimeline.CredentialsOnlyOutcome.HIT,
+                QemuLaunchEvidence.credentialsOnlyOutcome(
+                        instances, instance.id(), known.rootfsFileName()));
+
+        controller.recordProvisioning(instance.id(), new InstanceLifecycle.ProvisioningEvidence(
+                1, OTHER_SHA256, System.currentTimeMillis()));
+        assertEquals("digest drift is a mismatch, not a first provision",
+                LaunchTimeline.CredentialsOnlyOutcome.PAYLOAD_SHA_MISMATCH,
+                QemuLaunchEvidence.credentialsOnlyOutcome(
+                        instances, instance.id(), known.rootfsFileName()));
+    }
+
+    @Test
+    public void corruptedEvidenceReadsAsUnavailableAndStaysOnTheFullPath() throws Exception {
+        DistroManifest known = DistroCatalogRegistry.createDefault().listAll().get(0);
+        java.nio.file.Path instances = temporaryFolder.newFolder("instances").toPath();
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(instances);
+        InstanceLifecycle.Controller controller =
+                new InstanceLifecycle.Controller(store, Clock.systemUTC());
+        InstanceLifecycle.Instance instance = controller.create(
+                new InstanceLifecycle.DistroReference(known.id(), known.version()),
+                temporaryFolder.newFile("volume.raw").toPath());
+        java.nio.file.Files.write(
+                instances.resolve(instance.id() + ".properties"),
+                "not-a-parseable-instance-record".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertEquals("an unreadable record must not pretend to know the reason",
+                LaunchTimeline.CredentialsOnlyOutcome.EVIDENCE_UNAVAILABLE,
+                QemuLaunchEvidence.credentialsOnlyOutcome(
+                        instances, instance.id(), known.rootfsFileName()));
+        assertFalse("only HIT unlocks the fast path",
+                QemuLaunchEvidence.credentialsOnlyOutcome(
+                        instances, instance.id(), known.rootfsFileName())
+                        == LaunchTimeline.CredentialsOnlyOutcome.HIT);
     }
 
     @Test

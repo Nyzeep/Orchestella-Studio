@@ -59,6 +59,15 @@ public interface ExecutionSession {
     }
 
     /**
+     * W1-04 (R-08): the terminal pump observed the guest shell handover, so the
+     * launch timeline may close its T0 → SHELL_READY chain. Best-effort and
+     * once-per-launch: engines without a launch timeline (and every strategy
+     * that predates this stage) accept the call as a no-op.
+     */
+    default void markShellReady() {
+    }
+
+    /**
      * Optional strategy-neutral display control contract for graphics desktop mode.
      * Null when the session does not provide Wayland display negotiation.
      */

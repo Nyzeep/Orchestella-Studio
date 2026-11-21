@@ -7,7 +7,7 @@
 **无需 Root 的 Android Linux 虚拟机与移动工作站**<br />
 *Native Linux VM Runtime & Mobile Workstation for Android — no root required*
 
-[![Release](https://img.shields.io/badge/Release-v0.6.2-blueviolet.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
+[![Release](https://img.shields.io/badge/Release-v0.6.3-blueviolet.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=flat-square)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green.svg?style=flat-square)](https://developer.android.com)
 [![Arch](https://img.shields.io/badge/Arch-ARM64--v8a-purple.svg?style=flat-square)](#)
@@ -117,7 +117,9 @@ U4 warm-start 评估 / U6 多实例基准），并已在**两台真机**（Andro
   UML 面接到 fast-profile 形态——flag on 构建的内置 initramfs 通道默认宽度 1；
   「编译通道（distcc D-1 桥）与 rootfs 下载增强待后续轮接线」已随后续轮闭环
   （rootfs 下载 2026-11-13 接线，编译通道 2026-11-14 接线并过 E2E）；本地裸构建
-  三个 gradle flag 仍默认 false，flag off 时行为逐字节不变（测试锁定）。
+  四个 gradle 开关默认开启（缺外部 staging 目录时跳过打包、运行时诚实报
+  MISSING_ASSET/SPAWN_FAILED，显式 `-Porchestella.uml.*=false` 仍可关闭），
+  flag off 时行为逐字节不变（测试锁定）。
 - **warm-start 判词**：checkpoint/restore 与 hibernation 均 NO-GO（上游无机制 +
   CRIU 不支持 UML），预热点池为 CONDITIONAL GO（每实例常驻成本 ≈ 22 MB）。
 - **尚未验证**（诚实边界）：fast profile 只承诺 T3 shell——无 systemd / 网络 /
@@ -256,9 +258,10 @@ cd Orchestella-Studio
   `virtualizationservice`。
 - **UML 资产不入 0.6.0 发布包**：车道本体已接入应用——face 随实例启动布防、
   编译通道（distcc D-1 桥）已接线，2026-11-14 编译路由 E2E 真实编译任务端到端
-  3 次全通（见「UML 研究线现状」）；但三 flag gradle 默认关、release 流水线显式
-  传参开启，`docs/NOTICE.UML-DRAFT.md` 保持 DRAFT（正式化=资产真实入发布 APK，
-  release 流水线工单）。遗留边界：guest 工具链预装策略未裁决、QEMU guest 侧
+  3 次全通（见「UML 研究线现状」）；四个 gradle 开关默认开启（缺外部 staging
+  目录时跳过打包、运行时诚实报 MISSING_ASSET/SPAWN_FAILED），release 流水线仍
+  显式传参开启，`app/src/main/assets/NOTICE.UML` 已随包（fullpkg 载荷门
+  fail-closed 校验实装一致性）。遗留边界：guest 工具链预装策略未裁决、QEMU guest 侧
   编译客户端→submitter 链路未测；full profile（systemd / 网络 / Docker）未验证。
 - **桌面模式为实验通路**：RFB 3.8 CPU 拷贝呈现（ADR-0017），桌面体验/virgl 效果/
   音频实听/指针与 IME 行为未真机验收；`gpuAccelerationEnabled=true` 且 virgl native

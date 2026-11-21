@@ -93,6 +93,55 @@ public final class QemuLaunchCleanupTest {
         assertEquals("a cached final stop must not append another record", 2, lines.size());
     }
 
+    // W1-04 (R-08): the concurrent gateway start must never leave a half-started
+    // orphan gateway behind a failed launch — the bounded recovery helper's contract.
+
+    @Test(timeout = 10_000)
+    public void concurrentGatewayRecoveryStopsAGatewayThatDidStart() {
+        FakeGateway gateway = new FakeGateway(true, null);
+        assertTrue(QemuInstanceLauncher.stopStartedGatewayQuietly(
+                java.util.concurrent.CompletableFuture.completedFuture(gateway), 1_000L));
+        assertEquals("a started gateway is stopped exactly once on the failure path",
+                1, gateway.stops.get());
+    }
+
+    @Test(timeout = 10_000)
+    public void concurrentGatewayRecoveryIgnoresAStartThatAlreadyFailed() {
+        java.util.concurrent.Future<RuntimeGateway> failed =
+                java.util.concurrent.CompletableFuture.failedFuture(
+                        new java.io.IOException("gvproxy-missing"));
+        assertTrue("a failed start has no process to stop and must not throw",
+                QemuInstanceLauncher.stopStartedGatewayQuietly(failed, 1_000L));
+    }
+
+    @Test(timeout = 10_000)
+    public void concurrentGatewayRecoveryJoinsAStartStillInFlight() {
+        FakeGateway gateway = new FakeGateway(true, null);
+        java.util.concurrent.CompletableFuture<RuntimeGateway> late =
+                new java.util.concurrent.CompletableFuture<>();
+        Thread finisher = new Thread(() -> {
+            try {
+                Thread.sleep(150);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+            late.complete(gateway);
+        }, "late-gateway-start");
+        finisher.setDaemon(true);
+        finisher.start();
+        assertTrue("a late start is joined before it is stopped",
+                QemuInstanceLauncher.stopStartedGatewayQuietly(late, 5_000L));
+        assertEquals(1, gateway.stops.get());
+    }
+
+    @Test(timeout = 10_000)
+    public void concurrentGatewayRecoveryReportsAnUnconfirmableJoin() {
+        java.util.concurrent.CompletableFuture<RuntimeGateway> hanging =
+                new java.util.concurrent.CompletableFuture<>();
+        assertFalse("a start that misses the bounded join is honestly unconfirmed",
+                QemuInstanceLauncher.stopStartedGatewayQuietly(hanging, 200L));
+    }
+
     private static final class FlakyProcess implements QemuProcessLauncher.ProcessHandle {
         final AtomicInteger destroys = new AtomicInteger();
         final AtomicInteger forces = new AtomicInteger();

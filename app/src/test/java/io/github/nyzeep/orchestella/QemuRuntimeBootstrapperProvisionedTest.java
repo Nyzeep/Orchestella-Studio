@@ -72,6 +72,29 @@ public final class QemuRuntimeBootstrapperProvisionedTest {
     }
 
     @Test
+    public void fullPathRecordsPhaseBaselinesAndTheFastPathStaysClean() throws Exception {
+        Fixture fixture = new Fixture();
+        java.util.List<String> fullLines = new java.util.ArrayList<>();
+        LaunchTimeline fullTimeline = timeline(fullLines);
+        fixture.bootstrapper.bootstrap(ROOTFS_NAME, TOKEN, PASSWORD, fixture.rootVolume,
+                null, null, null, null, null, false, fullTimeline, false);
+        fullTimeline.finish();
+        for (String phase : new String[] {
+                "assets-verify", "guest-payload", "base-copy", "segment-write", "atomic-move"}) {
+            assertTrue("full path must record the " + phase + " baseline",
+                    fullLines.get(0).contains("phase:" + phase + "="));
+        }
+
+        java.util.List<String> fastLines = new java.util.ArrayList<>();
+        LaunchTimeline fastTimeline = timeline(fastLines);
+        fixture.bootstrapper.bootstrap(ROOTFS_NAME, TOKEN, PASSWORD, fixture.rootVolume,
+                null, null, null, null, null, false, fastTimeline, true);
+        fastTimeline.finish();
+        assertFalse("the ~90 ms fast path must not inject phase noise",
+                fastLines.get(0).contains("phase:"));
+    }
+
+    @Test
     public void credentialsOnlyContainsNoRootfsPayloadAndStaysUnderTheHardCap() throws Exception {
         Fixture fixture = new Fixture();
         QemuRuntimeBootstrapper.RuntimePaths paths = fixture.bootstrapper.bootstrap(
@@ -203,8 +226,16 @@ public final class QemuRuntimeBootstrapperProvisionedTest {
     public void unknownRootfsFileNameCannotUnlockTheCredentialsOnlyPath() throws Exception {
         Fixture fixture = new Fixture();
         Path instances = temporaryFolder.newFolder("instances-unknown").toPath();
-        assertFalse(QemuInstanceLauncher.credentialsOnlyLaunch(instances, "missing", "unknown.tar.gz"));
-        assertFalse(QemuInstanceLauncher.credentialsOnlyLaunch(instances, null, ROOTFS_NAME));
+        assertEquals("an unknown rootfs name cannot resolve a catalog digest",
+                LaunchTimeline.CredentialsOnlyOutcome.CATALOG_UNRESOLVED,
+                QemuLaunchEvidence.credentialsOnlyOutcome(instances, "missing", "unknown.tar.gz"));
+        assertEquals("catalog digest resolution precedes the evidence read, so the synthetic "
+                        + "fixture name stays unresolved even with no instance id",
+                LaunchTimeline.CredentialsOnlyOutcome.CATALOG_UNRESOLVED,
+                QemuLaunchEvidence.credentialsOnlyOutcome(instances, null, ROOTFS_NAME));
+        // The null-instance-id miss shape with a catalog-resolvable name is locked
+        // by QemuLaunchEvidenceContractTest.nullArgumentsStayConservative / the
+        // outcome contract test above.
     }
 
     private static LaunchTimeline timeline(java.util.List<String> lines) {

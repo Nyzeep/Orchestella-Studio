@@ -75,12 +75,45 @@ final class QemuLaunchEvidence {
         }
     }
 
-    /** Resolves the catalog digest for the launch filename, then checks persisted evidence. */
-    static boolean credentialsOnlyLaunch(
+    /**
+     * W1-04 (R-08): resolves the credentials-only decision and its observed
+     * reason, so the launch timeline can distinguish a fast-path hit from each
+     * miss shape (first provision, digest mismatch/absent, unresolved catalog
+     * name, unreadable evidence) instead of collapsing them into one boolean.
+     * {@link LaunchTimeline.CredentialsOnlyOutcome#HIT} is the only outcome
+     * that enables the fast path.
+     */
+    static LaunchTimeline.CredentialsOnlyOutcome credentialsOnlyOutcome(
             java.nio.file.Path instancesDirectory, String instanceId, String rootfsFileName) {
         String rootfsSha256 = resolveRootfsSha256(rootfsFileName);
-        return rootfsSha256 != null
-                && isProvisionedForInstance(instancesDirectory, instanceId, rootfsSha256);
+        if (rootfsSha256 == null) {
+            return LaunchTimeline.CredentialsOnlyOutcome.CATALOG_UNRESOLVED;
+        }
+        try {
+            // A missing metadata file is a genuine first provisioning, not an
+            // evidence-read failure: the instance record simply does not exist
+            // yet, so the honest miss reason stays FIRST_PROVISION.
+            if (instancesDirectory != null && instanceId != null && !instanceId.isEmpty()
+                    && !java.nio.file.Files.isRegularFile(
+                            instancesDirectory.resolve(instanceId + ".properties"))) {
+                return LaunchTimeline.CredentialsOnlyOutcome.FIRST_PROVISION;
+            }
+            InstanceLifecycle.Instance instance =
+                    new InstanceLifecycle.FileStore(instancesDirectory).load(instanceId);
+            if (instance.isProvisionedFor(rootfsSha256)) {
+                return LaunchTimeline.CredentialsOnlyOutcome.HIT;
+            }
+            InstanceLifecycle.ProvisioningEvidence evidence = instance.provisioningEvidence();
+            if (instance.isProvisioned() && evidence != null) {
+                // Provisioned, but the recorded digest is absent or differs:
+                // the fast path cannot prove the root volume matches the
+                // catalog payload, so the full assembly path stays mandatory.
+                return LaunchTimeline.CredentialsOnlyOutcome.PAYLOAD_SHA_MISMATCH;
+            }
+            return LaunchTimeline.CredentialsOnlyOutcome.FIRST_PROVISION;
+        } catch (IOException | RuntimeException unavailable) {
+            return LaunchTimeline.CredentialsOnlyOutcome.EVIDENCE_UNAVAILABLE;
+        }
     }
 
     /**
