@@ -140,8 +140,14 @@ public final class PersistentTerminalSessionPoolTest {
         assertTrue("Second re-attach must contain background output",
                 secondReplay.contains("background output while detached"));
 
-        // Send input bytes
+        // Send input bytes. W1-05: delivery is asynchronous through the bounded
+        // write queue, so wait for the writer thread instead of asserting inline.
         holder.sendBytes("ls -la\n".getBytes(StandardCharsets.UTF_8));
+        long inputDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        while (!inputSink.toString(StandardCharsets.UTF_8).contains("ls -la\n")
+                && System.nanoTime() < inputDeadline) {
+            Thread.sleep(10);
+        }
         assertEquals("ls -la\n", inputSink.toString(StandardCharsets.UTF_8));
 
         holder.close();
@@ -519,6 +525,270 @@ public final class PersistentTerminalSessionPoolTest {
 
         assertTrue(provisioned.await(4, TimeUnit.SECONDS));
         assertEquals(1, calls.get());
+    }
+
+    /**
+     * W1-05 (T-14): PTY input stub whose first write blocks on a gate, simulating
+     * a guest that stops reading its PTY stdin. Bytes are recorded into a sink
+     * only after the gate opens, so post-release delivery can still be asserted.
+     */
+    private static final class GatedOutputStream extends OutputStream {
+        private final CountDownLatch entered;
+        private final CountDownLatch release;
+        private final java.io.ByteArrayOutputStream sink = new java.io.ByteArrayOutputStream();
+
+        GatedOutputStream(CountDownLatch entered, CountDownLatch release) {
+            this.entered = entered;
+            this.release = release;
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            write(new byte[]{(byte) b}, 0, 1);
+        }
+
+        @Override
+        public void write(byte[] buffer, int offset, int length) throws IOException {
+            entered.countDown();
+            boolean interrupted = false;
+            while (true) {
+                try {
+                    release.await();
+                    break;
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+            if (interrupted) Thread.currentThread().interrupt();
+            sink.write(buffer, offset, length);
+        }
+
+        @Override
+        public void flush() {
+        }
+
+        @Override
+        public void close() {
+        }
+
+        String content() {
+            return sink.toString(StandardCharsets.UTF_8);
+        }
+    }
+
+    @Test(timeout = 10_000)
+    public void blockingWriteKeepsPumpAttachDetachAndSnapshotResponsive() throws Exception {
+        CountDownLatch writeEntered = new CountDownLatch(1);
+        CountDownLatch releaseWrite = new CountDownLatch(1);
+        PipedOutputStream pipeOut = new PipedOutputStream();
+        PipedInputStream pipeIn = new PipedInputStream(pipeOut, 32768);
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register("blocked-write-vm",
+                new FakeExecutionSession(pipeIn, new GatedOutputStream(writeEntered, releaseWrite)));
+        try {
+            pipeOut.write("boot\n".getBytes(StandardCharsets.UTF_8));
+            pipeOut.flush();
+            // The write is enqueued; the writer thread blocks inside write() on the gate.
+            holder.sendBytes("stuck\n".getBytes(StandardCharsets.UTF_8));
+            assertTrue(writeEntered.await(2, TimeUnit.SECONDS));
+
+            // The old implementation wrote under the pump's rwLock and the screen
+            // model monitor, so each of these would have deadlocked forever.
+            long start = System.nanoTime();
+            assertNotNull(holder.getScreenModel().displaySnapshot());
+            Consumer<String> listener = chunk -> { };
+            holder.attach(listener);
+            holder.detach(listener);
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            assertTrue("attach/detach/snapshot must return while a write is blocked: "
+                    + elapsedMs + " ms", elapsedMs < 2000);
+
+            // The pump keeps consuming guest output while the write is stuck.
+            pipeOut.write("flow-while-stuck\n".getBytes(StandardCharsets.UTF_8));
+            pipeOut.flush();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (!holder.getTranscript().contains("flow-while-stuck") && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+            }
+            assertTrue("the pump must keep reading while a write is blocked",
+                    holder.getTranscript().contains("flow-while-stuck"));
+        } finally {
+            releaseWrite.countDown();
+            holder.close();
+        }
+    }
+
+    @Test(timeout = 20_000)
+    public void saturatedQueueDropsProtocolRepliesWithoutBlockingTheParser() throws Exception {
+        CountDownLatch writeEntered = new CountDownLatch(1);
+        CountDownLatch releaseWrite = new CountDownLatch(1);
+        PipedOutputStream pipeOut = new PipedOutputStream();
+        PipedInputStream pipeIn = new PipedInputStream(pipeOut, 32768);
+        GatedOutputStream gated = new GatedOutputStream(writeEntered, releaseWrite);
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register("saturated-vm",
+                new FakeExecutionSession(pipeIn, gated));
+        AtomicInteger dropped = new AtomicInteger();
+        holder.setIoProbe(new PersistentTerminalSessionPool.IoProbe() {
+            @Override public void onWriteSubmitted(long monotonicNanos, int bytes, int queueDepth) { }
+            @Override public void onWriteCompleted(long monotonicNanos, int bytes, long writeDurationNanos) { }
+            @Override public void onWriteDropped(long monotonicNanos, int bytes, int queueDepth) {
+                dropped.incrementAndGet();
+            }
+            @Override public void onPumpChunkAppended(long monotonicNanos, int chars) { }
+        });
+        try {
+            // Fill the bounded queue (capacity 128) while the writer sits blocked
+            // in its first write; one extra send then makes the queue exactly full.
+            for (int i = 0; i < 128; i++) {
+                holder.sendBytes(("job-" + i + "\n").getBytes(StandardCharsets.UTF_8));
+            }
+            assertTrue(writeEntered.await(2, TimeUnit.SECONDS));
+            holder.sendBytes("job-128\n".getBytes(StandardCharsets.UTF_8));
+
+            // The protocol reply is enqueued from inside the screen model monitor:
+            // with a full queue it must be dropped immediately, never blocking the
+            // parser (the old synchronous write deadlocked here until the gate opened).
+            long start = System.nanoTime();
+            holder.getScreenModel().append("\u001b[5n");
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            assertTrue("protocol reply enqueue must not block the parser: " + elapsedMs + " ms",
+                    elapsedMs < 500);
+            assertEquals("the saturated reply must be reported as dropped", 1, dropped.get());
+
+            // After the gate opens the FIFO queue drains in order, replyless.
+            releaseWrite.countDown();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (!gated.content().contains("job-128\n") && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+            }
+            String sent = gated.content();
+            assertTrue("user input must survive the backlog", sent.contains("job-0\n"));
+            assertTrue("user input must survive the backlog", sent.contains("job-128\n"));
+            assertFalse("the dropped reply must never reach the PTY", sent.contains("\u001b[0n"));
+        } finally {
+            releaseWrite.countDown();
+            holder.close();
+        }
+    }
+
+    @Test(timeout = 10_000)
+    public void brokenWriteStreamFailsFastAndReportsEveryStrandedJob() throws Exception {
+        PipedOutputStream pipeOut = new PipedOutputStream();
+        PipedInputStream pipeIn = new PipedInputStream(pipeOut, 32768);
+        OutputStream failing = new OutputStream() {
+            @Override public void write(int b) throws IOException { throw new IOException("pty input broken"); }
+            @Override public void write(byte[] buffer, int offset, int length) throws IOException {
+                throw new IOException("pty input broken");
+            }
+            @Override public void flush() { }
+            @Override public void close() { }
+        };
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register("broken-write-vm",
+                new FakeExecutionSession(pipeIn, failing));
+        AtomicInteger dropped = new AtomicInteger();
+        holder.setIoProbe(new PersistentTerminalSessionPool.IoProbe() {
+            @Override public void onWriteSubmitted(long monotonicNanos, int bytes, int queueDepth) { }
+            @Override public void onWriteCompleted(long monotonicNanos, int bytes, long writeDurationNanos) { }
+            @Override public void onWriteDropped(long monotonicNanos, int bytes, int queueDepth) {
+                dropped.incrementAndGet();
+            }
+            @Override public void onPumpChunkAppended(long monotonicNanos, int chars) { }
+        });
+        try {
+            // The first submission reaches the writer, whose write fails and marks
+            // the stream broken; the writer keeps draining so every stranded and
+            // later job is reported instead of silently piling up behind a dead pipe.
+            holder.sendBytes("first\n".getBytes(StandardCharsets.UTF_8));
+            IOException brokenStreamFailure = null;
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (System.nanoTime() < deadline) {
+                try {
+                    holder.sendBytes("later\n".getBytes(StandardCharsets.UTF_8));
+                } catch (IOException failure) {
+                    if (failure.getMessage().contains("failed")) {
+                        brokenStreamFailure = failure;
+                        break;
+                    }
+                }
+                Thread.sleep(10);
+            }
+            assertTrue("submissions after a broken write must fail fast, got: "
+                    + (brokenStreamFailure == null ? "none" : brokenStreamFailure.getMessage()),
+                    brokenStreamFailure != null);
+            assertTrue("the failed write and stranded jobs must be reported as dropped",
+                    dropped.get() >= 1);
+        } finally {
+            holder.setIoProbe(null);
+            holder.close();
+        }
+    }
+
+    @Test(timeout = 10_000)
+    public void ioProbeObservesSubmitCompletionAndPumpAdvance() throws Exception {
+        PipedOutputStream pipeOut = new PipedOutputStream();
+        PipedInputStream pipeIn = new PipedInputStream(pipeOut);
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register("probe-vm",
+                new FakeExecutionSession(pipeIn, new ByteArrayOutputStream()));
+        List<String> events = Collections.synchronizedList(new ArrayList<>());
+        holder.setIoProbe(new PersistentTerminalSessionPool.IoProbe() {
+            @Override public void onWriteSubmitted(long monotonicNanos, int bytes, int queueDepth) {
+                events.add("submit:" + bytes);
+            }
+            @Override public void onWriteCompleted(long monotonicNanos, int bytes, long writeDurationNanos) {
+                events.add("complete:" + bytes + ":" + Math.max(0L, writeDurationNanos));
+            }
+            @Override public void onWriteDropped(long monotonicNanos, int bytes, int queueDepth) {
+                events.add("drop:" + bytes);
+            }
+            @Override public void onPumpChunkAppended(long monotonicNanos, int chars) {
+                events.add("pump:" + chars);
+            }
+        });
+        try {
+            holder.sendBytes("hi\n".getBytes(StandardCharsets.UTF_8));
+            pipeOut.write("out\n".getBytes(StandardCharsets.UTF_8));
+            pipeOut.flush();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (events.size() < 3 && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+            }
+            assertTrue("expected submit + complete + pump events, got: " + events, events.size() >= 3);
+            assertTrue("input submit must be observed", events.contains("submit:3"));
+            assertTrue("write completion must be observed",
+                    events.stream().anyMatch(event -> event.startsWith("complete:3:")));
+            assertTrue("pump/model advance must be observed with the chunk size",
+                    events.stream().anyMatch(event -> event.startsWith("pump:4")));
+            holder.setIoProbe(null);
+        } finally {
+            holder.setIoProbe(null);
+            holder.close();
+        }
+    }
+
+    @Test(timeout = 10_000)
+    public void screenModelAnswersEachDeviceStatusQueryExactlyOnce() throws Exception {
+        PipedOutputStream pipeOut = new PipedOutputStream();
+        PipedInputStream pipeIn = new PipedInputStream(pipeOut, 32768);
+        ByteArrayOutputStream inputSink = new ByteArrayOutputStream();
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register("dsr-once-vm",
+                new FakeExecutionSession(pipeIn, inputSink));
+        Consumer<String> listener = chunk -> { };
+        holder.attach(listener);
+        try {
+            pipeOut.write("\u001b[5n\u001b[5n\u001b[5n".getBytes(StandardCharsets.UTF_8));
+            pipeOut.flush();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (inputSink.toString(StandardCharsets.UTF_8).length() < "\u001b[0n".length() * 3
+                    && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+            }
+            String replies = inputSink.toString(StandardCharsets.UTF_8);
+            assertEquals("each CSI 5n must produce exactly one DSR reply (zero double-parse): "
+                            + replies.replace("\u001b", "ESC"),
+                    3, replies.split("\u001b\\[0n", -1).length - 1);
+        } finally {
+            holder.detach(listener);
+            holder.close();
+        }
     }
 
     private static final class ChunkedInputStream extends InputStream {

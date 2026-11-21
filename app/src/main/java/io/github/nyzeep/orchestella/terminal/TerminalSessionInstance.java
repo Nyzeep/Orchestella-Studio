@@ -22,13 +22,13 @@ public final class TerminalSessionInstance {
     private volatile String title;
     private final TerminalRingBuffer ringBuffer;
     /**
-     * Per-session screen state (2026-11-14 terminal round). A session owns its
-     * own {@link TerminalScreenModel} so switching terminals restores that
-     * session's own viewport instead of replaying the shared console snapshot;
-     * the primary session binds the live console model through
-     * {@link #bindScreenModel}. Background sessions keep receiving the same
-     * byte stream (one guest console today), but each keeps its own scrollback,
-     * cursor and alternate-screen state.
+     * Screen state for this tab (2026-11-14 terminal round, ownership reworked by
+     * W1-05/T-14). Created with a private model, but while the runtime console is
+     * live every session is bound through {@link #bindScreenModel} to the pool's
+     * canonical {@link TerminalScreenModel} — the pump thread is the only parser,
+     * so a bound tab refreshes live and no UI thread ever parses console bytes a
+     * second time. The private model remains only the render state for a session
+     * that is not bound (e.g. detached/offline hosts).
      */
     private volatile TerminalScreenModel screenModel = new TerminalScreenModel(80, 24);
     private volatile int cursorPosition = 0;
@@ -91,10 +91,11 @@ public final class TerminalSessionInstance {
     }
 
     /**
-     * Binds this session to an externally owned screen model (the console-bound
-     * primary session uses the runtime holder's model, which must stay the
-     * single canonical renderer for the live shell). Secondary sessions never
-     * call this: they keep the private model created with the session.
+     * Binds this session to an externally owned screen model. Since W1-05 (T-14)
+     * every session bound to the live runtime holder shares the holder's canonical
+     * model (single pump-thread parser, live secondary panes, no duplicate DSR
+     * replies); sessions that are never bound keep the private model created with
+     * the session (detached/offline render state).
      */
     public void bindScreenModel(TerminalScreenModel model) {
         if (model != null) {

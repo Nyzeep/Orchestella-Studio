@@ -8,9 +8,11 @@ import java.nio.charset.StandardCharsets;
 import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -39,8 +41,41 @@ public final class PersistentTerminalSessionPool {
         void onProvisioningComplete(String instanceId, int markerVersion);
     }
 
+    /**
+     * W1-05 (T-14): lightweight monotonic-clock hooks along the write path, for the
+     * Wave 2 real-PTY load tests (input submit → write completion → pump/model
+     * advance). Every timestamp is a {@link System#nanoTime()} value — the same
+     * CLOCK_MONOTONIC family as Android's {@code SystemClock.elapsedRealtimeNanos()},
+     * but also legal inside plain JVM unit tests. A probe is optional: with no probe
+     * set the hooks cost zero allocations and no extra clock reads.
+     */
+    public interface IoProbe {
+        /** A write (user input or protocol reply) entered the bounded write queue. */
+        void onWriteSubmitted(long monotonicNanos, int bytes, int queueDepth);
+
+        /** The writer thread flushed one queued write to the PTY input stream. */
+        void onWriteCompleted(long monotonicNanos, int bytes, long writeDurationNanos);
+
+        /** A write was dropped: the queue was saturated or the PTY input stream failed. */
+        void onWriteDropped(long monotonicNanos, int bytes, int queueDepth);
+
+        /** The pump thread appended a decoded chunk to the canonical screen model. */
+        void onPumpChunkAppended(long monotonicNanos, int chars);
+    }
+
     private static final PersistentTerminalSessionPool INSTANCE = new PersistentTerminalSessionPool();
     private static final long RUNTIME_STOP_GRACE_MS = 2000L;
+    /**
+     * W1-05 (T-14): bounded async write queue. Capacity bounds the backlog when a
+     * guest stops reading its PTY stdin; the dedicated writer thread is the only
+     * place that performs blocking {@code out.write()/out.flush()}, so a stalled
+     * guest can never deadlock the pump loop, the screen model or the UI.
+     */
+    private static final int WRITE_QUEUE_CAPACITY = 128;
+    /** How long user input waits for queue room before failing with IOException. */
+    private static final long WRITE_ENQUEUE_WAIT_MS = 1_000L;
+    /** Writer-thread idle poll. Bounds how fast an idle writer notices close(); a writer blocked inside a write is retired only by the stream failing or the process exiting. */
+    private static final long WRITE_POLL_MS = 250L;
     /**
      * How long a caller waits for another thread's in-flight stop before
      * treating the runtime as unconfirmed. A supervisor stop is bounded
@@ -79,6 +114,23 @@ public final class PersistentTerminalSessionPool {
         private boolean stopping;
         private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
         private final Thread pumpThread;
+        /**
+         * W1-05 (T-14): bounded FIFO write queue drained by {@link #writeThread}.
+         * User input and protocol replies share it so the byte order to the PTY
+         * stays consistent, and the blocking write never runs under the rwLock or
+         * the screen model monitor (the old deadlock vector: a full guest PTY
+         * stdin froze pumpLoop, attach(), detach() and displaySnapshot() at once).
+         */
+        private final ArrayBlockingQueue<byte[]> writeQueue = new ArrayBlockingQueue<>(WRITE_QUEUE_CAPACITY);
+        private final Thread writeThread;
+        /**
+         * W1-05 (T-14): set when a write to the PTY input failed. The writer thread
+         * keeps draining the queue (every stranded job is reported as dropped) but
+         * no longer touches the stream, and new submissions fail fast instead of
+         * piling up behind a dead pipe until the queue fills.
+         */
+        private volatile boolean writeStreamBroken;
+        private volatile IoProbe ioProbe;
         private final Object endListenerLock = new Object();
         private final ProvisioningListener provisioningListener;
         private final AtomicBoolean provisioningNotified = new AtomicBoolean(false);
@@ -105,19 +157,19 @@ public final class PersistentTerminalSessionPool {
             String launching = InstanceLaunchGuard.generation(instanceId);
             this.generation = launching != null ? launching : java.util.UUID.randomUUID().toString();
             this.ringBuffer = new TerminalRingBuffer(ringBufferCapacity);
-            screenModel.setResponseSink(response -> {
-                try {
-                    sendBytes(response.getBytes(StandardCharsets.UTF_8));
-                } catch (IOException ignored) {
-                    // Writing a terminal query response back into the pty is best-effort: a
-                    // broken pipe means the session is already dying and the pump loop will
-                    // surface the end through notifySessionEnded().
-                }
-            });
+            // W1-05 (T-14): protocol replies go through the bounded write queue and
+            // never block. The pump thread calls this sink from inside the screen
+            // model monitor and the rwLock write lock, so a synchronous write here
+            // (the old sendBytes) would deadlock the whole terminal against a guest
+            // that stopped reading its PTY stdin.
+            screenModel.setResponseSink(response -> enqueueResponseBytes(response.getBytes(StandardCharsets.UTF_8)));
 
             this.pumpThread = new Thread(this::pumpLoop, "pty-term-pump-" + instanceId);
             this.pumpThread.setDaemon(true);
             this.pumpThread.start();
+            this.writeThread = new Thread(this::writeLoop, "pty-term-writer-" + instanceId);
+            this.writeThread.setDaemon(true);
+            this.writeThread.start();
         }
 
         /**
@@ -204,6 +256,9 @@ public final class PersistentTerminalSessionPool {
                     } finally {
                         rwLock.writeLock().unlock();
                     }
+                    // W1-05 (T-14): the canonical screen model advanced by `count` chars.
+                    IoProbe pumpProbe = ioProbe;
+                    if (pumpProbe != null) pumpProbe.onPumpChunkAppended(System.nanoTime(), count);
                     // Persisting evidence touches the filesystem; never do that while the
                     // terminal write lock is held.
                     if (provisioned) notifyProvisioning(ProvisioningSignal.MARKER_VERSION);
@@ -277,15 +332,136 @@ public final class PersistentTerminalSessionPool {
             }
         }
 
+        /**
+         * W1-05 (T-14): enqueues user input into the same bounded FIFO write queue
+         * the protocol replies use, so the byte order to the PTY stays consistent
+         * while the blocking write runs on the dedicated writer thread — never under
+         * the rwLock or the screen model monitor. A saturated queue (guest stopped
+         * reading its PTY stdin) fails with {@link IOException} after a bounded wait
+         * instead of blocking the caller indefinitely; a broken PTY input stream
+         * fails fast for every later submission.
+         */
         public void sendBytes(byte[] bytes) throws IOException {
             if (!isAlive()) {
                 throw new IOException("Terminal stream has ended for instance " + instanceId);
             }
-            OutputStream out = session.terminalInput();
-            if (out != null && bytes != null && bytes.length > 0) {
-                synchronized (out) {
-                    out.write(bytes);
-                    out.flush();
+            if (bytes == null || bytes.length == 0) {
+                return;
+            }
+            if (writeStreamBroken) {
+                throw new IOException("Terminal input stream failed for instance " + instanceId);
+            }
+            if (!offerToWriteQueue(bytes, true)) {
+                throw new IOException("Terminal write queue saturated for instance " + instanceId);
+            }
+        }
+
+        /**
+         * W1-05 (T-14): protocol replies (CSI DSR/DA answers) are best-effort and
+         * must never block the pump thread, which calls this sink while holding the
+         * screen model monitor and the rwLock write lock. A full queue or a broken
+         * PTY input stream drops the reply instead of deadlocking the read path;
+         * the pump keeps draining the guest output either way.
+         */
+        private void enqueueResponseBytes(byte[] bytes) {
+            if (writeStreamBroken) {
+                IoProbe probe = ioProbe;
+                if (probe != null) probe.onWriteDropped(System.nanoTime(), bytes.length, writeQueue.size());
+                return;
+            }
+            try {
+                offerToWriteQueue(bytes, false);
+            } catch (IOException unreachable) {
+                // A non-blocking offer never waits, so it cannot be interrupted;
+                // treat any IOException defensively as a drop so the pump thread
+                // never dies on an unexpected failure.
+                IoProbe probe = ioProbe;
+                if (probe != null) probe.onWriteDropped(System.nanoTime(), bytes.length, writeQueue.size());
+            }
+        }
+
+        /**
+         * Shared enqueue primitive: offers the bytes to the bounded write queue and
+         * reports the outcome on the probe. The timestamp is taken after the offer
+         * settles, so {@code onWriteSubmitted} consistently means "entered the
+         * queue". Returns false when the queue had no room; the caller decides
+         * whether that is a drop (protocol replies) or a failure (user input).
+         */
+        private boolean offerToWriteQueue(byte[] bytes, boolean waitForRoom) throws IOException {
+            boolean accepted;
+            if (waitForRoom) {
+                try {
+                    accepted = writeQueue.offer(bytes, WRITE_ENQUEUE_WAIT_MS, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while enqueueing terminal input for instance " + instanceId);
+                }
+            } else {
+                accepted = writeQueue.offer(bytes);
+            }
+            IoProbe probe = ioProbe;
+            if (accepted) {
+                if (probe != null) probe.onWriteSubmitted(System.nanoTime(), bytes.length, writeQueue.size());
+            } else if (probe != null) {
+                probe.onWriteDropped(System.nanoTime(), bytes.length, writeQueue.size());
+            }
+            return accepted;
+        }
+
+        /** Sets (or clears with {@code null}) the diagnostic probe for this holder. */
+        public void setIoProbe(IoProbe probe) {
+            this.ioProbe = probe;
+        }
+
+        /**
+         * W1-05 (T-14): the only place that performs blocking PTY input writes.
+         * It holds no rwLock and no screen model monitor, so a stalled guest PTY
+         * stdin blocks at most this daemon thread: the pump keeps decoding output,
+         * and attach()/detach()/displaySnapshot() stay responsive. Single consumer
+         * means FIFO delivery preserves the enqueue order between keyboard input
+         * and protocol replies. A failed write marks the stream broken and stops
+         * touching it — the thread then keeps draining the queue so every stranded
+         * and later submission is reported as dropped, never silently lost behind a
+         * dead pipe (the pump EOF closes the holder and ends the loop).
+         */
+        private void writeLoop() {
+            while (true) {
+                byte[] bytes;
+                try {
+                    bytes = writeQueue.poll(WRITE_POLL_MS, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    continue;
+                }
+                if (bytes == null) {
+                    if (closed.get() && writeQueue.isEmpty()) return;
+                    continue;
+                }
+                if (writeStreamBroken) {
+                    IoProbe probe = ioProbe;
+                    if (probe != null) probe.onWriteDropped(System.nanoTime(), bytes.length, writeQueue.size());
+                    continue;
+                }
+                try {
+                    OutputStream out = session.terminalInput();
+                    if (out == null) continue;
+                    IoProbe probe = ioProbe;
+                    long start = probe != null ? System.nanoTime() : 0L;
+                    synchronized (out) {
+                        out.write(bytes);
+                        out.flush();
+                    }
+                    if (probe != null) {
+                        probe.onWriteCompleted(System.nanoTime(), bytes.length, System.nanoTime() - start);
+                    }
+                } catch (IOException | RuntimeException writeFailure) {
+                    // The PTY input stream is gone (or the guest stalled until the
+                    // socket died). The pump loop surfaces the session end. Keep the
+                    // failure visible on the probe (no android.util dependency: this
+                    // thread also runs inside plain JVM unit tests).
+                    writeStreamBroken = true;
+                    IoProbe probe = ioProbe;
+                    if (probe != null) probe.onWriteDropped(System.nanoTime(), bytes.length, writeQueue.size());
                 }
             }
         }

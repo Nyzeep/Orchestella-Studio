@@ -246,10 +246,10 @@ public final class MultiTerminalSessionManager {
 
     /**
      * The console-bound primary session: the first session created for an
-     * instance. Only this one renders the runtime holder's live screen model;
-     * every later session owns a private model that starts empty at creation
-     * time (2026-11-14 terminal round: "new terminal" is a brand new output
-     * terminal, not a second view of the current one).
+     * instance. Since W1-05 (T-14) all sessions of a live instance share the
+     * runtime holder's canonical screen model (one pump-thread parser, live
+     * panes everywhere); the primary is still the tab that the console's
+     * transcript replay lands in on attach.
      */
     public TerminalSessionInstance getPrimarySession(String instanceId) {
         if (instanceId == null) {

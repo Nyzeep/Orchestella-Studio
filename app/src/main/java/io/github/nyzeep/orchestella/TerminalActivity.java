@@ -54,6 +54,14 @@ public class TerminalActivity extends ComponentActivity {
      */
     public static final String EXTRA_COMMAND_DRAFT = "commandDraft";
 
+    /**
+     * W1-05 (T-14): single-batch budget for the coalescing UI buffer. A stalled
+     * main thread used to let {@code pendingOutput} grow without bound; over the
+     * budget the oldest bytes are dropped (the canonical screen model in the
+     * session pool keeps everything) and a one-time marker is injected.
+     */
+    private static final int PENDING_OUTPUT_BUDGET_CHARS = 64 * 1024;
+
     private Handler ui;
     private ModernTerminalView terminalView;
     private FrameLayout contentArea;
@@ -175,10 +183,7 @@ public class TerminalActivity extends ComponentActivity {
         };
         terminalView.setInputSink(inputSink);
         terminalView.setStickyStateMachine(stickyStateMachine);
-        terminalView.setSizeListener((columns, rows) -> {
-            syncSessionScreens(columns, rows);
-            scheduleTerminalResize();
-        });
+        terminalView.setSizeListener((columns, rows) -> scheduleTerminalResize());
         terminalView.setTerminalInputEnabled(false);
         contentArea.addView(terminalView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -824,10 +829,15 @@ public class TerminalActivity extends ComponentActivity {
                     active.appendOutput(snapshot);
                 }
             }
-            // The primary session renders the console's canonical screen model; a
-            // secondary session keeps its own model and therefore never mirrors it.
-            TerminalSessionInstance primary = multiManager.getPrimarySession(instanceId);
-            if (primary != null) primary.bindScreenModel(holder.getScreenModel());
+            // W1-05 (T-14): every session of the instance renders the console's
+            // canonical screen model, which only the holder's pump thread parses.
+            // Binding all of them here is what keeps a secondary tab live after a
+            // switch — the old per-session mirrors were fed on the UI thread (or
+            // froze), and the primary mirror was parsed a second time, duplicating
+            // DSR replies.
+            for (TerminalSessionInstance candidate : multiManager.listSessions(instanceId)) {
+                candidate.bindScreenModel(holder.getScreenModel());
+            }
             updateSessionChip(active);
             if (drawerPanel != null) {
                 drawerPanel.refresh();
@@ -852,31 +862,60 @@ public class TerminalActivity extends ComponentActivity {
         // flood_seq); coalescing keeps the first-post ordering guarantee — the
         // attach snapshot still precedes every live chunk — while collapsing N
         // chunks into one render pass.
+        // W1-05 (T-14): the buffer above is bounded (PENDING_OUTPUT_BUDGET_CHARS);
+        // the canonical screen model in the pool never drops bytes, only this
+        // render/ring-buffer path keeps the newest tail under a stalled UI thread.
         final StringBuilder pendingOutput = new StringBuilder();
         final boolean[] outputScheduled = {false};
+        final int[] droppedOutputChars = {0};
+        // One marker per flood episode: re-armed only after a clean tick, so a
+        // sustained flood does not stamp the transcript every flush interval.
+        final boolean[] truncationMarked = {false};
         terminalOutputListener = chunk -> {
             if (chunk == null || chunk.isEmpty()) return;
             synchronized (pendingOutput) {
                 pendingOutput.append(chunk);
+                int excess = pendingOutput.length() - PENDING_OUTPUT_BUDGET_CHARS;
+                if (excess > 0) {
+                    pendingOutput.delete(0, excess);
+                    droppedOutputChars[0] += excess;
+                }
                 if (outputScheduled[0]) return;
                 outputScheduled[0] = true;
             }
             ui.post(() -> {
+                int dropped;
                 String batch;
                 synchronized (pendingOutput) {
                     batch = pendingOutput.toString();
                     pendingOutput.setLength(0);
+                    dropped = droppedOutputChars[0];
+                    droppedOutputChars[0] = 0;
                     outputScheduled[0] = false;
                 }
                 if (generation != bindingGeneration || attachedHolder != holder) return;
-                if (batch.isEmpty()) return;
+                // The listener is only a repaint trigger for session screens: the
+                // pool's pump loop already parsed every chunk into the canonical
+                // model, so nothing here may parse again (no feedBackgroundScreens,
+                // no duplicate DSR replies, no secondary-pane freeze).
+                if (batch.isEmpty() && dropped == 0) return;
                 TerminalSessionInstance active = multiManager.getActiveSession(boundInstanceId);
-                if (active != null) active.appendOutput(batch);
+                if (active != null) {
+                    if (dropped > 0) {
+                        if (!truncationMarked[0]) {
+                            truncationMarked[0] = true;
+                            // Only the replay transcript loses bytes here — the
+                            // canonical screen model keeps everything — so the
+                            // marker is phrased for the transcript view.
+                            active.appendOutput("[高速输出：回看副本丢弃 " + dropped
+                                    + " 字符，屏幕内容完整]\n");
+                        }
+                    } else {
+                        truncationMarked[0] = false;
+                    }
+                    active.appendOutput(batch);
+                }
                 terminalView.appendOutput(batch);
-                // Background sessions share one guest console, so they get the same
-                // bytes — but each parses them into its own screen model, which is
-                // why switching terminals restores that session's own viewport.
-                feedBackgroundScreens(boundInstanceId, active, batch);
                 LogViewerActivity.appendGuestConsole(this, boundInstanceId, batch);
             });
         };
@@ -1368,6 +1407,28 @@ public class TerminalActivity extends ComponentActivity {
         return gd;
     }
 
+    /**
+     * W1-05 (T-14): tab-switch binding decision, extracted so a zero-device test
+     * can pin the single-stream ownership contract. Returns the screen model the
+     * view must render — after binding {@code targetSession} to the holder's
+     * canonical model — or null when there is no live console and the caller must
+     * replay the session transcript instead.
+     */
+    static io.github.nyzeep.orchestella.terminal.TerminalScreenModel bindSessionScreenForSwitch(
+            PersistentTerminalSessionPool.SessionHolder holder,
+            TerminalSessionInstance targetSession,
+            TerminalSessionInstance primarySession) {
+        if (holder == null) return null;
+        io.github.nyzeep.orchestella.terminal.TerminalScreenModel canonical = holder.getScreenModel();
+        if (targetSession == primarySession) return canonical;
+        // With the console live, every tab renders the canonical screen model.
+        // Binding here also covers sessions created after the attach; the pump
+        // keeps feeding that model, so a secondary pane stays live instead of
+        // freezing on a private mirror nobody parses anymore.
+        targetSession.bindScreenModel(canonical);
+        return canonical;
+    }
+
     private void switchToSessionUi(TerminalSessionInstance targetSession) {
         if (targetSession == null || terminalView == null) {
             return;
@@ -1382,12 +1443,14 @@ public class TerminalActivity extends ComponentActivity {
             // screen model (and the live listener generation) is the one on screen.
             detachTerminalListener();
             showTerminalSession(holder);
-        } else if (targetSession.getScreenModel() != null) {
-            // Secondary sessions render their own model; nothing is replayed from the
-            // console, so a new terminal never shows the current terminal's content.
-            terminalView.setSessionScreen(targetSession.getScreenModel());
         } else {
-            terminalView.replaceTranscript(targetSession.getTranscript());
+            io.github.nyzeep.orchestella.terminal.TerminalScreenModel bound =
+                    bindSessionScreenForSwitch(holder, targetSession, primary);
+            if (bound != null) {
+                terminalView.setSessionScreen(bound);
+            } else {
+                terminalView.replaceTranscript(targetSession.getTranscript());
+            }
         }
         terminalView.post(() -> {
             terminalView.scrollToBottom();
@@ -1395,41 +1458,6 @@ public class TerminalActivity extends ComponentActivity {
         });
         if (drawerPanel != null) {
             drawerPanel.refresh();
-        }
-    }
-
-    /**
-     * Feeds the live console bytes into every non-active session's own screen
-     * model. The active session is rendered by the view itself, so skipping it
-     * here avoids parsing the same chunk twice.
-     */
-    private void feedBackgroundScreens(String forInstanceId, TerminalSessionInstance active, String chunk) {
-        if (multiManager == null || forInstanceId == null || chunk == null || chunk.isEmpty()) return;
-        java.util.List<TerminalSessionInstance> sessions = multiManager.listSessions(forInstanceId);
-        for (int index = 0; index < sessions.size(); index++) {
-            TerminalSessionInstance candidate = sessions.get(index);
-            if (candidate == active) continue;
-            io.github.nyzeep.orchestella.terminal.TerminalScreenModel model = candidate.getScreenModel();
-            if (model == null) continue;
-            try {
-                model.append(chunk);
-            } catch (RuntimeException ignored) {
-                // A background viewport must never break the live console stream.
-            }
-        }
-    }
-
-    /** Keeps every background session model on the same grid as the visible one. */
-    private void syncSessionScreens(int columns, int rows) {
-        if (multiManager == null || instanceId == null) return;
-        TerminalSessionInstance active = multiManager.getActiveSession(instanceId);
-        java.util.List<TerminalSessionInstance> sessions = multiManager.listSessions(instanceId);
-        for (int index = 0; index < sessions.size(); index++) {
-            TerminalSessionInstance candidate = sessions.get(index);
-            if (candidate == active) continue;
-            io.github.nyzeep.orchestella.terminal.TerminalScreenModel model = candidate.getScreenModel();
-            if (model == null) continue;
-            if (model.columns() != columns || model.rows() != rows) model.resize(columns, rows);
         }
     }
 

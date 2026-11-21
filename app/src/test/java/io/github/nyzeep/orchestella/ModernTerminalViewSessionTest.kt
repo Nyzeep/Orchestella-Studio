@@ -72,6 +72,42 @@ class ModernTerminalViewSessionTest {
         )
     }
 
+    /**
+     * W1-05 (T-14): switching to a secondary tab binds it to the pool's canonical
+     * screen model, which the pump thread keeps parsing. The pane must keep
+     * refreshing from pump-side model updates alone — the old design froze it
+     * because the view skipped appends while a nobody-fed private mirror sat on
+     * screen. The render tick ([ModernTerminalView.appendOutput]) is the only UI
+     * involvement; the model text appears exactly once (no UI-side re-parse).
+     */
+    @Test
+    fun secondaryPaneBoundToTheCanonicalModelKeepsRefreshing() {
+        val view = ModernTerminalView(context)
+        val canonical = TerminalScreenModel(80, 24)
+        val session = io.github.nyzeep.orchestella.terminal.TerminalSessionInstance("term-2", "vm-1", "副窗格")
+        session.bindScreenModel(canonical)
+
+        view.setSessionScreen(session.getScreenModel())
+
+        // What the pump thread does while the secondary tab is on screen, plus the
+        // render tick the activity forwards for each console chunk.
+        canonical.append("pump-live-update\r\n")
+        view.appendOutput("repaint-tick\r\n")
+        idleMainLooper()
+
+        val modelText = canonical.displaySnapshot().text()
+        assertEquals(
+            "bound secondary pane must show pump-side updates exactly once: <$modelText>",
+            1,
+            Regex("pump-live-update").findAll(modelText).count(),
+        )
+        val rendered = (view.getChildAt(0) as android.widget.TextView).text.toString()
+        assertTrue(
+            "the on-screen secondary pane must not freeze: <$rendered>",
+            rendered.contains("pump-live-update"),
+        )
+    }
+
     @Test
     fun sessionOutputReachesTheRenderedTranscript() {
         val view = ModernTerminalView(context)
