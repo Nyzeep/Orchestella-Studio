@@ -370,6 +370,10 @@ internal fun OeBackStackHost(
                     StackLayer(
                         role = role,
                         progress = effectiveProgress,
+                        // 目的地层自带底片：push/pop 期间它与 base 同时在屏，
+                        // 没有不透明底就会透出上一页（残影）。base 是 pager，
+                        // 子页已各自带底片，不能重复挂载。
+                        plate = true,
                         content = entry.destination.content,
                     )
                 }
@@ -382,6 +386,7 @@ internal fun OeBackStackHost(
 private fun StackLayer(
     role: LayerRole,
     progress: () -> Float,
+    plate: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Box(
@@ -389,6 +394,8 @@ private fun StackLayer(
             .fillMaxSize()
             .graphicsLayer {
                 val p = progress()
+                // 移动层必须裁剪：底片随页面平移，不裁会盖住坞与相邻像素。
+                clip = role == LayerRole.Moving
                 when (role) {
                     LayerRole.RestTop -> Unit
                     LayerRole.Under -> {
@@ -402,6 +409,7 @@ private fun StackLayer(
                 }
             },
     ) {
+        if (plate) OePagePlate()
         content()
         Box(
             modifier = Modifier

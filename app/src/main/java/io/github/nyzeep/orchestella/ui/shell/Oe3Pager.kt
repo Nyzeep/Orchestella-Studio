@@ -7,6 +7,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -133,11 +134,16 @@ fun Oe3Pager(
     ) { tab ->
         stateHolder.SaveableStateProvider(key = tab.key) {
             CompositionLocalProvider(LocalOe3PageBottomPadding provides bottomReserve) {
-                val page = pages?.slot(tab)
-                if (page != null) {
-                    page()
-                } else {
-                    Oe3Placeholder(title = tab.label, bottomReserve = bottomReserve)
+                // 底片必须挂在每一页内部：pager 的交叉淡化会让两页同时
+                // 在屏，透明页叠化就是"残影/糊"的另一个来源。
+                Box(Modifier.fillMaxSize()) {
+                    OePagePlate()
+                    val page = pages?.slot(tab)
+                    if (page != null) {
+                        page()
+                    } else {
+                        Oe3Placeholder(title = tab.label, bottomReserve = bottomReserve)
+                    }
                 }
             }
         }

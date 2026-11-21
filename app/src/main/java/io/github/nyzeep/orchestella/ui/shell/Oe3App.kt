@@ -102,6 +102,9 @@ fun Oe3App(
             LocalOe3GlassEnabled provides glassEnabled,
             LocalOeSurfaceAlpha provides surfaceAlpha,
             LocalOeBackStack provides stack,
+            // 页面底片复用同一份背景模式：转场时进入页先盖住下层，静止时与
+            // 根背景逐像素重合（见 OePagePlate）。
+            LocalOeShellBackgroundMode provides backgroundMode,
         ) {
             val horizontalInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
             Box(modifier.fillMaxSize()) {
