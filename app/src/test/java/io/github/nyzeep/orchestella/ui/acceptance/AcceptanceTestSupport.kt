@@ -53,6 +53,7 @@ import io.github.nyzeep.orchestella.ui.screens.instances.InstancesUiState
 import io.github.nyzeep.orchestella.ui.screens.wizard.WizardFacts
 import io.github.nyzeep.orchestella.ui.shell.Oe3Pages
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArraySet
@@ -266,6 +267,20 @@ object AcceptanceTestSupport {
             File(candidate, "tools/check_tokens.py").isFile &&
                 File(candidate, "tokens/oe3.tokens.json").isFile
         }
+    }
+
+    /**
+     * W1-02：token-gate 类测试的规格仓检出前置断言。没有检出时显式跳过
+     * （解析口径与逐级候选见 [specsToolRoot]）；CI 上的权威执行点是 Specs
+     * 仓自己的 token-parity workflow。
+     */
+    fun assumeSpecsToolAvailable() {
+        assumeTrue(
+            "Specs checkout required for check_tokens.py "
+                + "(ORCHESTELLA_SPECS_ROOT / adjacent Orchestella-Specs|Orchestella_spec / docs/design-system); "
+                + "CI-enforced by the Specs repo workflow",
+            specsToolRoot() != null,
+        )
     }
 
     fun appMainDir(): File = File(projectRoot(), "app/src/main")

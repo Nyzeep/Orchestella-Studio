@@ -54,6 +54,28 @@ class MotionXmlTokenTest {
             OrchestellaMotion.DURATION_DIALOG_EXIT_MS,
             integers["oe_motion_duration_dialog_exit"],
         )
+
+        // W1-02（A4-M1）：motion v2 阶梯 XML 镜像，逐项钉死防漂移。
+        assertEquals(
+            "micro ladder mirrors OeDuration.Micro",
+            OeMotion.DURATION_MICRO_MS,
+            integers["oe_motion_duration_micro"],
+        )
+        assertEquals(
+            "short ladder mirrors OeDuration.Short",
+            OeMotion.DURATION_SHORT_MS,
+            integers["oe_motion_duration_short"],
+        )
+        assertEquals(
+            "medium ladder mirrors OeDuration.Medium",
+            OeMotion.DURATION_MEDIUM_MS,
+            integers["oe_motion_duration_medium"],
+        )
+        assertEquals(
+            "long ladder mirrors OeDuration.Long",
+            OeMotion.DURATION_LONG_MS,
+            integers["oe_motion_duration_long"],
+        )
     }
 
     @Test
@@ -123,5 +145,15 @@ class MotionXmlTokenTest {
         assertEquals(210, OeMotion.VIEW_ACTIVITY_ENTER_MS)
         assertEquals(250, OeMotion.VIEW_DIALOG_ENTER_MS)
         assertEquals(150, OeMotion.VIEW_DIALOG_EXIT_MS)
+    }
+
+    @Test
+    fun motionV2LadderIsPinnedIndependently() {
+        // W1-02（A4-M1）独立字面量钉值：OeMotion 阶梯被重调时本用例与 XML
+        // 镜像必须一起走。
+        assertEquals(120, OeMotion.DURATION_MICRO_MS)
+        assertEquals(200, OeMotion.DURATION_SHORT_MS)
+        assertEquals(320, OeMotion.DURATION_MEDIUM_MS)
+        assertEquals(480, OeMotion.DURATION_LONG_MS)
     }
 }
