@@ -22,6 +22,11 @@ skills-lock.json
 /app/src/main/jniLibs/
 /app/src/main/assets/*
 !/app/src/main/assets/third-party-notices.txt
+# Guest shell integration is source, not a developer-local asset: OSC 133 markers
+# and prompt wrapping decide terminal behaviour, so they must be reviewable and
+# reproducible from a clean clone (2026-11-20 polish round).
+!/app/src/main/assets/shell/
+!/app/src/main/assets/shell/**
 /app/src/main/resources/
 /doc/
 探讨文档*.md
