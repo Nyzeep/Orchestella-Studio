@@ -43,6 +43,30 @@ public final class GuestShellAssetsPackagingTest {
         return direct;
     }
 
+    private static Path getGuestAssetsInitramfsInit() {
+        Path direct = Paths.get("guest-assets", "initramfs", "init");
+        if (Files.isRegularFile(direct)) {
+            return direct;
+        }
+        Path parent = Paths.get("..", "guest-assets", "initramfs", "init");
+        if (Files.isRegularFile(parent)) {
+            return parent;
+        }
+        return direct;
+    }
+
+    private static Path getGuestInitResource() {
+        Path direct = Paths.get("src", "main", "resources", "guest_init");
+        if (Files.isRegularFile(direct)) {
+            return direct;
+        }
+        Path parent = Paths.get("app", "src", "main", "resources", "guest_init");
+        if (Files.isRegularFile(parent)) {
+            return parent;
+        }
+        return direct;
+    }
+
     @Test
     public void packagedPromptAssetExistsAndUsesLfLineEndingsOnly() throws IOException {
         Path promptAsset = getAssetsShellDir().resolve("orchestella-prompt.sh");
@@ -139,18 +163,51 @@ public final class GuestShellAssetsPackagingTest {
         Path sourceDir = getGuestAssetsShellDir();
         Path targetDir = getAssetsShellDir();
 
-        if (Files.isDirectory(sourceDir)) {
-            List<String> files = List.of("orchestella-prompt.sh", "aliases.sh", "00-orchestella-env.sh");
-            for (String file : files) {
-                Path src = sourceDir.resolve(file);
-                Path tgt = targetDir.resolve(file);
-                assertTrue("Source script must exist: " + src, Files.exists(src));
-                assertTrue("Packaged asset must exist: " + tgt, Files.exists(tgt));
-                assertArrayEquals(
-                        "Asset byte contents must match source verbatim: " + file,
-                        Files.readAllBytes(src),
-                        Files.readAllBytes(tgt));
-            }
+        // guest-assets/shell/ 是唯一权威源；syncGuestShellAssets 构建时同步到 APK
+        // assets。逐脚本遍历而非硬编码清单：新增脚本自动纳入校验，删除任意一个
+        // 现有脚本（含 20-orchestella-terminal-integration.sh）都会在此拦截。
+        assertTrue("guest-assets/shell authoritative source must exist: " + sourceDir,
+                Files.isDirectory(sourceDir));
+        assertTrue("APK assets/shell target must exist: " + targetDir, Files.isDirectory(targetDir));
+        List<Path> scripts = new java.util.ArrayList<>();
+        try (java.util.stream.Stream<Path> entries = Files.list(sourceDir)) {
+            entries.filter(path -> path.getFileName().toString().endsWith(".sh"))
+                    .sorted()
+                    .forEach(scripts::add);
         }
+        assertTrue("Expected all 8 guest shell scripts, found " + scripts.size(), scripts.size() >= 8);
+        for (Path src : scripts) {
+            Path tgt = targetDir.resolve(src.getFileName().toString());
+            assertTrue("Packaged asset must exist: " + tgt, Files.exists(tgt));
+            assertArrayEquals(
+                    "Asset byte contents must match source verbatim: " + src.getFileName(),
+                    Files.readAllBytes(src),
+                    Files.readAllBytes(tgt));
+        }
+    }
+
+    @Test
+    public void guestInitTemplatesEmbedCanonicalTerminalIntegrationHook() throws IOException {
+        Path hook = getGuestAssetsShellDir().resolve("20-orchestella-terminal-integration.sh");
+        assertTrue("Canonical terminal hook must exist in guest-assets/shell", Files.exists(hook));
+        String canonical = new String(Files.readAllBytes(hook), StandardCharsets.UTF_8);
+        assertFalse("Canonical hook must use LF line endings only", canonical.contains("\r"));
+        // PS2 归一化门：剥除自身包装后必须先记录 set 状态，仅 unset 才回填 '> '。
+        assertTrue("Canonical hook must keep the ${PS2+x} set-state guard", canonical.contains("${PS2+x}"));
+
+        // guest-assets/scripts/sync-guest-init.py 将 hook 逐字节嵌入 initramfs/init 与
+        // app/src/main/resources/guest_init；两个生成模板不得与权威源漂移。
+        Path init = getGuestAssetsInitramfsInit();
+        assertTrue("initramfs/init must exist: " + init, Files.exists(init));
+        assertTrue("initramfs/init must embed the canonical terminal hook bytes",
+                new String(Files.readAllBytes(init), StandardCharsets.UTF_8).contains(canonical));
+
+        Path resource = getGuestInitResource();
+        assertTrue("guest_init APK template must exist (run sync-guest-init.py --prepare-resource): " + resource,
+                Files.exists(resource));
+        String resourceContent = new String(Files.readAllBytes(resource), StandardCharsets.UTF_8);
+        assertFalse("guest_init template must use LF line endings only", resourceContent.contains("\r"));
+        assertTrue("guest_init template must embed the canonical terminal hook bytes",
+                resourceContent.contains(canonical));
     }
 }

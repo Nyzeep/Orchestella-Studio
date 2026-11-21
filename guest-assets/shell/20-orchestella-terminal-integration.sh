@@ -24,9 +24,17 @@ __orchestella_terminal_after_prompt() {
     PS1="$begin$PS1$end"
     local continuation_begin='\[\e]133;B;continuation=1\a\]'
     local continuation_end='\[\e]133;B;continuation=2\a\]'
+    # Capture set-ness before stripping: after the two removals below PS2 is always
+    # set, so ${PS2-'> '} would never fire and an originally-unset PS2 lost its '> '.
+    local ps2_was_set=${PS2+x}
     PS2="${PS2#"$continuation_begin"}"
     PS2="${PS2%"$continuation_end"}"
-    PS2="$continuation_begin${PS2-'> '}$continuation_end"
+    # Only an unset PS2 falls back to '> '; explicit PS2="" and custom text survive
+    # the re-wrap unchanged, and re-sourcing strips our own markers first (idempotent).
+    if [ -z "$ps2_was_set" ]; then
+        PS2='> '
+    fi
+    PS2="$continuation_begin$PS2$continuation_end"
     return "$result"
 }
 

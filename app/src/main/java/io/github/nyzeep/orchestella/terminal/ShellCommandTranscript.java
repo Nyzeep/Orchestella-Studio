@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.terminal;
 
+import io.github.nyzeep.orchestella.DraculaPalette;
 import io.github.nyzeep.orchestella.TerminalSpan;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -50,9 +51,15 @@ final class ShellCommandTranscript {
 
     void clearVisibleHistory(boolean preserveInput) {
         completed.clear(); retainedChars = 0; evictedRows = 0;
+        // Recorded PS2 ranges are absolute pane offsets. Once the guest erases the
+        // grid (Ctrl+L / ED) or the scrollback (ED 3) they point at cleared cells —
+        // and ESC c previously dropped only continuationPrompts, leaving the two
+        // parallel lists misaligned. Drop the whole continuation state on every
+        // clear; prompt/phase survive while editing so readline redraws re-record.
+        continuationStart = -1; continuationPrompts.clear(); continuationTexts.clear();
         if (!preserveInput || !isEditingPrompt()) {
             pane = newPane(); prompt = new ArrayList<>(); submitted = null; phase = Phase.BETWEEN;
-            bufferedOutput.setLength(0); continuationStart = -1; continuationPrompts.clear();
+            bufferedOutput.setLength(0);
         }
     }
 
@@ -92,6 +99,18 @@ final class ShellCommandTranscript {
             String text = pane.snapshot().text();
             int end = pane.snapshot().cursorOffset;
             if (continuationStart >= 0 && end >= continuationStart && end <= text.length()) {
+                // Readline redraws re-send the same PS2 at the same absolute offset.
+                // Keeping both records made the second deletion eat the literal "> "
+                // a user typed right after the marker: after the first deletion the
+                // literal shifts into the stale range and matches its captured text.
+                // One non-overlapping range per marker pair keeps that from recurring.
+                for (int i = continuationPrompts.size() - 1; i >= 0; i--) {
+                    int[] range = continuationPrompts.get(i);
+                    if (range[0] < end && continuationStart < range[1]) {
+                        continuationPrompts.remove(i);
+                        continuationTexts.remove(i);
+                    }
+                }
                 continuationPrompts.add(new int[]{continuationStart, end});
                 continuationTexts.add(text.substring(continuationStart, end));
             }
@@ -99,29 +118,63 @@ final class ShellCommandTranscript {
         } else if (value.equals("133;C") || value.startsWith("133;C;cmd=")) {
             if (phase != Phase.INPUT) return;
             submitted = value.startsWith("133;C;cmd=") ? decode(value.substring(10)) : null;
-            // Keep interleaved guest output separate from the authoritative command.
-            // Unmatched echo is kept as output rather than guessed to be a command.
             if (submitted != null) {
-                StringBuilder echo = new StringBuilder(trimText(pane.snapshot().text()));
+                // Validate and strip PS2 ranges on the UNTRIMMED pane text: a trailing
+                // empty continuation line ends in "> " and trimming first would cut
+                // the marker to ">", pushing its recorded end past the text and
+                // leaving a bare '>' behind. Ranges are deleted from the end of the
+                // text backwards so earlier offsets never shift under a later range.
+                StringBuilder echo = new StringBuilder(pane.snapshot().text());
+                List<Integer> order = new ArrayList<>();
+                for (int i = 0; i < continuationPrompts.size(); i++) order.add(i);
+                order.sort((left, right) -> Integer.compare(
+                        continuationPrompts.get(right)[0], continuationPrompts.get(left)[0]));
                 // Strip only PS2 ranges explicitly bracketed by the guest. A literal
                 // '>' in command/output text is never used as a classification rule.
                 // Each range must still contain the text captured between its markers:
                 // readline re-sends PS2 on redraw, and an unverified stale range can
                 // sit on top of real command characters.
-                for (int i = continuationPrompts.size() - 1; i >= 0; i--) {
-                    int[] range = continuationPrompts.get(i);
-                    String expected = continuationTexts.get(i);
-                    if (range[0] > range[1] || range[1] > echo.length()) continue;
-                    if (range[1] - range[0] != expected.length()) continue;
-                    if (!echo.substring(range[0], range[1]).equals(expected)) continue;
-                    echo.delete(range[0], range[1]);
+                for (int index : order) {
+                    int[] range = continuationPrompts.get(index);
+                    String expected = continuationTexts.get(index);
+                    if (range[0] < 0 || range[0] > echo.length()) continue;
+                    if (range[0] + expected.length() <= echo.length()
+                            && expected.equals(echo.substring(range[0], range[0] + expected.length()))) {
+                        echo.delete(range[0], range[0] + expected.length());
+                        continue;
+                    }
+                    // The pane snapshot suppresses a line's trailing blanks once the
+                    // cursor has moved off it, so a PS2 recorded as "> " reappears as
+                    // ">" at submission time and the absolute end lands one cell low.
+                    // Fall back to the recorded text without its trailing blanks and
+                    // delete only what is actually present. The anchor requires the
+                    // core to end the line (newline or text end) — exactly where the
+                    // suppression applies — so real characters never match by chance.
+                    String core = trimText(expected);
+                    if (core.isEmpty() || core.equals(expected) || range[0] + core.length() > echo.length()
+                            || !echo.substring(range[0], range[0] + core.length()).equals(core)) continue;
+                    if (range[0] + core.length() < echo.length() && echo.charAt(range[0] + core.length()) != '\n') continue;
+                    echo.delete(range[0], range[0] + core.length());
                 }
+                // Keep interleaved guest output separate from the authoritative command.
+                // Unmatched echo is kept as output rather than guessed to be a command;
+                // matching runs before trimming so a command that itself ends in
+                // whitespace still matches the echoed text.
                 String observed = echo.toString();
                 int echoedAt = observed.lastIndexOf(submitted);
                 if (echoedAt >= 0) observed = observed.substring(0, echoedAt) + observed.substring(echoedAt + submitted.length());
-                if (!observed.trim().isEmpty()) addCompleted(plain(observed));
+                if (!trimText(observed).isEmpty()) addCompleted(plain(trimText(observed)));
+            } else {
+                // A missing/invalid payload (HISTCONTROL/HISTIGNORE, >8 KiB, silent
+                // reads) is deliberately never archived as a command, but the echoed
+                // input line stays visible as ordinary VT text instead of vanishing
+                // with the discarded pane. Unlike the payload path above, no PS2
+                // ranges are stripped: raw VT keeps exactly what the screen showed.
+                List<TerminalSpan> kept = new ArrayList<>(prompt);
+                kept.addAll(pane.snapshot().spans);
+                addCompleted(trim(kept));
             }
-            // A missing/invalid payload is deliberately never archived as a command.
+            continuationStart = -1; continuationPrompts.clear(); continuationTexts.clear();
             pane = newPane(); phase = Phase.OUTPUT;
         } else if (value.startsWith("133;D")) {
             if (phase == Phase.OUTPUT) finishOutput();
@@ -232,9 +285,11 @@ final class ShellCommandTranscript {
     private List<TerminalSpan> command() {
         List<TerminalSpan> result = new ArrayList<>(prompt);
         // 只靠字重强调：此前的反色块把命令画成"主题前景色底 + 黑/白字"，
-        // 深色主题下是一条近白色横条，比输出更抢眼（用户反馈）。粗体无底色
-        // 走 TerminalSpan 的 softenForeground()，与系统日志的粗体同一语言。
-        result.add(new TerminalSpan(submitted, null, null, true, false, false, false));
+        // 深色主题下是一条近白色横条，比输出更抢眼（用户反馈）。命令文字是
+        // 10–18sp 的普通正文（WCAG 2.2 SC 1.4.3 要求 >= 4.5:1），显式传入主题
+        // 前景色（fg != null）绕开 TerminalSpan 对"粗体无色"日志的 25% 柔化，
+        // 命令对比度与主题正文持平；guest 真实的 SGR 7/27 反色行为不受影响。
+        result.add(new TerminalSpan(submitted, DraculaPalette.themedForeground(), null, true, false, false, false));
         return result;
     }
 

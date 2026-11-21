@@ -227,6 +227,13 @@ public final class TerminalScreenModelTest {
     }
 
     private static String marker(String value) { return "\u001b]133;" + value + "\u0007"; }
+    /** Literal occurrence count; split() would treat trailing backslashes as regex. */
+    private static int countOf(String haystack, String needle) {
+        if (needle.isEmpty()) throw new IllegalArgumentException("needle must not be empty");
+        int count = 0;
+        for (int at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + needle.length())) count++;
+        return count;
+    }
     private static String commandMarker(String command) {
         return marker("C;cmd=" + java.util.Base64.getEncoder().encodeToString(command.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     }
@@ -250,13 +257,23 @@ public final class TerminalScreenModelTest {
     }
 
     /**
-     * 命令块只用字重强调：反色块已删除（用户反馈"不要用高亮色块框住指令"）。
-     * 粗体命令文字按 WCAG 大字号标准要求 >= 3:1，普通正文的 4.5:1 仍由主题前景自身保证。
+     * 命令块只用字重强调（反色块已删除，用户反馈"不要用高亮色块框住指令"）。
+     * 终端默认字号 14sp 属于 WCAG 2.2 SC 1.4.3 的普通正文，命令文字必须 >= 4.5:1。
+     * ShellCommandTranscript 显式传入主题前景色（fg != null），绕过 bold 触发的
+     * softenForeground() 25% 向背景柔化——因此命令对比度必须与主题正文自身持平。
+     * 调色板自身不合格（如前景=背景）时直接断言失败，不再静默跳过或降级到 3.0。
      */
     @Test public void commandIsBoldWithoutInverseBlockOnLightAndDarkThemes() {
         try {
-            for (int foreground : new int[]{0xfff8f8f2, 0xff59483e, 0xff777777, 0xff000000, 0xffffffff}) {
-                DraculaPalette.setPaletteOverride(new int[16], foreground, 0xffffffff);
+            int[][] themes = {
+                    {0xfff8f8f2, 0xff282a36},  // Dracula 深色默认
+                    {0xff1f1f1f, 0xfff5f5f5},  // 浅色
+                    {0xff59483e, 0xffffffff},  // 自定义暖色前景/纯白背景
+                    {0xff595959, 0xffffffff},  // 中灰前景（bold 柔化后必然跌破 4.5）
+                    {0xfff8f8f2, 0xff101014},  // 高对比深色
+            };
+            for (int[] theme : themes) {
+                DraculaPalette.setPaletteOverride(new int[16], theme[0], theme[1]);
                 TerminalScreenModel model = new TerminalScreenModel(40, 6);
                 prompt(model);
                 model.append("echo readable\r\n" + commandMarker("echo readable"));
@@ -266,11 +283,10 @@ public final class TerminalScreenModelTest {
                 assertNull(command.getBackgroundColor());
                 int background = DraculaPalette.themedBackground();
                 double plainContrast = contrast(DraculaPalette.themedForeground(), background);
-                // 退化调色板（前景=背景）不是真实主题，正文本身就读不出来；
-                // 这里只对"主题自身合格"的配色断言命令文字仍可读。
-                if (plainContrast < 4.5) continue;
+                assertTrue("Theme palette itself must stay readable (contrast=" + plainContrast + ")",
+                        plainContrast >= 4.5);
                 double inkContrast = contrast(command.getEffectiveForegroundColor(), background);
-                assertTrue("Command contrast=" + inkContrast, inkContrast >= 3.0);
+                assertTrue("Command contrast=" + inkContrast, inkContrast >= 4.5);
             }
         } finally { DraculaPalette.setPaletteOverride(null, 0, 0); }
     }
@@ -318,7 +334,11 @@ public final class TerminalScreenModelTest {
         model.append("read -s password\r\n" + commandMarker("read -s password") + "Password: \r\nsafe\r\n" + marker("D;0"));
         prompt(model);
         String rendered = model.displaySnapshot().text();
-        assertFalse(rendered.contains("private text"));
+        // 无载荷 133;C（HISTCONTROL/HISTIGNORE 边界）退回普通 VT：用户在屏上看到的
+        // 回显行保留，但绝不进入可复现命令块（无粗体命令样式、无反色块）。
+        assertTrue(rendered.contains("❯ private text"));
+        assertFalse(model.displaySnapshot().spans.stream().anyMatch(span ->
+                (span.isBold() || span.isInverse()) && span.getText().contains("private text")));
         assertTrue(rendered.contains("safe result"));
         assertTrue(rendered.contains("read -s password"));
         assertFalse(rendered.contains("PASSWORD_NOT_ECHOED"));
@@ -349,6 +369,86 @@ public final class TerminalScreenModelTest {
         assertEquals(1, rendered.split("printf", -1).length - 1);
         assertTrue(rendered.contains("line1\nline2"));
         assertTrue(model.displaySnapshot().spans.stream().anyMatch(span -> span.isBold() && !span.isInverse() && span.getText().equals(command)));
+    }
+
+    @Test public void redrawnContinuationRangeReplacesTheStaleOneAndKeepsLiteralGreaterThan() {
+        TerminalScreenModel model = new TerminalScreenModel(60, 6);
+        prompt(model);
+        // readline 重绘只在续行上重发同一偏移的 PS2 标记对；用户随后输入字面
+        // "> literal"。同偏移的两条旧区间会在倒序删除时把字面 "> " 一并吃掉，
+        // 造成残缺回显 + 权威命令各归档一次（echoCount == 2）。
+        model.append("cat \\\r\n"
+                + marker("B;continuation=1") + "> " + marker("B;continuation=2")
+                + "\r" + marker("B;continuation=1") + "> " + marker("B;continuation=2")
+                + "> literal\r\n" + commandMarker("cat \\\n> literal")
+                + "stdin\r\n" + marker("D;0"));
+        String rendered = model.displaySnapshot().text();
+        assertEquals("Redraw must not double-archive the command (echoCount)",
+                1, countOf(rendered, "cat \\"));
+        assertTrue(rendered.contains("cat \\\n> literal"));
+        assertFalse(rendered.contains("cat \\\nliteral"));
+    }
+
+    @Test public void trailingEmptyContinuationLineSubmitsWithoutResidualPromptGlyph() {
+        TerminalScreenModel model = new TerminalScreenModel(60, 6);
+        prompt(model);
+        // echo \ 后直接回车：末尾空续行 "> " 在右裁剪后只剩 ">"，旧代码的
+        // range[1] > echo.length() 跳过删除，屏上残余裸 > 并误归档残块。
+        model.append("echo \\\r\n"
+                + marker("B;continuation=1") + "> " + marker("B;continuation=2")
+                + "\r\n" + commandMarker("echo \\\n")
+                + "done\r\n" + marker("D;0"));
+        String rendered = model.displaySnapshot().text();
+        assertEquals(1, countOf(rendered, "echo \\"));
+        // 修复后回显中不应残留任何裸 '>'：残块 ">" 会作为独立块出现在渲染串开头。
+        assertEquals("Bare '>' from the trimmed empty PS2 must not survive",
+                0, countOf(rendered, ">"));
+    }
+
+    @Test public void terminalResetDuringContinuationKeepsPromptListsAligned() {
+        TerminalScreenModel model = new TerminalScreenModel(60, 6);
+        prompt(model);
+        model.append("echo \\\r\n" + marker("B;continuation=1") + "> " + marker("B;continuation=2"));
+        model.append("\u001bc");
+        prompt(model);
+        model.append("printf ok\r\n" + commandMarker("printf ok") + "ok\r\n" + marker("D;0"));
+        prompt(model);
+        String rendered = model.displaySnapshot().text();
+        assertEquals("ESC c reset must leave both continuation lists aligned",
+                1, rendered.split("printf ok", -1).length - 1);
+        assertTrue(rendered.contains("❯ printf ok"));
+        assertFalse(rendered.contains("echo \\"));
+    }
+
+    @Test public void clearScreenDuringContinuationSubmissionKeepsSingleCommandBlock() {
+        TerminalScreenModel model = new TerminalScreenModel(60, 6);
+        prompt(model);
+        model.append("echo red \\\r\n" + marker("B;continuation=1") + "> " + marker("B;continuation=2"));
+        model.append("\u001b[H\u001b[2J");
+        prompt(model);
+        model.append("echo red \\\r\n" + marker("B;continuation=1") + "> " + marker("B;continuation=2")
+                + "blue\r\n" + commandMarker("echo red \\\nblue") + "RED\r\nBLUE\r\n" + marker("D;0"));
+        String rendered = model.displaySnapshot().text();
+        assertEquals("Ctrl+L must not leave stale offsets that eat redrawn input",
+                1, countOf(rendered, "echo red \\"));
+        assertTrue(rendered.contains("echo red \\\nblue"));
+        assertTrue(rendered.contains("RED\nBLUE"));
+    }
+
+    @Test public void payloadlessCommandBoundaryKeepsInputLineAsPlainVtText() {
+        TerminalScreenModel model = new TerminalScreenModel(60, 6);
+        prompt(model);
+        // 无 cmd= 载荷的 133;C（HISTCONTROL/HISTIGNORE、>8KiB）：退回普通 VT，
+        // 输入行视图不丢，但也绝不作为可复现命令块归档。
+        model.append("echo private\r\n" + marker("C") + "safe result\r\n" + marker("D;0"));
+        prompt(model);
+        TerminalScreenModel.Snapshot display = model.displaySnapshot();
+        String rendered = display.text();
+        assertTrue("Payload-less 133;C must keep the echoed input line visible",
+                rendered.contains("❯ echo private"));
+        assertTrue(rendered.contains("safe result"));
+        assertFalse(display.spans.stream().anyMatch(span ->
+                (span.isBold() || span.isInverse()) && span.getText().contains("echo private")));
     }
 
     @Test public void backgroundOutputWhileEditingIsSeparateFromAuthoritativeCommand() {
@@ -389,16 +489,21 @@ public final class TerminalScreenModelTest {
         assertFalse(rendered.contains("ignored"));
     }
 
-    @Test public void malformedAndControlBearingPayloadsHaveNoCommandDisplayEffect() {
+    @Test public void malformedAndControlBearingPayloadsFallBackToPlainVtText() {
         TerminalScreenModel model = new TerminalScreenModel(40, 6);
         prompt(model);
         model.append("raw\r\n" + marker("C;cmd=not-base64!") + "output\r\n" + marker("D;0"));
         prompt(model);
         model.append("raw\r\n" + commandMarker("evil\u001b]52;c;secret") + "safe\r\n" + marker("D;0"));
         prompt(model);
-        assertFalse(model.displaySnapshot().text().contains("evil"));
-        assertFalse(model.displaySnapshot().text().contains("raw"));
-        assertFalse(model.displaySnapshot().text().contains("secret"));
+        String rendered = model.displaySnapshot().text();
+        // 解码失败/携带控制符的载荷不是可归档命令：回显行以普通 VT 保留，不整行丢弃。
+        assertTrue(rendered.contains("❯ raw"));
+        assertTrue(rendered.contains("output"));
+        assertFalse(rendered.contains("evil"));
+        assertFalse(rendered.contains("secret"));
+        assertFalse(model.displaySnapshot().spans.stream().anyMatch(span ->
+                (span.isBold() || span.isInverse()) && span.getText().contains("raw")));
     }
 
     @Test public void oversizedMarkerIsDiscardedAndCommittedBlocksRemainBounded() {
