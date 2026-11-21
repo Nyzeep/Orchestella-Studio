@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -1553,29 +1555,33 @@ class Tier1FeatureCoverageTest {
     }
 
     @Test
+    @OptIn(ExperimentalMaterial3Api::class)
     fun t1_r5_07_oe3ButtonAndChipElasticPressFeedback_m3() {
         compose.mainClock.autoAdvance = false
         try {
             compose.setContent {
                 Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = false) {
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(Color.Magenta)
-                            .padding(16.dp),
-                    ) {
-                        Oe3Button(
-                            text = "主要动作",
-                            onClick = {},
-                            style = Oe3ButtonStyle.Pill,
-                            modifier = Modifier.testTag("m3:btn"),
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Oe3Chip(
-                            label = "筛选标签",
-                            onClick = {},
-                            modifier = Modifier.testTag("m3:chip"),
-                        )
+                    // Sample the Compose spring without the separately timed native ripple.
+                    CompositionLocalProvider(LocalRippleConfiguration provides null) {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(Color.Magenta)
+                                .padding(16.dp),
+                        ) {
+                            Oe3Button(
+                                text = "主要动作",
+                                onClick = {},
+                                style = Oe3ButtonStyle.Pill,
+                                modifier = Modifier.testTag("m3:btn"),
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Oe3Chip(
+                                label = "筛选标签",
+                                onClick = {},
+                                modifier = Modifier.testTag("m3:chip"),
+                            )
+                        }
                     }
                 }
             }
@@ -1615,7 +1621,7 @@ class Tier1FeatureCoverageTest {
                 val pressedBitmap = AcceptanceTestSupport.captureRootBitmap(compose)
                 val (changedOnPress, maxPressDelta) = diffPixelStats(restBitmap, pressedBitmap, bounds)
                 assertTrue(
-                    "$tag must exhibit visible elastic scale or press-tint feedback at +80ms (changedPixels=$changedOnPress, maxDelta=$maxPressDelta, bounds=$bounds)",
+                    "$tag must exhibit visible elastic scale at +80ms (changedPixels=$changedOnPress, maxDelta=$maxPressDelta, bounds=$bounds)",
                     changedOnPress >= 24 && maxPressDelta >= 15.0,
                 )
 
