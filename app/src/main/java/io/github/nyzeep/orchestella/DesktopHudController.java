@@ -106,13 +106,13 @@ public final class DesktopHudController {
         return container;
     }
 
-    /** Monospace HUD text with the classic standby line as its initial copy. */
+    /** Monospace HUD text starting in the standby state; the tick loop owns later copy. */
     public static TextView buildHudTextView(Context context) {
         TextView text = new TextView(context);
         text.setTextColor(0xFF00FF66);
         text.setTextSize(12f);
         text.setTypeface(android.graphics.Typeface.MONOSPACE);
-        text.setText("60 FPS | 1920x1080 @ 1.0x | CONNECTED");
+        text.setText("等待显示");
         return text;
     }
 

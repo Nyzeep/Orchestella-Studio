@@ -7,8 +7,8 @@ import static org.junit.Assert.assertSame;
 import org.junit.Test;
 
 /**
- * G-10：HUD 文本面 diff/节流纯逻辑。500ms 节拍语义不变；文案与 pre-G-10 逐字节一致
- * （不变段预组装缓存 + 变化才 setText 的 diff 门控由控制器套用）。
+ * G-10：HUD 文本面 diff/节流纯逻辑。500ms 节拍语义不变；不变段预组装缓存 + 变化才
+ * setText 的 diff 门控由控制器套用。W1-03 将通路文案更正为 RFB CPU 拷贝呈现通路。
  */
 public final class DesktopHudTextPlaneTest {
 
@@ -17,7 +17,7 @@ public final class DesktopHudTextPlaneTest {
     @Test
     public void composeStatusSuffixIsByteIdenticalToControllerContract() {
         assertEquals(
-                "\nWayland CPU 拷贝实验通路 · 实例未运行"
+                "\nRFB CPU 拷贝呈现通路 · 实例未运行"
                         + "\n触摸使用鼠标回退；Unicode 输入未验证。帧流连接不代表 GPU 加速或设备验收",
                 DesktopHudTextPlane.composeStatusSuffix("实例未运行"));
         assertEquals(DesktopHudController.composeStatusSuffix("实例未运行"),

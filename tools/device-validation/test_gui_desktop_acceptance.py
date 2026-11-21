@@ -293,6 +293,22 @@ class ParseGpuLinesTest(unittest.TestCase):
         self.assertEqual("NATIVE_UNAVAILABLE", lines[0]["reason"])
         self.assertFalse(lines[0]["robustness"])
 
+    def test_parses_qemu_device_model_unsupported_line(self):
+        # DW-01 reason literal pinned by VirglGpuLifecycleTest; the probe regex
+        # must carry the full structured shape for the packaged-binary downgrade.
+        lines = g08.parse_gpu_lines(
+            "I OrchestellaQemu: gpu-acceleration state=FALLBACK "
+            "reason=QEMU_DEVICE_MODEL_UNSUPPORTED "
+            "code=0 device=virtio-gpu-device quotaMb=1024 robustness=false\n"
+            "I OrchestellaQemu: unrelated\n")
+        self.assertEqual(1, len(lines))
+        self.assertEqual("FALLBACK", lines[0]["state"])
+        self.assertEqual("QEMU_DEVICE_MODEL_UNSUPPORTED", lines[0]["reason"])
+        self.assertEqual(0, lines[0]["code"])
+        self.assertEqual("virtio-gpu-device", lines[0]["device"])
+        self.assertEqual(1024, lines[0]["quota_mb"])
+        self.assertFalse(lines[0]["robustness"])
+
     def test_launch_observed(self):
         self.assertTrue(g08.launch_observed("x Launching QEMU process with sanitized arguments\n"))
         self.assertFalse(g08.launch_observed("nothing\n"))
@@ -451,11 +467,36 @@ class GpuLogcatTest(unittest.TestCase):
         self.assertEqual("GPU_FALLBACK_INIT_FAILED", verdict["reason"])
 
     def test_native_unavailable_reason_surfaced(self):
+        # Real 3D/VirGL gate: a genuine native-package fallback stays a failure.
         adb = FakeAdb("/fake/adb", SERIAL, logcat_qemu=(
             "I OrchestellaQemu: gpu-acceleration state=FALLBACK reason=NATIVE_UNAVAILABLE "
             "code=0 device=virtio-gpu-device quotaMb=1024 robustness=false\n"))
         _, verdict = g08.check_gpu_logcat(adb, gpu_enabled=True)
-        self.assertEqual("GPU_FALLBACK_NATIVE_UNAVAILABLE", verdict["reason"])
+        self.assertEqual(("fail", "GPU_FALLBACK_NATIVE_UNAVAILABLE"),
+                         (verdict["status"], verdict["reason"]))
+
+    def test_qemu_model_unsupported_fallback_is_expected_2d_pass(self):
+        # DW-01: the packaged QEMU binary deterministically lacks the gl device
+        # model, so this FALLBACK is the expected 2D downgrade and must not be
+        # reported as a fail. It records honest 2D acceptance, no 3D claim.
+        adb = FakeAdb("/fake/adb", SERIAL, logcat_qemu=(
+            "I OrchestellaQemu: gpu-acceleration state=FALLBACK "
+            "reason=QEMU_DEVICE_MODEL_UNSUPPORTED "
+            "code=0 device=virtio-gpu-device quotaMb=1024 robustness=false\n"))
+        _, verdict = g08.check_gpu_logcat(adb, gpu_enabled=True)
+        self.assertEqual(("pass", "GPU_EXPECTED_2D_FALLBACK"),
+                         (verdict["status"], verdict["reason"]))
+
+    def test_qemu_model_unsupported_device_mismatch_still_fails(self):
+        # Even the expected 2D downgrade must not mask a device/state mismatch:
+        # a FALLBACK line claiming the gl device is not an honest 2D downgrade.
+        adb = FakeAdb("/fake/adb", SERIAL, logcat_qemu=(
+            "I OrchestellaQemu: gpu-acceleration state=FALLBACK "
+            "reason=QEMU_DEVICE_MODEL_UNSUPPORTED "
+            "code=0 device=virtio-gpu-gl-device quotaMb=1024 robustness=false\n"))
+        _, verdict = g08.check_gpu_logcat(adb, gpu_enabled=True)
+        self.assertEqual(("fail", "GPU_DEVICE_ARG_MISMATCH"),
+                         (verdict["status"], verdict["reason"]))
 
     def test_device_arg_mismatch_fails(self):
         adb = FakeAdb("/fake/adb", SERIAL, logcat_qemu=(
@@ -501,11 +542,40 @@ class WalkcheckTest(unittest.TestCase):
             self.assertIn("  - id: " + item["id"], text)
         self.assertIn("pointer-capture", text)
         self.assertIn("dual-mode-navigation", text)
-        self.assertIn("known-gap-pulseaudio", text)
+        self.assertIn("pulseaudio-installed", text)
+        # DW-04: pulseaudio ships in PACKAGES; the checklist no longer carries
+        # the outdated known-gap framing.
+        self.assertNotIn("known-gap", text)
         self.assertIn("result: ", text)
         self.assertIn("device_alias: bench-a", text)
         self.assertNotIn(SERIAL, text)
         self.assertNotIn(TOKEN, text)
+
+
+class CompositorProbeCompositionTest(unittest.TestCase):
+    """DW-03 manager split inside the fixed compositor probe command."""
+
+    def test_user_manager_units_vs_system_units(self):
+        command, names = g08.compose_compositor_probe()
+        names = [name for name, _ in names]
+        # compositor/wayvnc: persistent guest user manager (linger), probed with
+        # the profilectl user_systemctl environment shape.
+        self.assertIn("unit_compositor", names)
+        self.assertIn("unit_wayvnc", names)
+        self.assertIn("XDG_RUNTIME_DIR=/run/user/$U systemctl --user is-active --quiet "
+                      + g08.UNITS[0], command)
+        self.assertIn("XDG_RUNTIME_DIR=/run/user/$U systemctl --user is-active --quiet "
+                      + g08.UNITS[1], command)
+        # The relays stay on the system manager: plain systemctl, no --user.
+        self.assertIn("qc unit_display_relay 'systemctl is-active --quiet "
+                      + g08.UNITS[2] + "'", command)
+        self.assertIn("qc unit_audio_relay_active 'systemctl is-active --quiet "
+                      + g08.UNITS[3] + "'", command)
+        self.assertNotIn("systemctl --user is-active --quiet " + g08.UNITS[2], command)
+        self.assertNotIn("systemctl --user is-active --quiet " + g08.UNITS[3], command)
+        # The audio relay systemctl show evidence stays on the system manager too.
+        self.assertIn("systemctl show -p SubState --value " + g08.UNITS[3], command)
+        self.assertIn("systemctl show -p NRestarts --value " + g08.UNITS[3], command)
 
 
 class MissingChecklistTest(unittest.TestCase):
@@ -516,7 +586,9 @@ class MissingChecklistTest(unittest.TestCase):
         self.assertEqual(1, len(g08.MISSING))
         g08.MISSING.clear()
 
-    def test_pulseaudio_gap_probe_composition(self):
+    def test_pulseaudio_probe_composition(self):
+        # DW-04: the package ships, so the check is a regular expectation
+        # (missing = probe failure + missing item, never a known gap).
         command, names = g08.compose_compositor_probe()
         names = [name for name, _ in names]
         self.assertIn("pulseaudio_installed", names)
@@ -564,7 +636,7 @@ class FailFastTest(unittest.TestCase):
             self.assertEqual(0, code)
             text = (g08.output_path(root, "walk.yaml", extensions=(".yaml",))
                     .read_text(encoding="utf-8"))
-            self.assertIn("known-gap-pulseaudio", text)
+            self.assertIn("pulseaudio-installed", text)
 
 
 class EndToEndDriveTest(unittest.TestCase):
@@ -602,7 +674,9 @@ class EndToEndDriveTest(unittest.TestCase):
         self.sockets.append(server)
         FakeShell(server, blocks)
 
-    def test_full_drive_run_with_pulseaudio_gap(self):
+    def test_full_drive_run_with_missing_pulseaudio_package(self):
+        # DW-04: pulseaudio ships in desktop-labwc PACKAGES, so a missing guest
+        # package is a regular expectation failure (missing item), not a gap.
         compositor_checks = (
             "labwc_running", "labwc_identity", "display_marker", "wayland_socket",
             "wayvnc_socket", "unit_compositor", "unit_wayvnc", "unit_display_relay",
@@ -639,7 +713,7 @@ class EndToEndDriveTest(unittest.TestCase):
             code = g08.check(args)
             path = g08.output_path(root, "evidence/run.json")
             document = json.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(1, code)  # compositor failed on the pulseaudio gap
+            self.assertEqual(1, code)  # compositor failed on the missing pulseaudio package
             self.assertEqual("fail", document["sections"]["compositor"]["status"])
             self.assertEqual("pass", document["sections"]["profile"]["status"])
             self.assertEqual("PROFILE_awaiting-frame", document["sections"]["profile"]["reason"])
@@ -651,8 +725,9 @@ class EndToEndDriveTest(unittest.TestCase):
             self.assertEqual(["pulseaudio_installed"],
                              document["sections"]["compositor"]["failed_checks"])
             gap_items = [item for item in document["missing"]
-                         if item["id"] == "pulseaudio-known-gap"]
+                         if item["id"] == "pulseaudio-installed"]
             self.assertEqual(1, len(gap_items))
+            self.assertEqual("PULSEAUDIO_NOT_INSTALLED_IN_GUEST", gap_items[0]["reason"])
             self.assertIn("apt-get install pulseaudio", gap_items[0]["remediation"])
             raw = path.read_text(encoding="utf-8")
             self.assertNotIn(TOKEN, raw)
@@ -660,6 +735,48 @@ class EndToEndDriveTest(unittest.TestCase):
             self.assertNotIn("must-not-appear", raw)
             self.assertIn("device_alias", raw)
         self.assertTrue(any(label.startswith("remove-forward") for label in self.adb.history))
+
+    def test_full_drive_run_with_pulseaudio_installed_passes(self):
+        # DW-04 regression: with pulseaudio installed the compositor probe is a
+        # plain expectation and the whole drive can exit 0 (no missing items).
+        compositor_checks = (
+            "labwc_running", "labwc_identity", "display_marker", "wayland_socket",
+            "wayvnc_socket", "unit_compositor", "unit_wayvnc", "unit_display_relay",
+            "unit_audio_relay_active", "audio_chardev", "pulseaudio_installed")
+        compositor = (
+            "\nQA_BEGIN_G08COMPOSITOR\n"
+            + "".join("QA_CHECK_%s=0\n" % name for name in compositor_checks)
+            + "QA_EVIDENCE guest_uid=10123\n"
+            "QA_EVIDENCE wayland_display=wayland-0\n"
+            "QA_EVIDENCE audio_relay_substate=running\n"
+            "QA_EVIDENCE audio_relay_nrestarts=0\n"
+            "QA_EVIDENCE pulseaudio_status=install ok installed\n"
+            "QA_END_G08COMPOSITOR=0\n")
+        display = ("\nQA_BEGIN_G08DISPLAY\n"
+                   "QA_EVIDENCE RFB_BYTES 4242\n"
+                   "QA_END_G08DISPLAY=0\n")
+        self.add_control([
+            {"version": 1, "state": "planned", "installed": False, "phase": "none",
+             "reason": "none"},
+            dict(awaiting_payload(), state="installed", phase="installed"),
+            awaiting_payload("awaiting-frame"),
+        ] + [awaiting_payload("awaiting-frame") for _ in range(6)])
+        self.add_control([awaiting_payload("ready")])
+        self.add_terminal({"G08COMPOSITOR": compositor, "G08DISPLAY": display})
+        self.add_terminal({"G08COMPOSITOR": compositor, "G08DISPLAY": display})
+        with tempfile.TemporaryDirectory() as root:
+            args = base_args(output_root=root, output="evidence/run.json")
+            code = g08.check(args)
+            document = json.loads(g08.output_path(root, "evidence/run.json")
+                                  .read_text(encoding="utf-8"))
+            self.assertEqual(0, code)
+            self.assertTrue(document["passed"])
+            self.assertEqual("pass", document["sections"]["compositor"]["status"])
+            self.assertEqual("COMPOSITOR_PROBE_OK", document["sections"]["compositor"]["reason"])
+            self.assertEqual([], document["sections"]["compositor"]["failed_checks"])
+            self.assertEqual([], [item for item in document["missing"]
+                                  if item["id"].startswith("pulseaudio")])
+            self.assertEqual([], document["missing"])
 
     def test_occupied_channel_blocks_guest_sections(self):
         # A control socket that never answers models the app-owned chardev.

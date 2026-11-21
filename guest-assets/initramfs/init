@@ -1022,7 +1022,7 @@ exec python3 -B /usr/local/lib/orchestella/profilectl.py "$@"
 ORCHESTELLA_FEATURE_CD40F0A801B93DAC
     chmod 0755 "$1/usr/local/lib/orchestella/profilectl.next" || return 1
     mv "$1/usr/local/lib/orchestella/profilectl.next" "$1/usr/local/lib/orchestella/profilectl" || return 1
-    cat > "$1/usr/local/lib/orchestella/profilectl.py.next" <<'ORCHESTELLA_FEATURE_35185F59C040F792' || return 1
+    cat > "$1/usr/local/lib/orchestella/profilectl.py.next" <<'ORCHESTELLA_FEATURE_F76211719A476441' || return 1
 #!/usr/bin/env python3
 """Orchestella guest feature CLI, v1. Fixed commands; no host content transport."""
 import argparse
@@ -1223,6 +1223,9 @@ class Controller:
                 "reason": "none", "phase": "none", "generation": "none", "job_id": "none",
                 "capture": "unverified", "protocols": "unverified", "health": "unverified",
                 "container_info": "unverified", "container_run": "unverified", "docker_daemon": "unverified",
+                # DW-08: audio closure reported separately from the display chain; the
+                # desktop never inherits an audio failure as its own reason.
+                "audio_relay": "unverified", "audio_relay_reason": "none",
                 "renderer": "pixman" if self.profile == "desktop-labwc" else "none",
                 "transport": "cpu-copy-rfb" if self.profile == "desktop-labwc" else "none",
                 "units_version": 0, "updated_at": 0}
@@ -2095,6 +2098,22 @@ class Controller:
             time.sleep(0.1)
         raise Failure("display-socket-timeout")
 
+    def wait_audio_endpoint(self):
+        # DW-08: bounded, idempotent (re-entrant) observation of the PulseAudio
+        # simple-protocol TCP endpoint 127.0.0.1:9104, the audio-relay data plane.
+        # Passive /proc/net/tcp read, like the code-server relay probe: no
+        # connection is consumed from the fixed simple-protocol listener. This is
+        # audio-side status reporting only: it never raises for audio trouble and
+        # never gates awaiting-frame or ready.
+        deadline = time.monotonic() + (self.fixture.get("audio_endpoint_seconds", 2) if self.testing else 10)
+        while True:
+            self.check_cancel()
+            if self.listener_present("127.0.0.1", 9104):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.1)
+
     def display_transport(self):
         file = self.path("/proc/cmdline")
         words = file.read_text().split() if file.is_file() and file.stat().st_size < 4096 else []
@@ -2238,13 +2257,33 @@ class Controller:
             self.wait_socket("/run/user/%d/orchestella/wayvnc.sock" % uid, UNITS[self.profile][1])
             self.prepare_display_transport()
             self.unit_ctl(["start", UNITS[self.profile][2]], timeout=20, reason="display-relay-start-failed")
-            # G-05: start the audio relay best-effort (unit Restart=always keeps probing
-            # the guest PulseAudio endpoint). It is deliberately NOT in the readiness
-            # gate below: the audio loop is unverified on real devices and must never
-            # block the desktop from becoming ready.
-            self.save(phase="audio-relay")
-            self.unit_ctl(["start", UNITS[self.profile][3]], timeout=20, required=False,
-                          reason="audio-relay-start-failed")
+            # G-05/DW-08: start the audio relay best-effort (unit Restart=always keeps
+            # probing the guest PulseAudio endpoint). required=False only exempts a
+            # non-zero exit, so the bounded start timeout is isolated here: audio
+            # trouble is recorded in the audio_relay/audio_relay_reason state fields
+            # and never interrupts start_profile or holds the readiness gate below
+            # (the audio relay is deliberately NOT in that gate). Cancellation still
+            # propagates; only the isolated audio failure is absorbed.
+            self.save(phase="audio-relay", audio_relay="unverified", audio_relay_reason="none")
+            audio_timeout = self.fixture.get("audio_start_seconds", 20) if self.testing else 20
+            audio_reason = "none"
+            started = False
+            try:
+                rc, _ = self.unit_ctl(["start", UNITS[self.profile][3]], timeout=audio_timeout, required=False,
+                                      reason="audio-relay-start-failed")
+                started = not rc
+            except Failure as error:
+                if error.reason == "cancelled":
+                    raise
+                audio_reason = error.reason
+            if started and self.wait_audio_endpoint():
+                self.save(audio_relay="verified", audio_relay_reason="none")
+            else:
+                if started and audio_reason == "none":
+                    audio_reason = "audio-endpoint-timeout"
+                elif not started and audio_reason == "none":
+                    audio_reason = "audio-relay-start-failed"
+                self.save(audio_relay="unverified", audio_relay_reason=audio_reason)
             for unit in UNITS[self.profile][:3]:
                 self.unit_ctl(["is-active", "--quiet", unit], reason="service-not-active")
             self.check_cancel()
@@ -2455,7 +2494,7 @@ class Controller:
                 self.start_profile()
             elif self.options.action == "stop":
                 self.stop_profile()
-                self.save(state="installed" if self.state()["installed"] else "planned", phase="stopped", reason="none", generation="none", health="unverified", capture="unverified", authenticationConfigured=False, guest_relay=False, guest_relay_address="none", guest_relay_port=0)
+                self.save(state="installed" if self.state()["installed"] else "planned", phase="stopped", reason="none", generation="none", health="unverified", capture="unverified", authenticationConfigured=False, guest_relay=False, guest_relay_address="none", guest_relay_port=0, audio_relay="unverified", audio_relay_reason="none")
             elif self.options.action in ("expose", "unexpose"):
                 self.relay_profile(self.options.action == "expose")
         except (Failure, OSError, ValueError, KeyError) as error:
@@ -2492,7 +2531,7 @@ class Controller:
                 state = self.state()
                 changed = False
                 if state["state"] in ("awaiting-frame", "ready") and state.get("verified_boot") != self.boot_id():
-                    state.update(state="installed", reason="restart-required", generation="none", health="unverified", capture="unverified", authenticationConfigured=False, guest_relay=False)
+                    state.update(state="installed", reason="restart-required", generation="none", health="unverified", capture="unverified", authenticationConfigured=False, guest_relay=False, audio_relay="unverified", audio_relay_reason="none")
                     changed = True
                 if state["state"] in ("installing", "starting") and not self.live_job(self.job_owner()):
                     state.update(state="failed", reason="interrupted", phase="recovery-required")
@@ -2586,7 +2625,11 @@ class Controller:
                 raise Failure("stale-frame")
             if state["state"] not in ("awaiting-frame", "ready") or state["capture"] != "verified" or state["protocols"] != "verified":
                 raise Failure("capture-unverified")
-            for unit in UNITS[self.profile]:
+            # DW-08: only the display chain (compositor, wayvnc, display relay) is a
+            # required dependency here; the audio relay is reported through its own
+            # state fields and must never hold awaiting-frame/ready hostage. The
+            # stale-generation/mutex commit proof below is unchanged.
+            for unit in UNITS[self.profile][:3]:
                 self.unit_ctl(["is-active", "--quiet", unit], timeout=0.6, reason="service-not-active")
             with self.mutex():
                 # Service probes above may race STOP/CANCEL/RESIZE. Commit the same proof only.
@@ -2683,7 +2726,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-ORCHESTELLA_FEATURE_35185F59C040F792
+ORCHESTELLA_FEATURE_F76211719A476441
     chmod 0755 "$1/usr/local/lib/orchestella/profilectl.py.next" || return 1
     mv "$1/usr/local/lib/orchestella/profilectl.py.next" "$1/usr/local/lib/orchestella/profilectl.py" || return 1
     cat > "$1/usr/local/lib/orchestella/inputs.json.next" <<'ORCHESTELLA_FEATURE_2DDF47EC6809EE7A' || return 1

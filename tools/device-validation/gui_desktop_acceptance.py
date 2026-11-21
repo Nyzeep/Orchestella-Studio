@@ -5,18 +5,27 @@
 Covers the seven device-window acceptance sections:
 
   1. profile lifecycle  INSTALL -> START -> STATUS (bridge FEATURES commands)
-  2. compositor runtime labwc process + wayland-0 socket + core units (guest probes)
+  2. compositor runtime labwc process + wayland-0 socket + core units (guest
+     probes; DW-03 manager split: compositor/wayvnc answer to the guest's
+     persistent user manager via systemctl --user with
+     XDG_RUNTIME_DIR=/run/user/<uid>, the relays stay on the system manager)
   3. wayvnc capture generation + presentation-gate first frame (STATUS evidence
      and the awaiting-frame -> ready transition performed by the app itself)
   4. display channel E2E STATUS evidence + wayvnc RFB byte diversity (guest probe)
   5. audio relay unit state + host @droidlayer-audio attachment + PCM counting
-     (no audio-quality judgment; includes the desktop-labwc pulseaudio known-gap
-     check: profilectl PACKAGES does not ship pulseaudio, so the relay worker
-     exits "unavailable" and systemd keeps restarting it until an operator
-     installs pulseaudio in the guest or the run records the known gap)
+     (no audio-quality judgment; includes the desktop-labwc pulseaudio check:
+     profilectl PACKAGES ships pulseaudio since DW-04, so a missing package is
+     a regular missing-item failure now, not a recorded known gap. The honest
+     boundary stays: PCM byte counts are presence evidence only, audio quality
+     is never judged)
   6. GPU gpuAccelerationEnabled=true launch -> structured log reason assertion
      ("gpu-acceleration state=<State> reason=<GpuFallbackReason> ..." from
-     QemuInstanceLauncher); on a native-packaged device the guest glmark2
+     QemuInstanceLauncher). Two honest acceptance gates: ACTIVE passes the real
+     3D/VirGL gate; FALLBACK reason=QEMU_DEVICE_MODEL_UNSUPPORTED (the packaged
+     QEMU binary deterministically lacks the gl device model) passes as the
+     expected 2D downgrade (GPU_EXPECTED_2D_FALLBACK) and never claims 3D
+     acceleration; any other FALLBACK reason (NATIVE_UNAVAILABLE / INIT_FAILED)
+     fails the real-3D gate. On a native-packaged device the guest glmark2
      benchmark (Ticket58 acceptance surface) runs when --gpu-benchmark is set
   7. pointer capture / IME / dual-mode manual walkthrough checklist (YAML)
 
@@ -59,8 +68,10 @@ sys.dont_write_bytecode = True
 PACKAGE = "io.github.nyzeep.orchestella"
 PROFILE = "desktop-labwc"
 # desktop-labwc systemd units; the guest readiness gate slices [:3], the audio
-# relay is best-effort with Restart=always (profilectl.start_profile), and
-# confirm-frame re-checks all four units before committing state=ready.
+# relay is best-effort with Restart=always (profilectl.start_profile) and is
+# excluded from the ready gate: confirm-frame re-checks only the first three
+# display units before committing state=ready, while the audio-relay state is
+# reported independently and never blocks the presentation gate.
 UNITS = (
     "orchestella-desktop-compositor.service",
     "orchestella-desktop-wayvnc.service",
@@ -72,8 +83,9 @@ CONSUMER_SOCKET = "droidlayer-audio"
 GOOD_STATES = ("awaiting-frame", "ready")
 BAD_STATES = ("failed", "cancelled")
 GPU_LOG_RE = re.compile(
-    r"gpu-acceleration state=(ACTIVE|FALLBACK|DISABLED) reason=(NONE|NATIVE_UNAVAILABLE|INIT_FAILED)"
-    r" code=(-?[0-9]+) device=([\w-]+) quotaMb=([0-9]+) robustness=(true|false)")
+    r"gpu-acceleration state=(ACTIVE|FALLBACK|DISABLED) "
+    r"reason=(NONE|NATIVE_UNAVAILABLE|INIT_FAILED|QEMU_DEVICE_MODEL_UNSUPPORTED) "
+    r"code=(-?[0-9]+) device=([\w-]+) quotaMb=([0-9]+) robustness=(true|false)")
 GPU_DEVICE_BY_STATE = {"ACTIVE": "virtio-gpu-gl-device",
                        "FALLBACK": "virtio-gpu-device",
                        "DISABLED": "virtio-gpu-device"}
@@ -93,6 +105,8 @@ STATUS_KEYS = (
     "capture", "protocols", "renderer", "transport", "capture_generation",
     "capture_width", "capture_height", "width", "height", "input", "exposed",
     "job_active", "units_version", "updated_at", "verified_boot", "health", "user",
+    # DW-08: audio closure fields reported separately from the display chain.
+    "audio_relay", "audio_relay_reason",
 )
 COMPOSITOR_EVIDENCE_KEYS = ("guest_uid", "wayland_display", "audio_relay_substate",
                             "audio_relay_nrestarts", "pulseaudio_status")
@@ -492,7 +506,13 @@ class TerminalProbe:
 
 
 def compose_compositor_probe():
-    """Fixed guest checks: labwc process, wayland socket, wayvnc socket, core units."""
+    """Fixed guest checks: labwc process, wayland socket, wayvnc socket, units.
+
+    DW-03 manager split: the compositor and wayvnc are persistent user-manager
+    units (linger), probed with XDG_RUNTIME_DIR=/run/user/$U systemctl --user
+    (same environment shape as profilectl.user_systemctl); the display/audio
+    relays stay on the system manager, like their systemctl show evidence.
+    """
     checks = [
         ("labwc_running", "pgrep -x labwc >/dev/null"),
         ("labwc_identity", "test \"$(cat /proc/$(pgrep -n -x labwc)/comm 2>/dev/null)\" = labwc"),
@@ -501,8 +521,10 @@ def compose_compositor_probe():
                            "/run/user/$U/orchestella/desktop-clients.json); "
                            "test -n \"$d\" && test -S /run/user/$U/$d"),
         ("wayvnc_socket", "test -S /run/user/$U/orchestella/wayvnc.sock"),
-        ("unit_compositor", "systemctl is-active --quiet " + UNITS[0]),
-        ("unit_wayvnc", "systemctl is-active --quiet " + UNITS[1]),
+        ("unit_compositor",
+         "XDG_RUNTIME_DIR=/run/user/$U systemctl --user is-active --quiet " + UNITS[0]),
+        ("unit_wayvnc",
+         "XDG_RUNTIME_DIR=/run/user/$U systemctl --user is-active --quiet " + UNITS[1]),
         ("unit_display_relay", "systemctl is-active --quiet " + UNITS[2]),
         ("unit_audio_relay_active", "systemctl is-active --quiet " + UNITS[3]),
         ("audio_chardev", "test -e /dev/virtio-ports/orchestella.audio"),
@@ -640,8 +662,16 @@ def check_gpu_logcat(adb, gpu_enabled):
     if not gpu_enabled:
         verdict = {"status": "pass", "reason": "GPU_STRUCTURED_LOG_OK"}
     elif latest["state"] == "ACTIVE":
+        # Real 3D/VirGL acceptance gate.
         verdict = {"status": "pass", "reason": "GPU_ACTIVE"}
+    elif latest["state"] == "FALLBACK" and latest["reason"] == "QEMU_DEVICE_MODEL_UNSUPPORTED":
+        # Expected 2D-safe downgrade, not a defect: the packaged QEMU binary
+        # deterministically lacks the gl device model (GpuFallbackReason DW-01),
+        # so the launch rebinds to the 2D device before the process ever starts.
+        # This gate records honest 2D acceptance and never claims 3D acceleration.
+        verdict = {"status": "pass", "reason": "GPU_EXPECTED_2D_FALLBACK"}
     elif latest["state"] == "FALLBACK":
+        # NATIVE_UNAVAILABLE / INIT_FAILED stay failures on the real-3D gate.
         verdict = {"status": "fail", "reason": "GPU_FALLBACK_" + latest["reason"]}
     else:
         verdict = {"status": "fail", "reason": "GPU_DISABLED_WITH_FLAG"}
@@ -674,14 +704,16 @@ WALKCHECK_ITEMS = (
      "steps": ["With the desktop open, play any audio inside the guest.",
                "Listen on the host; record presence/absence only (never judge quality).",
                "Cross-check with the audio section PCM evidence when --pcm-probe was used."],
-     "pass_criteria": "Sound audible on the host (presence), or the known-gap entry below explains the absence.",
+     "pass_criteria": "Sound audible on the host (presence); if absent, cross-check the "
+                      "pulseaudio-installed item below. Presence/absence only, never quality.",
      "automated_evidence": "audio section records PCM byte counts and relay events; quality is out of scope."},
-    {"id": "known-gap-pulseaudio", "surface": "desktop-labwc profile",
+    {"id": "pulseaudio-installed", "surface": "desktop-labwc profile",
      "steps": ["Check the audio/compositor probe pulseaudio_status evidence.",
-               "If pulseaudio is not installed: install it in the guest (apt-get install pulseaudio) and "
-               "restart orchestella-audio-relay.service, or record this run as carrying the known gap."],
-     "pass_criteria": "Either pulseaudio is installed and the relay reports transport-ready, "
-                      "or the run records the known gap explicitly.",
+               "If pulseaudio is not installed: that is a probe failure, not a known gap; "
+               "install it in the guest (apt-get install pulseaudio) and restart "
+               "orchestella-audio-relay.service, then rerun."],
+     "pass_criteria": "pulseaudio is installed (desktop-labwc PACKAGES ships it since DW-04) and "
+                      "the relay reports transport-ready; PCM/audio quality stays out of scope.",
      "automated_evidence": "compositor probe check pulseaudio_installed + pulseaudio_status evidence line."},
 )
 
@@ -901,10 +933,14 @@ def run_guest_sections(args, adb, sections, control, terminal_name, deadline, fo
                 pulse = evidence.get("pulseaudio_status", "")
                 if (checks.get("pulseaudio_installed", "1") != "0"
                         or bool(pulse) and not pulse.endswith("ok installed")):
-                    note_missing("pulseaudio-known-gap", "PULSEAUDIO_NOT_IN_PROFILE_PACKAGES",
-                                 "desktop-labwc PACKAGES ships no pulseaudio; install it in the guest "
-                                 "(apt-get install pulseaudio) and restart orchestella-audio-relay.service, "
-                                 "or record this run as carrying the known gap.")
+                    # DW-04: pulseaudio ships in desktop-labwc PACKAGES, so a missing
+                    # package is a regular missing item (probe failure), not a recorded
+                    # known gap. PCM/audio quality judgment stays out of scope.
+                    note_missing("pulseaudio-installed", "PULSEAUDIO_NOT_INSTALLED_IN_GUEST",
+                                 "desktop-labwc PACKAGES ships pulseaudio; the guest reports it missing. "
+                                 "Repair the guest (apt-get install pulseaudio), restart "
+                                 "orchestella-audio-relay.service and rerun. PCM/audio quality "
+                                 "judgment remains out of scope.")
                 ok = result["code"] == 0 and not failed and not missing_checks
                 sections["compositor"] = {"status": "pass" if ok else "fail",
                                           "reason": ("COMPOSITOR_PROBE_OK" if ok
@@ -1076,8 +1112,10 @@ def check(args):
                                    "evidence": gpu_result}
                 if gpu_verdict["status"] == "fail":
                     sections["gpu"]["remediation"] = (
-                        "Launch the instance with gpuAccelerationEnabled=true; a FALLBACK verdict "
-                        "records the structured reason code (NATIVE_UNAVAILABLE / INIT_FAILED).")
+                        "Launch the instance with gpuAccelerationEnabled=true. The real 3D/VirGL gate "
+                        "fails on FALLBACK reasons NATIVE_UNAVAILABLE / INIT_FAILED; a "
+                        "QEMU_DEVICE_MODEL_UNSUPPORTED fallback is the expected packaged-binary 2D "
+                        "downgrade and passes as GPU_EXPECTED_2D_FALLBACK (no 3D claim).")
             except Rejected as error:
                 sections["gpu"] = {"status": "blocked", "reason": str(error)}
                 note_missing("gpu-logcat", str(error),

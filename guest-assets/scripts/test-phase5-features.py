@@ -634,6 +634,82 @@ class ProfileContracts(unittest.TestCase):
         state = self.wait("desktop-labwc", {"installed"})
         self.assertFalse(state["input"]["keyboard"])
 
+    def test_audio_endpoint_observed_reports_verified_without_gating(self):
+        # DW-08: with the guest PulseAudio endpoint (127.0.0.1:9104) present, the
+        # audio closure is reported verified in its own fields while the display
+        # chain reaches awaiting-frame exactly as before.
+        self.ctl("install", "desktop-labwc")
+        self.wait("desktop-labwc", {"installed"})
+        rc, value = self.ctl("start", "desktop-labwc")
+        self.assertEqual(0, rc)
+        value = self.wait("desktop-labwc", {"awaiting-frame", "failed"})
+        self.assertEqual("awaiting-frame", value["state"])
+        self.assertEqual("verified", value["capture"])
+        self.assertEqual("verified", value["protocols"])
+        self.assertEqual("verified", value["audio_relay"])
+        self.assertEqual("none", value["audio_relay_reason"])
+        self.assertIn("0100007F:2390", (self.root / "proc/net/tcp").read_text())
+        self.ctl("stop", "desktop-labwc")
+        value = self.wait("desktop-labwc", {"installed"})
+        self.assertEqual("unverified", value["audio_relay"])
+        self.assertEqual("none", value["audio_relay_reason"])
+
+    def test_audio_relay_timeout_is_isolated_and_frame_confirm_only_needs_display_chain(self):
+        # DW-08: the audio relay start timeout (required=False never exempted the
+        # bounded run deadline) and a restart-looping relay whose 127.0.0.1:9104
+        # endpoint never appears are absorbed into the audio state fields; the
+        # desktop still reaches awaiting-frame and confirm-frame commits ready by
+        # probing only UNITS[:3]. stale-frame and the cancel-file refusal keep
+        # their semantics.
+        self.ctl("install", "desktop-labwc")
+        self.wait("desktop-labwc", {"installed"})
+        self.fixture(audio_start_seconds=1, audio_endpoint_seconds=1,
+                     delay_on="start orchestella-audio-relay.service", delay_seconds=4,
+                     no_audio_endpoint=True)
+        rc, value = self.ctl("start", "desktop-labwc")
+        self.assertEqual(0, rc)
+        generation = value["generation"]
+        value = self.wait("desktop-labwc", {"awaiting-frame", "failed"})
+        self.assertEqual("awaiting-frame", value["state"])
+        self.assertEqual("awaiting-host-frame", value["reason"])
+        self.assertEqual("verified", value["capture"])
+        self.assertEqual("verified", value["protocols"])
+        self.assertEqual("unverified", value["audio_relay"])
+        self.assertEqual("command-timeout", value["audio_relay_reason"])
+        commands = [json.loads(line) for line in (self.root / "commands.jsonl").read_text().splitlines()]
+        audio_starts = [call for call in commands if call[0] == "systemctl" and call[1:2] == ["start"]
+                        and call[-1] == "orchestella-audio-relay.service"]
+        self.assertEqual(1, len(audio_starts))
+        # Negative: a stale generation is still refused with stale-frame.
+        rc, rejected = self.ctl("confirm-frame", "desktop-labwc", "0" * 32)
+        self.assertNotEqual(0, rc)
+        self.assertEqual("stale-frame", rejected["reason"])
+        # Confirm-frame probes only the display chain: the broken audio relay
+        # cannot hold the commit hostage.
+        rc, ready = self.ctl("confirm-frame", "desktop-labwc", generation)
+        self.assertEqual(0, rc)
+        self.assertEqual("ready", ready["state"])
+        # Negative: a cancel file against the published job owner still refuses
+        # the commit while the on-disk state stays untouched.
+        features = self.root / "var/lib/orchestella/features"
+        lock = features / "install.lock"
+        deadline = time.monotonic() + 5
+        while lock.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(lock.exists())
+        lock.mkdir()
+        (lock / "owner.json").write_text(json.dumps({"job_id": generation}), encoding="utf-8")
+        (features / (generation + ".cancel")).write_text("{}\n", encoding="utf-8")
+        rc, refused = self.ctl("confirm-frame", "desktop-labwc", generation)
+        self.assertNotEqual(0, rc)
+        self.assertEqual("stale-frame", refused["reason"])
+        rc, value = self.ctl("status", "desktop-labwc")
+        self.assertEqual(0, rc)
+        self.assertEqual("ready", value["state"])
+        (features / (generation + ".cancel")).unlink()
+        (lock / "owner.json").unlink()
+        lock.rmdir()
+
     def test_code_expose_unexpose_and_dead_relay_remove_stale_flag(self):
         self.code_archive()
         with socket.socket() as available:

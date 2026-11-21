@@ -13,8 +13,8 @@ import java.util.Objects;
  */
 public final class DesktopHudTextPlane {
 
-    /** Status suffix invariant head; byte-identical to the pre-G-10 copy. */
-    static final String SUFFIX_HEAD = "\nWayland CPU 拷贝实验通路 · ";
+    /** Status suffix invariant head; W1-03 corrected the stale Wayland wording to the RFB data plane. */
+    static final String SUFFIX_HEAD = "\nRFB CPU 拷贝呈现通路 · ";
 
     /** Status suffix invariant tail; byte-identical to the pre-G-10 copy. */
     static final String SUFFIX_TAIL =

@@ -11,7 +11,8 @@ import org.junit.Test;
 
 /**
  * G-03: HUD copy assembly and refresh-loop gating split out of DesktopActivity.
- * The status suffix must stay byte-identical to the pre-split 500 ms updater, and
+ * The status suffix must stay byte-identical between the controller and the text
+ * plane (W1-03 corrected the data-plane wording to RFB CPU 拷贝呈现通路), and
  * the loop must keep its single-flight start/stop contract ({@code isHudUpdating}).
  */
 public final class DesktopHudControllerTest {
@@ -44,13 +45,13 @@ public final class DesktopHudControllerTest {
     }
 
     @Test
-    public void composeStatusSuffixKeepsExactPreSplitCopy() {
+    public void composeStatusSuffixKeepsControllerTextPlaneParity() {
         assertEquals(
-                "\nWayland CPU 拷贝实验通路 · 实例未运行"
+                "\nRFB CPU 拷贝呈现通路 · 实例未运行"
                         + "\n触摸使用鼠标回退；Unicode 输入未验证。帧流连接不代表 GPU 加速或设备验收",
                 DesktopHudController.composeStatusSuffix("实例未运行"));
         assertEquals(
-                "\nWayland CPU 拷贝实验通路 · 显示数据面不可用"
+                "\nRFB CPU 拷贝呈现通路 · 显示数据面不可用"
                         + "\n触摸使用鼠标回退；Unicode 输入未验证。帧流连接不代表 GPU 加速或设备验收",
                 DesktopHudController.composeStatusSuffix("显示数据面不可用"));
     }

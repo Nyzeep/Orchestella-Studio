@@ -756,7 +756,14 @@ public final class QemuInstanceLauncher {
                 + " orchestella.guest_dns=" + NetworkGatewayDaemon.guestDnsFor(context)
                 + " orchestella.proxy_enabled=0";
 
-        Log.i(TAG, "Packaged renderer: virtio-gpu 2D; guest GPU acceleration is unverified");
+        // W1-03/G-00: name the device the gate actually placed on the spec instead of
+        // asserting the 2D renderer unconditionally — the structured line above carries
+        // the authoritative reason code, so this line must not contradict gpuStatus.
+        Log.i(TAG, "Packaged renderer: " + gpuStatus.deviceArg() + "; "
+                + (gpuStatus.gpuDeviceActive()
+                        ? "VirGL context wired, real-device rendering unverified"
+                        : "guest GPU acceleration off or unavailable (reason=" + gpuStatus.reason()
+                                + "), using the 2D device"));
         java.nio.file.Path displayDirectory = context.getFilesDir().toPath().resolve("display");
         java.nio.file.Files.createDirectories(displayDirectory);
         String displaySocketPath = displayDirectory.resolve(
