@@ -30,4 +30,14 @@
          same overlay on the same clock. -->
     <integer name="oe_motion_duration_dialog_enter">250</integer>
     <integer name="oe_motion_duration_dialog_exit">150</integer>
+
+    <!-- W1-02 (A4-M1): the motion v2 ladder, aligned 1:1 with
+         ui/design/tokens/Motion.kt OeDuration. Values are authoritative in
+         OeMotion (DURATION_MICRO/SHORT/MEDIUM/LONG_MS + GLOW_CYCLE_MS); these
+         XML mirrors exist for the legacy View shell and must never drift —
+         the View_* shell constants stay untouched. -->
+    <integer name="oe_motion_duration_micro">120</integer>
+    <integer name="oe_motion_duration_short">200</integer>
+    <integer name="oe_motion_duration_medium">320</integer>
+    <integer name="oe_motion_duration_long">480</integer>
 </resources>

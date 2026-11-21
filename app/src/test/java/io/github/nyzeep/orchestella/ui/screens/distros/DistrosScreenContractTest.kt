@@ -93,8 +93,10 @@ class DistrosScreenContractTest {
     fun animationFollowsTheMotionTokenAt220Millis() {
         val screen = File(sourceRoot, "DistrosScreen.kt").readText()
         assertTrue(screen.contains("val animationMillis = motion.pageFade.durationMillis"))
-        assertEquals(220, DistrosSpec.ACCORDION_MILLIS)
-        assertEquals(DistrosSpec.ACCORDION_MILLIS, Oe3Motion.standard().pageFade.durationMillis)
+        // W1-02：手风琴时长的死常量 ACCORDION_MILLIS 已删除，页面只消费
+        // motion.pageFade（单一事实源）；减动效下归零。
+        assertFalse(screen.contains("ACCORDION_MILLIS"))
+        assertEquals(220, Oe3Motion.standard().pageFade.durationMillis)
         assertEquals(0, Oe3Motion.reduced().pageFade.durationMillis)
     }
 

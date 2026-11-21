@@ -84,7 +84,7 @@ fun HomePreview(
         animationSpec = if (effectiveReduceMotion) {
             snap()
         } else {
-            tween(ThemeStudioSpec.previewTweenMillis, easing = OeMotion.standardEasing)
+            tween(OeMotion.THEME_TWEEN_MS, easing = OeMotion.standardEasing)
         },
         label = "previewCardRadius",
     )
@@ -170,7 +170,7 @@ private fun animatedColors(target: HomePreviewColors, reduceMotion: Boolean): Ho
         progress.snapTo(0f)
         progress.animateTo(
             targetValue = 1f,
-            animationSpec = tween(ThemeStudioSpec.previewTweenMillis, easing = OeMotion.standardEasing),
+            animationSpec = tween(OeMotion.THEME_TWEEN_MS, easing = OeMotion.standardEasing),
         )
     }
     return lerpHomePreviewColors(fromColors, toColors, progress.value)

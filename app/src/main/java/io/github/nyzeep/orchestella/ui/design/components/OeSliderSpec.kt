@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.ui.design.components
 
+import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -22,8 +23,8 @@ object OeSliderSpec {
     /** White thumb diameter in dp (2dp shadow is drawn under it). */
     const val ThumbDiameterDp = 24f
 
-    /** One linear glow sweep takes four seconds. */
-    const val GlowPeriodMillis = 4_000
+    /** One linear glow sweep takes four seconds (ambient loop token, W1-02). */
+    const val GlowPeriodMillis = OeMotion.GLOW_CYCLE_MS
 
     /** Glow alpha ramps min → max → min over one period. */
     const val GlowAlphaMin = 0.10f
@@ -42,8 +43,8 @@ object OeSliderSpec {
     /** Whole control alpha while disabled. */
     const val DisabledAlpha = 0.4f
 
-    /** Thumb scale while pressed. */
-    const val PressedScale = 0.92f
+    /** Thumb scale while pressed (press-scale token, W1-02). */
+    const val PressedScale = OeMotion.SLIDER_PRESS_SCALE
 
     /** Fixed seed: dot jitter must not wobble between frames or recompositions. */
     const val DotSeed = 0x0E3

@@ -1,9 +1,7 @@
 package io.github.nyzeep.orchestella.ui.oe3.components
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,6 +34,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3ColorTokens
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
@@ -43,8 +42,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
-
-private const val CONTROL_PRESS_SCALE = 0.95f
+import io.github.nyzeep.orchestella.ui.oe3.tokens.OeSpring
 
 @Composable
 private fun rememberPressScale(
@@ -53,15 +51,9 @@ private fun rememberPressScale(
 ): State<Float> {
     val motion = Oe3ThemeValues.motion
     val pressed by interactionSource.collectIsPressedAsState()
-    val springSpec = remember(motion.press.dampingRatio) {
-        spring<Float>(
-            dampingRatio = motion.press.dampingRatio,
-            stiffness = Spring.StiffnessMedium,
-        )
-    }
     return animateFloatAsState(
-        targetValue = if (enabled && pressed) CONTROL_PRESS_SCALE else 1f,
-        animationSpec = if (motion.press.durationMillis == 0) snap() else springSpec,
+        targetValue = if (enabled && pressed) OeMotion.CONTROL_PRESS_SCALE else 1f,
+        animationSpec = if (motion.press.durationMillis == 0) snap() else OeSpring.Press,
         label = "oe3ControlPress",
     )
 }

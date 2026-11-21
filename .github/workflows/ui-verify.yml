@@ -70,6 +70,29 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      # W1-02 (A4-M1/M6): the motion-literal gate joins CI. The scanner is
+      # self-contained (stdlib only) and carries its own self-test.
+      - name: Motion literal scan and self-test
+        run: |
+          python tools/ci/check_motion_literals.py --self-test
+          python tools/ci/check_motion_literals.py
+
+      # W1-02: token parity against the Specs repo. The token source of truth
+      # lives in the private Orchestella-Specs checkout; when a sibling checkout
+      # is present this step enforces the parity gate, otherwise it only warns
+      # and the authoritative run happens in the Specs repo's own workflow.
+      - name: Token parity gate (when sibling Specs checkout exists)
+        run: |
+          for specs_dir in "../Orchestella-Specs" "../Orchestella_spec" "Orchestella-Specs" "Orchestella_spec"; do
+            if [ -f "$specs_dir/docs/design-system/tools/check_tokens.py" ]; then
+              python "$specs_dir/docs/design-system/tools/check_tokens.py" \
+                --kotlin-root "app/src/main/java/io/github/nyzeep/orchestella/ui" \
+                --tokens "$specs_dir/docs/design-system/tokens/oe3.tokens.json"
+              exit 0
+            fi
+          done
+          echo "::warning::No sibling Orchestella-Specs checkout; token parity gate deferred to the Specs repo workflow."
+
       # The Aliyun mirror also covers Robolectric's out-of-band
       # android-all-instrumented download, which is rate-limited on Maven
       # Central from shared runners.

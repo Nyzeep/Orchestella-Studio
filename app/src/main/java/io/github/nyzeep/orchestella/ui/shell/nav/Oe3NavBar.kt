@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
+import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassSurface
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
@@ -81,6 +82,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+import io.github.nyzeep.orchestella.ui.oe3.tokens.OeSpring
 import io.github.nyzeep.orchestella.ui.shell.Oe3NavStyle
 import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
@@ -117,11 +119,8 @@ object Oe3NavPillSpec {
      */
     fun selectionSpring(motion: Oe3MotionTokens): SpringSpec<Float>? = motion.navSelectionSpring
 
-    /** ≈250ms press/release spring at the tokens' damping. */
-    fun pressSpring(motion: Oe3MotionTokens): SpringSpec<Float> = spring(
-        dampingRatio = motion.press.dampingRatio,
-        stiffness = Spring.StiffnessMedium,
-    )
+    /** ≈250ms press/release spring — the M1 [OeSpring.Press] token (W1-02). */
+    fun pressSpring(motion: Oe3MotionTokens): SpringSpec<Float> = OeSpring.Press
 
     /**
      * Icon/label colour transition: the 300ms standard themeTween colour
@@ -133,7 +132,7 @@ object Oe3NavPillSpec {
         easing = motion.themeTween.easing,
     )
 
-    const val PRESS_SCALE = 0.96f
+    const val PRESS_SCALE = OeMotion.NAV_PRESS_SCALE
     const val REST_SCALE = 1f
 }
 

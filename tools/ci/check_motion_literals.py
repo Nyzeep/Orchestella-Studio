@@ -12,6 +12,13 @@ Rules (scanned in `ui/**/*.kt`, comments stripped):
   * `delay(<number>)`            -> violation (a fixed stagger/settling wait).
   * `spring(...)` with a numeric  -> violation; spring parameters must come
     literal argument                from a token (`OeMotion.*`).
+  * `spring(...)` passing         -> violation (W1-02): stiffness must come
+    `Spring.Stiffness*`             from a token constant, never the
+    framework constant              framework's canned values.
+  * retired / token-owned motion  -> violation (W1-02): the second-source
+    constant declarations           constants retired or re-homed in W1-02
+                                    may not be re-declared with numeric
+                                    initializers outside the token files.
 
 Anything that is not a bare numeric literal (a `const val`, a
 `OeMotion.XXX`, a function parameter) passes untouched.
@@ -43,11 +50,30 @@ TWEEN_WHITELIST = frozenset({0.0})
 # A zero delay is a coroutine yield, not a hard-coded animation wait.
 DELAY_WHITELIST = frozenset({0.0})
 
+# W1-02: spring() must not hand the framework's canned stiffness values to the
+# animator; the number has to flow from an OeMotion token constant.
+SPRING_STIFFNESS_RE = re.compile(r"\bSpring\.Stiffness\w+")
+
+# W1-02: constants retired outright this round — any re-declaration is a
+# second timing table growing back.
+RETIRED_MOTION_CONSTANTS = frozenset({"previewTweenMillis", "ACCORDION_MILLIS"})
+
+# W1-02: press-scale constants re-homed into OeMotion. Declaring them again
+# with a numeric initializer outside the token files re-opens the bypass.
+TOKEN_OWNED_MOTION_CONSTANTS = frozenset(
+    {"CONTROL_PRESS_SCALE", "NAV_PRESS_SCALE", "SLIDER_PRESS_SCALE"}
+)
+
+# The single place these token-owned names may carry numeric values.
+MOTION_TOKEN_FILE_SUFFIX = "design/tokens/Motion.kt"
+
 NUMBER = r"-?\d+(?:\.\d+)?"
 TWEEN_RE = re.compile(rf"\btween\s*\(\s*({NUMBER})\s*[fFlL]?\s*[,)]")
 DELAY_RE = re.compile(rf"\bdelay\s*\(\s*({NUMBER})\s*[fFlL]?\s*[,)]")
 SPRING_RE = re.compile(r"\bspring\s*\(([^()]*)\)", re.DOTALL)
 SPRING_ARG_RE = re.compile(rf"(?:^|[,=]\s*)({NUMBER})\s*[fFlL]?\b")
+CONST_DECL_RE = re.compile(r"\b(?:const\s+val|val)\s+(\w+)\s*=\s*(.+?)\s*$")
+NUMERIC_INIT_RE = re.compile(rf"^{NUMBER}\s*[fFlL]?$")
 
 
 def strip_comments(text: str) -> str:
@@ -112,6 +138,7 @@ def scan_text(text: str, origin: str = "<text>") -> list[str]:
     stripped = strip_comments(text)
     lines = stripped.splitlines()
     violations: list[str] = []
+    is_token_file = origin.replace("\\", "/").endswith(MOTION_TOKEN_FILE_SUFFIX)
 
     for lineno, line in enumerate(lines, start=1):
         for match in TWEEN_RE.finditer(line):
@@ -128,13 +155,33 @@ def scan_text(text: str, origin: str = "<text>") -> list[str]:
             violations.append(
                 f"{origin}:{lineno}: delay-literal: delay({match.group(1)})"
             )
+        decl = CONST_DECL_RE.search(line)
+        if decl:
+            name, init = decl.group(1), decl.group(2)
+            if name in RETIRED_MOTION_CONSTANTS:
+                violations.append(
+                    f"{origin}:{lineno}: retired-constant: {name}"
+                )
+            elif (
+                name in TOKEN_OWNED_MOTION_CONSTANTS
+                and not is_token_file
+                and NUMERIC_INIT_RE.match(init)
+            ):
+                violations.append(
+                    f"{origin}:{lineno}: second-source-constant: {name}"
+                )
 
     for match in SPRING_RE.finditer(stripped):
         args = match.group(1)
+        lineno = stripped.count("\n", 0, match.start()) + 1
+        if SPRING_STIFFNESS_RE.search(args):
+            violations.append(
+                f"{origin}:{lineno}: spring-stiffness-literal: spring({args.strip()})"
+            )
+            continue
         literal = SPRING_ARG_RE.search(args)
         if literal is None:
             continue
-        lineno = stripped.count("\n", 0, match.start()) + 1
         violations.append(
             f"{origin}:{lineno}: spring-literal: spring({args.strip()})"
         )
@@ -193,6 +240,17 @@ def _self_test() -> int:
         ("/* delay(300) */ val a = 1", 0),
         ('val url = "https://example.com" // tween(9)', 0),
         ("val a = tween(220) // literal on a real call", 1),
+        # W1-02: spring stiffness must flow from tokens, not framework cans.
+        ("val a = spring(dampingRatio = Spring.StiffnessMedium)", 1),
+        ("val a = spring(stiffness = OeMotion.PRESS_STIFFNESS)", 0),
+        ("val a = spring(dampingRatio = motion.press.dampingRatio, stiffness = Spring.StiffnessMedium)", 1),
+        # W1-02: retired second-source constants may not grow back.
+        ("val previewTweenMillis = 300", 1),
+        ("const val ACCORDION_MILLIS = 220", 1),
+        ("val pressScale = OeMotion.CONTROL_PRESS_SCALE", 0),
+        # W1-02: token-owned press scales only carry numbers inside Motion.kt.
+        ("val CONTROL_PRESS_SCALE = 0.95f", 1),
+        ("val CONTROL_PRESS_SCALE = OeMotion.CONTROL_PRESS_SCALE", 0),
     ]
 
     failures: list[str] = []
@@ -206,6 +264,16 @@ def _self_test() -> int:
                 failures.append(
                     f"case {index} {source!r}: expected {expected}, got {len(found)} -> {found}"
                 )
+
+        # Token-owned names carrying numeric values are legal in the token
+        # file itself — simulate the real origin suffix.
+        token_case = "val CONTROL_PRESS_SCALE = 0.95f\n"
+        found = scan_text(
+            token_case,
+            origin="app/src/main/java/x/design/tokens/Motion.kt",
+        )
+        if found:
+            failures.append(f"token-file numeric initializer wrongly flagged: {found}")
 
     if failures:
         print("MOTION_LITERALS_SELF_TEST_FAILED")

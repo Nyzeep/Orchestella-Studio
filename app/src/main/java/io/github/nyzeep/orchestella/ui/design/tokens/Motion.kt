@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella.ui.design.tokens
 
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 
 /**
@@ -132,6 +133,53 @@ object OeMotion {
     const val STANDARD_ACCELERATE_X2 = 1f
     const val STANDARD_ACCELERATE_Y2 = 1f
 
+    /** M3 emphasized-accelerate curve (W1-02 motion v2): incoming spatial content. */
+    const val EMPHASIZED_ACCELERATE_X1 = 0.3f
+    const val EMPHASIZED_ACCELERATE_Y1 = 0f
+    const val EMPHASIZED_ACCELERATE_X2 = 0.8f
+    const val EMPHASIZED_ACCELERATE_Y2 = 0.15f
+
+    // --- Motion v2 duration ladder (W1-02 / A4-M1) ---
+    // The named semantic durations above stay the wired truth for the surfaces
+    // that already consume them; this ladder is the authoritative scale for new
+    // work (A4 Wave 2+) and for the ambient loops that have no semantic token.
+
+    const val DURATION_MICRO_MS = 120
+    const val DURATION_SHORT_MS = 200
+    const val DURATION_MEDIUM_MS = 320
+    const val DURATION_LONG_MS = 480
+
+    /** Ambient loop cycle (OeSlider glow sweep); the one above-ladder duration. */
+    const val GLOW_CYCLE_MS = 4000
+
+    // --- Motion v2 spring parameters (W1-02 / A4-M1) ---
+    // Spatial springs (press/pill) keep the 0.85 controlled rebound; Effects
+    // springs settle at damping 1.0 with no overshoot (A4 §3.1 M1).
+
+    /** Press feedback stiffness shared by Oe3Chip/Oe3Button/Oe3NavBar. */
+    const val PRESS_STIFFNESS = Spring.StiffnessMedium
+
+    /** Effects-style land-in-place spring: same pill stiffness, zero rebound. */
+    const val SETTLE_DAMPING = 1f
+    const val SETTLE_STIFFNESS = Spring.StiffnessMediumLow
+
+    /** Expressive spatial spring; anchors the Wave 2 back-stack candidate (M2 A/B). */
+    const val EXPRESSIVE_DAMPING = 0.9f
+    const val EXPRESSIVE_STIFFNESS = 700f
+
+    // --- Motion v2 press-scale tokens (W1-02 / A4-M1 second-source cleanup) ---
+    // The per-component measured scales move here verbatim; component files
+    // consume the tokens and keep no local copies.
+
+    /** Oe3Chip / Oe3Button pressed scale. */
+    const val CONTROL_PRESS_SCALE = 0.95f
+
+    /** Oe3NavBar pill pressed scale (hit area and settle logic untouched). */
+    const val NAV_PRESS_SCALE = 0.96f
+
+    /** OeSlider thumb pressed scale (glow geometry 8-dot / 90dp untouched). */
+    const val SLIDER_PRESS_SCALE = 0.92f
+
     val standardEasing: Easing =
         CubicBezierEasing(STANDARD_X1, STANDARD_Y1, STANDARD_X2, STANDARD_Y2)
 
@@ -170,4 +218,58 @@ object OeMotion {
 
     /** Dashboard scale-settle start point. */
     const val VIEW_SCALE_FROM_DASHBOARD = 0.975f
+}
+
+/**
+ * Motion v2 duration ladder (W1-02 / A4-M1). The single scale new motion work
+ * draws from: Micro for feedback ticks, Short for control transitions, Medium
+ * for page-level moves, Long for showcase/emphasis. Every number lives in
+ * [OeMotion]; this object is the named vocabulary, not a second table.
+ */
+object OeDuration {
+    /** 120ms — feedback ticks (press wash, chip toggles). */
+    const val Micro = OeMotion.DURATION_MICRO_MS
+
+    /** 200ms — control transitions (sliders, small surfaces). */
+    const val Short = OeMotion.DURATION_SHORT_MS
+
+    /** 320ms — page-level transitions and moves. */
+    const val Medium = OeMotion.DURATION_MEDIUM_MS
+
+    /** 480ms — showcase/emphasis moments. */
+    const val Long = OeMotion.DURATION_LONG_MS
+
+    /** Ambient loop cycle (OeSlider glow sweep); the one above-ladder value. */
+    const val GlowCycle = OeMotion.GLOW_CYCLE_MS
+}
+
+/**
+ * Motion v2 easing vocabulary (W1-02 / A4-M1). The M3 emphasized pair joined
+ * the existing [OeMotion] curves; instances are shared, so a curve is changed
+ * only at its control-point constants.
+ */
+object OeEase {
+    /** Spatial incoming content: M3 emphasized decelerate (legacy mirror). */
+    val EmphasizedDecelerate: Easing =
+        CubicBezierEasing(
+            OeMotion.EMPHASIZED_DECELERATE_X1,
+            OeMotion.EMPHASIZED_DECELERATE_Y1,
+            OeMotion.EMPHASIZED_DECELERATE_X2,
+            OeMotion.EMPHASIZED_DECELERATE_Y2,
+        )
+
+    /** Spatial outgoing content: M3 emphasized accelerate. */
+    val EmphasizedAccelerate: Easing =
+        CubicBezierEasing(
+            OeMotion.EMPHASIZED_ACCELERATE_X1,
+            OeMotion.EMPHASIZED_ACCELERATE_Y1,
+            OeMotion.EMPHASIZED_ACCELERATE_X2,
+            OeMotion.EMPHASIZED_ACCELERATE_Y2,
+        )
+
+    /** The utilitarian default for content without a directional gesture. */
+    val Standard: Easing = OeMotion.standardEasing
+
+    /** Linear: ambient loops and scrub-linked progress only. */
+    val Linear: Easing = LinearEasing
 }

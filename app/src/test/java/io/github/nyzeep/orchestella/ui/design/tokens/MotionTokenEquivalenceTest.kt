@@ -1,9 +1,14 @@
 package io.github.nyzeep.orchestella.ui.design.tokens
 
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
+import io.github.nyzeep.orchestella.ui.design.components.OeSliderSpec
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Motion
+import io.github.nyzeep.orchestella.ui.oe3.tokens.OeSpring
+import io.github.nyzeep.orchestella.ui.shell.nav.Oe3NavPillSpec
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
@@ -165,5 +170,100 @@ class MotionTokenEquivalenceTest {
         ).forEach { spec -> assertEquals(0, spec.durationMillis) }
         assertEquals(OeMotion.REDUCED_CARD_ENTER_SCALE_FROM, reduced.cardEnterScaleFrom, 0.0001f)
         assertNull(reduced.navSelectionSpring)
+    }
+
+    // -----------------------------------------------------------------------
+    // W1-02（A4-M1）：motion v2 分档标尺、强调曲线与弹簧词表。数字唯一落在
+    // [OeMotion]；OeDuration/OeEase（design/tokens/Motion.kt）与 OeSpring
+    // （oe3/tokens/Oe3Motion.kt）是命名视图，这里逐项钉死，防止再次长出
+    // 第二事实源。
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun motionV2DurationLadderIsPinnedInTheSingleSource() {
+        assertEquals(120, OeMotion.DURATION_MICRO_MS)
+        assertEquals(200, OeMotion.DURATION_SHORT_MS)
+        assertEquals(320, OeMotion.DURATION_MEDIUM_MS)
+        assertEquals(480, OeMotion.DURATION_LONG_MS)
+        assertEquals(4_000, OeMotion.GLOW_CYCLE_MS)
+
+        assertEquals(OeMotion.DURATION_MICRO_MS, OeDuration.Micro)
+        assertEquals(OeMotion.DURATION_SHORT_MS, OeDuration.Short)
+        assertEquals(OeMotion.DURATION_MEDIUM_MS, OeDuration.Medium)
+        assertEquals(OeMotion.DURATION_LONG_MS, OeDuration.Long)
+        assertEquals(OeMotion.GLOW_CYCLE_MS, OeDuration.GlowCycle)
+    }
+
+    @Test
+    fun motionV2EmphasizedAccelerateControlPointsArePinned() {
+        assertEquals(0.3f, OeMotion.EMPHASIZED_ACCELERATE_X1, 0.0001f)
+        assertEquals(0f, OeMotion.EMPHASIZED_ACCELERATE_Y1, 0.0001f)
+        assertEquals(0.8f, OeMotion.EMPHASIZED_ACCELERATE_X2, 0.0001f)
+        assertEquals(0.15f, OeMotion.EMPHASIZED_ACCELERATE_Y2, 0.0001f)
+    }
+
+    @Test
+    fun oeEaseSharesTheSingleSourceInstances() {
+        assertSame(OeMotion.standardEasing, OeEase.Standard)
+        assertSame(LinearEasing, OeEase.Linear)
+        // 强调曲线实例是独立构造的 CubicBezierEasing；控制点已在上面的钉值
+        // 用例锁定，这里只验证它们是 OeMotion 控制点常量的命名视图（类型）。
+        assertNotNull(OeEase.EmphasizedDecelerate)
+        assertNotNull(OeEase.EmphasizedAccelerate)
+    }
+
+    @Test
+    fun motionV2PressScalesArePinnedInTheSingleSource() {
+        assertEquals(0.95f, OeMotion.CONTROL_PRESS_SCALE, 0.0001f)
+        assertEquals(0.96f, OeMotion.NAV_PRESS_SCALE, 0.0001f)
+        assertEquals(0.92f, OeMotion.SLIDER_PRESS_SCALE, 0.0001f)
+    }
+
+    @Test
+    fun secondSourceConstantsDelegateToTheSingleSource() {
+        // OeSliderSpec 保留实测名号，但数字必须来自 OeMotion（W1-02 归口）。
+        assertEquals(OeMotion.GLOW_CYCLE_MS, OeSliderSpec.GlowPeriodMillis)
+        assertEquals(OeMotion.SLIDER_PRESS_SCALE, OeSliderSpec.PressedScale, 0.0001f)
+        // 光斑几何 8 点 / 90dp 红线不动。
+        assertEquals(8, OeSliderSpec.DotCount)
+        assertEquals(90f, OeSliderSpec.GlowBandDp, 0.0001f)
+    }
+
+    @Test
+    fun motionV2SpringParametersArePinnedInTheSingleSource() {
+        assertEquals(Spring.StiffnessMedium, OeMotion.PRESS_STIFFNESS, 0.0001f)
+        assertEquals(1f, OeMotion.SETTLE_DAMPING, 0.0001f)
+        assertEquals(Spring.StiffnessMediumLow, OeMotion.SETTLE_STIFFNESS, 0.0001f)
+        assertEquals(0.9f, OeMotion.EXPRESSIVE_DAMPING, 0.0001f)
+        assertEquals(700f, OeMotion.EXPRESSIVE_STIFFNESS, 0.0001f)
+    }
+
+    @Test
+    fun oeSpringBuildsItsSpecsFromTheSharedSource() {
+        assertEquals(OeMotion.SPRING_DAMPING, OeSpring.Press.dampingRatio, 0.0001f)
+        assertEquals(OeMotion.PRESS_STIFFNESS, OeSpring.Press.stiffness, 0.0001f)
+
+        assertEquals(OeMotion.SPRING_DAMPING, OeSpring.Pill.dampingRatio, 0.0001f)
+        assertEquals(OeMotion.NAV_SELECTION_STIFFNESS, OeSpring.Pill.stiffness, 0.0001f)
+
+        assertEquals(OeMotion.SETTLE_DAMPING, OeSpring.Settle.dampingRatio, 0.0001f)
+        assertEquals(OeMotion.SETTLE_STIFFNESS, OeSpring.Settle.stiffness, 0.0001f)
+
+        assertEquals(OeMotion.EXPRESSIVE_DAMPING, OeSpring.Expressive.dampingRatio, 0.0001f)
+        assertEquals(OeMotion.EXPRESSIVE_STIFFNESS, OeSpring.Expressive.stiffness, 0.0001f)
+
+        val push = OeSpring.push()
+        assertEquals(OeMotion.PAGE_PUSH_DAMPING, push.spec.dampingRatio, 0.0001f)
+        assertEquals(OeMotion.PAGE_PUSH_STIFFNESS, push.spec.stiffness, 0.0001f)
+        assertEquals(OeMotion.PAGE_PUSH_VELOCITY_FACTOR, push.initialVelocity, 0.0001f)
+        assertEquals(2f, OeSpring.push(velocity = 2f).initialVelocity, 0.0001f)
+    }
+
+    @Test
+    fun oe3ControlsAndNavBarConsumeTheV2Tokens() {
+        // 组件文件不再私藏数字：Oe3NavPillSpec.PRESS_SCALE 是 OeMotion 的
+        // 编译期别名；pressSpring 必须就是 OeSpring.Press 单例。
+        assertEquals(OeMotion.NAV_PRESS_SCALE, Oe3NavPillSpec.PRESS_SCALE, 0.0001f)
+        assertSame(OeSpring.Press, Oe3NavPillSpec.pressSpring(Oe3Motion.standard()))
     }
 }

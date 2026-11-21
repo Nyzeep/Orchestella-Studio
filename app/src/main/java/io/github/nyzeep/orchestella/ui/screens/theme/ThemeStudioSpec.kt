@@ -46,8 +46,6 @@ object ThemeStudioSpec {
     val terminalLetterSpacingMax = 0.20f
     val terminalLineSpacingMax = 8f
 
-    const val previewTweenMillis = 300
-
     /** The eight accent choices the legacy appearance page offered. */
     val accentSwatches: List<Int> = listOf(
         0xFFBD93F9.toInt(), 0xFF8BE9FD.toInt(), 0xFFFF79C6.toInt(), 0xFF50FA7B.toInt(),

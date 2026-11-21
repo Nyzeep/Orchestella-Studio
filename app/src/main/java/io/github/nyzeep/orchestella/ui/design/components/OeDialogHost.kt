@@ -4,7 +4,12 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.database.ContentObserver
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.view.View
 import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -87,6 +92,14 @@ class OeDialogHost private constructor(activity: Activity) {
     private val current = mutableStateOf<OeDialogSpec?>(null)
     private var overlay: ComposeView? = null
 
+    /**
+     * W1-02（A4-M1）：覆盖层自己的减动效信号，改为可写状态 + ContentObserver
+     * 热监听。旧实现只在覆盖层创建时读一次 `ValueAnimator.areAnimatorsEnabled()`，
+     * 前台切换系统动画倍率（1x ↔ 0x）后已挂载的覆盖层不会跟随；现在缩放值只作
+     * 布尔信号消费，变化即重 composition，且标准档不做二次手乘。
+     */
+    private val reducedMotion = mutableStateOf(!ValueAnimator.areAnimatorsEnabled())
+
     fun show(spec: OeDialogSpec) {
         val activity = activityRef.get() ?: return
         activity.runOnUiThread {
@@ -113,6 +126,10 @@ class OeDialogHost private constructor(activity: Activity) {
         if (overlay != null) return
         val activity = activityRef.get() ?: return
         val root = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
+        // 每次覆盖层创建都重读一次系统信号：宿主构造到首弹之间系统设置可能已
+        // 变（Tier5 首帧即终态宽度契约依赖这一读点），之后的热切换交给下方
+        // ContentObserver。
+        reducedMotion.value = !ValueAnimator.areAnimatorsEnabled()
         val themeStore = ThemeStore(activity)
         val view = ComposeView(activity).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
@@ -122,7 +139,7 @@ class OeDialogHost private constructor(activity: Activity) {
                 Oe3Theme(
                     theme = theme,
                     textScale = textScale,
-                    reduceMotion = !ValueAnimator.areAnimatorsEnabled(),
+                    reduceMotion = reducedMotion.value,
                 ) {
                     val spec = current.value
                     if (spec != null) {
@@ -131,6 +148,34 @@ class OeDialogHost private constructor(activity: Activity) {
                 }
             }
         }
+        // W1-02：监听系统动画倍率变化并同步 [reducedMotion]。注册随覆盖层
+        // attach、注销随 detach——dismiss 摘除与 Activity 销毁都会触发 detach，
+        // 观察器不悬挂、不泄漏。
+        val animatorObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                reducedMotion.value = !ValueAnimator.areAnimatorsEnabled()
+            }
+        }
+        var observerRegistered = false
+        view.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                if (!observerRegistered) {
+                    v.context.contentResolver.registerContentObserver(
+                        Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE),
+                        /* notifyForDescendants = */ false,
+                        animatorObserver,
+                    )
+                    observerRegistered = true
+                }
+            }
+
+            override fun onViewDetachedFromWindow(v: View) {
+                if (observerRegistered) {
+                    v.context.contentResolver.unregisterContentObserver(animatorObserver)
+                    observerRegistered = false
+                }
+            }
+        })
         root.addView(
             view,
             ViewGroup.LayoutParams(

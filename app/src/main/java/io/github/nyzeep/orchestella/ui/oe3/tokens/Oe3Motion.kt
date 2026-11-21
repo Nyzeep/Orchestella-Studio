@@ -102,3 +102,63 @@ object Oe3Motion {
         )
     }
 }
+
+/**
+ * Motion v2 spring vocabulary (W1-02 / A4-M1). Spatial springs (press, pill,
+ * expressive) keep the 0.85 damping's slight controlled rebound; Effects
+ * springs settle at damping 1.0 with no overshoot. Every number comes from
+ * [OeMotion]; reduced motion never reads these directly — consumers gate on
+ * `motion.*.durationMillis == 0` and fall back to `snap()`, exactly as the
+ * pre-token springs did.
+ */
+object OeSpring {
+
+    /** Press feedback for chips, buttons and the nav pill (≈250ms nominal). */
+    val Press: SpringSpec<Float> = SpringSpec(
+        dampingRatio = OeMotion.SPRING_DAMPING,
+        stiffness = OeMotion.PRESS_STIFFNESS,
+    )
+
+    /** Nav pill selection travel (≈400ms nominal; reduced motion withdraws it). */
+    val Pill: SpringSpec<Float> = SpringSpec(
+        dampingRatio = OeMotion.SPRING_DAMPING,
+        stiffness = OeMotion.NAV_SELECTION_STIFFNESS,
+    )
+
+    /** Effects-style land-in-place settle: pill stiffness, zero rebound. */
+    val Settle: SpringSpec<Float> = SpringSpec(
+        dampingRatio = OeMotion.SETTLE_DAMPING,
+        stiffness = OeMotion.SETTLE_STIFFNESS,
+    )
+
+    /** Expressive spatial spring; Wave 2 back-stack candidate anchor (M2 A/B). */
+    val Expressive: SpringSpec<Float> = SpringSpec(
+        dampingRatio = OeMotion.EXPRESSIVE_DAMPING,
+        stiffness = OeMotion.EXPRESSIVE_STIFFNESS,
+    )
+
+    /**
+     * Page-push spring pair: the fixed [OePushSpring.spec] plus the gesture
+     * release [OePushSpring.initialVelocity] expressed in progress units per
+     * second — the caller hands both to `Animatable.animateTo(target, spec,
+     * initialVelocity)` (the `OeMotion.PAGE_PUSH_VELOCITY_FACTOR` convention
+     * OeBackStack already uses). Wave 2 (Oe3Pager / OeBackStack) consumes it.
+     */
+    fun push(velocity: Float = OeMotion.PAGE_PUSH_VELOCITY_FACTOR): OePushSpring =
+        OePushSpring(
+            spec = SpringSpec(
+                dampingRatio = OeMotion.PAGE_PUSH_DAMPING,
+                stiffness = OeMotion.PAGE_PUSH_STIFFNESS,
+            ),
+            initialVelocity = velocity,
+        )
+}
+
+/**
+ * Page-push spring pair (W1-02 / A4-M1): spec + gesture-release velocity in
+ * progress units per second; produced by [OeSpring.push].
+ */
+data class OePushSpring(
+    val spec: SpringSpec<Float>,
+    val initialVelocity: Float,
+)

@@ -78,9 +78,6 @@ object DistrosSpec {
     /** 票面：2 列网格。 */
     const val GRID_COLUMNS = 2
 
-    /** 票面：手风琴 220ms；减少动态时由主题 token 归零。 */
-    const val ACCORDION_MILLIS = 220
-
     /** 折叠卡的图标盒（单色矢量）。 */
     val iconSize = 32.dp
 
