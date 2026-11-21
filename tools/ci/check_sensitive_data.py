@@ -236,6 +236,12 @@ _HASH_CONTEXT_RE = re.compile(
 )
 _ADR_CONTEXT_RE = re.compile(r"(?i)\badr\b")
 
+# sync-guest-init.py heredoc delimiter prefix. The full marker is
+# ORCHESTELLA_FEATURE_<16 uppercase hex> where the hex is the first 16
+# characters of sha256(embedded content) — a deterministic repo-internal
+# derivation, never developer secret material.
+_GUEST_EMBEDDED_MARKER_PREFIX = "ORCHESTELLA_FEATURE_"
+
 _GRADLE_SECRET_RE = re.compile(
     r"(?im)^[ \t]*[A-Za-z0-9_.-]*(?:"
     r"store[_-]?password|key[_-]?password|store[_-]?file|key[_-]?alias|"
@@ -324,6 +330,10 @@ def _line_has_token_shape(line: str) -> bool:
     for match in _HEX_RUN_RE.finditer(line):
         token = match.group(0)
         if len(token) in (40, 64):
+            continue
+        prefix_start = match.start() - len(_GUEST_EMBEDDED_MARKER_PREFIX)
+        if prefix_start >= 0 and line.startswith(
+                _GUEST_EMBEDDED_MARKER_PREFIX, prefix_start):
             continue
         if any(start <= match.start() and match.end() <= end for start, end in url_spans):
             continue
@@ -444,6 +454,7 @@ def run_self_test() -> bool:
             "-----BEGIN " + "RSA " + "PRIVATE KEY-----",
             _hex_run(5),
             _hex_run(8),
+            _hex_run(4),
             # Run OUTSIDE the URL span must still fire even when a URL is
             # present elsewhere on the line (guards the URL exemption).
             "see " + "https" + "://" + "example.com/a " + _hex_run(5),
@@ -481,6 +492,12 @@ def run_self_test() -> bool:
             # Public identifier embedded in a citation URL (tweet/video/issue
             # id) is not developer secret material — must stay exempt.
             "引用 " + "https" + "://" + "x.com/user/status/" + _hex_run(5),
+            # sync-guest-init.py heredoc delimiter: ORCHESTELLA_FEATURE_ +
+            # sha256(embedded content) first 16 hex chars. Repo-internal
+            # deterministic derivation, not secret material — must stay exempt.
+            "cat > profilectl.next <<'ORCHESTELLA_FEATURE_"
+            + _hex_run(4).upper() + "' || return 1",
+            "ORCHESTELLA_FEATURE_" + _hex_run(4).upper(),
         ]
         # The concatenated source shape itself must never be a finding: the
         # fragments travel quoted, so no joined value appears in the line.
