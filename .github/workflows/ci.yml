@@ -128,8 +128,10 @@ jobs:
           # :app:preBuild -> :app:verifyRuntimeAssets, so the payload opt-out is
           # required here too. The real payload APK stays gated by
           # check_runtime_payload.py --apk in the release workflow.
+          # Match UI verify's mirror for Robolectric's out-of-band API 34 download.
           bash tools/ci/run-gradle-gate.sh \
             -Porchestella.assets.allowMissingPayload=true \
+            -Porchestella.repositories.useAliyunMirror=true \
             :runtime:contract:check \
             :runtime:instance:check \
             :runtime:engine-qemu:check \

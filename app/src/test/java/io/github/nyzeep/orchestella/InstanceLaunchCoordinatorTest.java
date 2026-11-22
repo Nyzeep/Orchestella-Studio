@@ -808,7 +808,8 @@ public final class InstanceLaunchCoordinatorTest {
         Seams seams = new Seams();
         File filesDir = givenFilesDir();
         Setup setup = givenDebianInstance("latesupersede-store");
-        ExitSession session = new ExitSession(0);
+        CountDownLatch release = new CountDownLatch(1);
+        ExitSession session = gatedExitSession(release);
         InstanceLaunchCoordinator coordinator = newCoordinator(setup, filesDir, seams,
                 registeringQemu(seams, session));
         String generation = null;
@@ -822,6 +823,7 @@ public final class InstanceLaunchCoordinatorTest {
                 InstanceLaunchGuard.end(setup.instance.id(), admitted);
                 InstanceLaunchGuard.begin(setup.instance.id());
             };
+            release.countDown();
             assertTrue(seams.foreground.firstStop.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS));
             awaitRunOnUiCalls(seams.ui, 2);
             assertTrue("the binding stop still ran",
@@ -832,6 +834,7 @@ public final class InstanceLaunchCoordinatorTest {
             assertTrue("the newer admission survives the old watcher",
                     InstanceLaunchGuard.isInFlight(setup.instance.id()));
         } finally {
+            release.countDown();
             seams.foreground.stopHook = null;
             ExecutionSessionRegistry.unregister(setup.instance.id());
             InstanceLaunchGuard.end(setup.instance.id());
