@@ -79,4 +79,3 @@ Used only as a pattern reference, reimplemented from scratch for Orchestella's
 own code (clean-room, no code copied):
   - BlurUtils discrete blur-radius bucketing (limits GPU shader-pipeline churn
     by snapping animated radii to fixed buckets)
-

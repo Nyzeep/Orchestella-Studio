@@ -253,7 +253,14 @@ public final class ControlChannelRecoveryTest {
     public void obsoleteTerminalWaiterRetiresWithoutInterruptingThePersistentHandshake() throws Exception {
         java.io.PipedInputStream inbound = new java.io.PipedInputStream(8192);
         try (java.io.PipedOutputStream replies = new java.io.PipedOutputStream(inbound)) {
-            BridgeClient client = new BridgeClient(inbound, new ByteArrayOutputStream());
+            CountDownLatch helloWritten = new CountDownLatch(1);
+            ByteArrayOutputStream outbound = new ByteArrayOutputStream() {
+                @Override public void flush() throws IOException {
+                    super.flush();
+                    if (size() > 0) helloWritten.countDown();
+                }
+            };
+            BridgeClient client = new BridgeClient(inbound, outbound);
             client.startResponsePump(null, 1000L, 2000L);
             java.util.concurrent.atomic.AtomicBoolean current = new java.util.concurrent.atomic.AtomicBoolean(true);
             java.util.concurrent.ExecutorService callers = java.util.concurrent.Executors.newFixedThreadPool(2);
@@ -268,6 +275,8 @@ public final class ControlChannelRecoveryTest {
                 assertTrue(checking.await(5L, TimeUnit.SECONDS));
                 current.set(false);
                 assertFalse(retired.get(5L, TimeUnit.SECONDS));
+                // Wait until HELLO has actually been written (budget + pending armed) before sending READY.
+                assertTrue(helloWritten.await(5L, TimeUnit.SECONDS));
                 assertFalse(handshake.isDone());
                 replies.write("ORCHESTELLA/READY 1\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
                 replies.flush();
