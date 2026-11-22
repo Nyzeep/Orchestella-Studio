@@ -51,6 +51,7 @@ public final class PersistentTerminalSessionPoolTest {
         private final InputStream termOut;
         private final OutputStream termIn;
         private final AtomicBoolean closed = new AtomicBoolean(false);
+        private final AtomicInteger shellReady = new AtomicInteger();
 
         FakeExecutionSession(InputStream termOut, OutputStream termIn) {
             this.termOut = termOut;
@@ -61,6 +62,8 @@ public final class PersistentTerminalSessionPoolTest {
         public int waitFor() {
             return 0;
         }
+
+        @Override public void markShellReady() { shellReady.incrementAndGet(); }
 
         @Override
         public OutputStream terminalInput() {
@@ -93,6 +96,24 @@ public final class PersistentTerminalSessionPoolTest {
                 termOut.close();
             } catch (IOException ignored) {
             }
+        }
+    }
+
+    @Test(timeout = 10_000)
+    public void pumpReportsOnlyTheFirstCompletedPromptForEachSession() throws Exception {
+        String prePrompt = "DROIDLAYER_ROOT_VOLUME_RESTART version=1 runtime=unverified\r\n"
+                + "DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=debian phase=rootfs runtime=pending\r\n"
+                + "\u001b]133;B\u0007\u001b]133;A;orchestella=1\u0007❯ ";
+        String completePrompt = "\u001b]133;B\u001b\\";
+        for (boolean completes : new boolean[]{false, true}) {
+            String output = prePrompt + (completes ? completePrompt + prePrompt + completePrompt : "");
+            FakeExecutionSession session = new FakeExecutionSession(
+                    new ByteArrayInputStream(output.getBytes(StandardCharsets.UTF_8)), new ByteArrayOutputStream());
+            PersistentTerminalSessionPool.SessionHolder holder = pool.register("shell-ready-" + completes, session);
+            CountDownLatch streamEnded = new CountDownLatch(1);
+            holder.setSessionEndListener(ignored -> streamEnded.countDown());
+            assertTrue(streamEnded.await(2, TimeUnit.SECONDS));
+            assertEquals(completes ? 1 : 0, session.shellReady.get());
         }
     }
 
@@ -634,7 +655,7 @@ public final class PersistentTerminalSessionPoolTest {
                 dropped.incrementAndGet();
             }
             @Override public void onPumpChunkAppended(long monotonicNanos, int chars) { }
-        });
+        }, System::nanoTime);
         try {
             // Fill the bounded queue (capacity 128) while the writer sits blocked
             // in its first write; one extra send then makes the queue exactly full.
@@ -643,6 +664,12 @@ public final class PersistentTerminalSessionPoolTest {
             }
             assertTrue(writeEntered.await(2, TimeUnit.SECONDS));
             holder.sendBytes("job-128\n".getBytes(StandardCharsets.UTF_8));
+            long began = System.nanoTime();
+            assertEquals(PersistentTerminalSessionPool.InputSubmission.QUEUE_FULL,
+                    holder.trySendBytes("rejected\n".getBytes(StandardCharsets.UTF_8)));
+            assertTrue("UI input must reject immediately",
+                    System.nanoTime() - began < TimeUnit.MILLISECONDS.toNanos(500));
+            assertEquals(1, dropped.get());
 
             // The protocol reply is enqueued from inside the screen model monitor:
             // with a full queue it must be dropped immediately, never blocking the
@@ -652,7 +679,7 @@ public final class PersistentTerminalSessionPoolTest {
             long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
             assertTrue("protocol reply enqueue must not block the parser: " + elapsedMs + " ms",
                     elapsedMs < 500);
-            assertEquals("the saturated reply must be reported as dropped", 1, dropped.get());
+            assertEquals("the saturated reply must also be reported as dropped", 2, dropped.get());
 
             // After the gate opens the FIFO queue drains in order, replyless.
             releaseWrite.countDown();
@@ -663,6 +690,7 @@ public final class PersistentTerminalSessionPoolTest {
             String sent = gated.content();
             assertTrue("user input must survive the backlog", sent.contains("job-0\n"));
             assertTrue("user input must survive the backlog", sent.contains("job-128\n"));
+            assertFalse(sent.contains("rejected\n"));
             assertFalse("the dropped reply must never reach the PTY", sent.contains("\u001b[0n"));
         } finally {
             releaseWrite.countDown();
@@ -692,7 +720,7 @@ public final class PersistentTerminalSessionPoolTest {
                 dropped.incrementAndGet();
             }
             @Override public void onPumpChunkAppended(long monotonicNanos, int chars) { }
-        });
+        }, System::nanoTime);
         try {
             // The first submission reaches the writer, whose write fails and marks
             // the stream broken; the writer keeps draining so every stranded and
@@ -742,7 +770,7 @@ public final class PersistentTerminalSessionPoolTest {
             @Override public void onPumpChunkAppended(long monotonicNanos, int chars) {
                 events.add("pump:" + chars);
             }
-        });
+        }, System::nanoTime);
         try {
             holder.sendBytes("hi\n".getBytes(StandardCharsets.UTF_8));
             pipeOut.write("out\n".getBytes(StandardCharsets.UTF_8));

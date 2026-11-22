@@ -15,6 +15,7 @@ public final class TerminalSpan {
     private final boolean underline;
     private final boolean inverse;
     private final boolean clearScreen;
+    private final boolean command;
 
     public TerminalSpan(String text, Integer foregroundColor, Integer backgroundColor,
                         boolean bold, boolean italic, boolean underline, boolean inverse) {
@@ -24,6 +25,12 @@ public final class TerminalSpan {
     public TerminalSpan(String text, Integer foregroundColor, Integer backgroundColor,
                         boolean bold, boolean italic, boolean underline, boolean inverse,
                         boolean clearScreen) {
+        this(text, foregroundColor, backgroundColor, bold, italic, underline, inverse, clearScreen, false);
+    }
+
+    private TerminalSpan(String text, Integer foregroundColor, Integer backgroundColor,
+                         boolean bold, boolean italic, boolean underline, boolean inverse,
+                         boolean clearScreen, boolean command) {
         this.text = Objects.requireNonNull(text, "text");
         this.foregroundColor = foregroundColor;
         this.backgroundColor = backgroundColor;
@@ -32,6 +39,17 @@ public final class TerminalSpan {
         this.underline = underline;
         this.inverse = inverse;
         this.clearScreen = clearScreen;
+        this.command = command;
+    }
+
+    /** A submitted shell command uses the active theme's full foreground contrast. */
+    public static TerminalSpan forCommand(String text) {
+        return new TerminalSpan(text, null, null, true, false, false, false, false, true);
+    }
+
+    public TerminalSpan withText(String text) {
+        return new TerminalSpan(text, foregroundColor, backgroundColor,
+                bold, italic, underline, inverse, clearScreen, command);
     }
 
     public static TerminalSpan clearScreen() {
@@ -86,7 +104,7 @@ public final class TerminalSpan {
             return foregroundColor;
         }
         int themed = DraculaPalette.themedForeground();
-        return bold ? DraculaPalette.softenForeground(themed) : themed;
+        return bold && !command ? DraculaPalette.softenForeground(themed) : themed;
     }
 
     /**
@@ -110,6 +128,7 @@ public final class TerminalSpan {
                 underline == that.underline &&
                 inverse == that.inverse &&
                 clearScreen == that.clearScreen &&
+                command == that.command &&
                 Objects.equals(text, that.text) &&
                 Objects.equals(foregroundColor, that.foregroundColor) &&
                 Objects.equals(backgroundColor, that.backgroundColor);
@@ -117,7 +136,7 @@ public final class TerminalSpan {
 
     @Override
     public int hashCode() {
-        return Objects.hash(text, foregroundColor, backgroundColor, bold, italic, underline, inverse, clearScreen);
+        return Objects.hash(text, foregroundColor, backgroundColor, bold, italic, underline, inverse, clearScreen, command);
     }
 
     @Override

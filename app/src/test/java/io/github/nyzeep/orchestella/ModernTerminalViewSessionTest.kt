@@ -2,9 +2,13 @@ package io.github.nyzeep.orchestella
 
 import android.content.Context
 import android.os.Looper
+import android.text.Layout
+import android.view.View
+import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.nyzeep.orchestella.terminal.TerminalScreenModel
+import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -12,6 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.time.Duration
 
 /**
@@ -77,7 +82,7 @@ class ModernTerminalViewSessionTest {
      * screen model, which the pump thread keeps parsing. The pane must keep
      * refreshing from pump-side model updates alone — the old design froze it
      * because the view skipped appends while a nobody-fed private mirror sat on
-     * screen. The render tick ([ModernTerminalView.appendOutput]) is the only UI
+     * screen. The render tick ([ModernTerminalView.requestSessionRender]) is the only UI
      * involvement; the model text appears exactly once (no UI-side re-parse).
      */
     @Test
@@ -92,7 +97,7 @@ class ModernTerminalViewSessionTest {
         // What the pump thread does while the secondary tab is on screen, plus the
         // render tick the activity forwards for each console chunk.
         canonical.append("pump-live-update\r\n")
-        view.appendOutput("repaint-tick\r\n")
+        view.requestSessionRender()
         idleMainLooper()
 
         val modelText = canonical.displaySnapshot().text()
@@ -163,5 +168,24 @@ class ModernTerminalViewSessionTest {
             "non-session output must still render into the view transcript",
             (view.getChildAt(0) as android.widget.TextView).text.toString().contains("pty output"),
         )
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun gridColumnCountMatchesTrackedMonoText() {
+        val view = ModernTerminalView(context)
+        view.applyTheme(ThemeCatalog.constructivistWorkstation, 14, 0.2f, 0f)
+        val transcript = view.getChildAt(0) as TextView
+        val line = "M".repeat(40)
+        val lineWidth = Layout.getDesiredWidth(line, transcript.paint)
+        val padding = transcript.paddingLeft + transcript.paddingRight
+        val width = kotlin.math.ceil(lineWidth).toInt() + padding + 3
+        view.measure(
+            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(480, View.MeasureSpec.EXACTLY),
+        )
+        view.layout(0, 0, width, 480)
+
+        assertEquals(40, view.terminalColumns)
     }
 }

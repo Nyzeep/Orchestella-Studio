@@ -27,6 +27,20 @@ public final class TerminalInputConnectionTest {
     private StickyModifierStateMachine stickyStateMachine;
     private TerminalInputConnection inputConnection;
 
+    @Test
+    public void pasteReturnsFalseWhenTheTransportRejectsIt() {
+        TerminalInputSink saturated = new TerminalInputSink() {
+            @Override public void sendBytes(byte[] bytes) {
+                throw new AssertionError("paste must ask whether the queue accepted it");
+            }
+            @Override public boolean trySendBytes(byte[] bytes) { return false; }
+        };
+        TerminalInputConnection connection = new TerminalInputConnection(
+                saturated, new StickyModifierStateMachine(), (accent, base) -> 0);
+
+        assertFalse(connection.pasteText("echo ready"));
+    }
+
     @Before
     public void setUp() {
         ptyStream = new ByteArrayOutputStream();

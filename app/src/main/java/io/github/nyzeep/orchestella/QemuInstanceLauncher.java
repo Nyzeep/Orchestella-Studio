@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella;
 
 import android.content.Context;
 import android.net.LocalSocket;
+import android.os.SystemClock;
 import android.util.Log;
 import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
@@ -21,8 +22,12 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Paths;
 import java.time.Clock;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -398,7 +403,7 @@ public final class QemuInstanceLauncher {
 
         /**
          * W1-04 (R-08): the terminal pump observed the guest shell handover
-         * marker; close the launch timeline's T0 → SHELL_READY chain. Idempotent
+         * prompt; close the launch timeline's T0 → SHELL_READY chain. Idempotent
          * at the recorder and a no-op when this session carries no timeline.
          */
         @Override
@@ -647,7 +652,7 @@ public final class QemuInstanceLauncher {
 
     /**
      * Consumes the cleanup outcome of the last failed launch for this instance,
-     * or null when this launch did not fail after starting QEMU.
+     * or null when there was no runtime or gateway cleanup to report.
      */
     public static StopResult takeLastCleanupResult(String instanceId) {
         return instanceId == null ? null : LAST_FAILED_CLEANUP.remove(instanceId);
@@ -662,7 +667,7 @@ public final class QemuInstanceLauncher {
                 : VmHardwareConfig.defaultConfig();
         LaunchTimeline timeline = LaunchTimeline.open(Paths.get(parameters.runtimeDirectory),
                 parameters.instanceId, resolveDistroId(parameters.rootfsFileName),
-                config.ramMegabytes(), config.cpuCores());
+                config.ramMegabytes(), config.cpuCores(), SystemClock::elapsedRealtimeNanos);
         timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
         // Ticket 27: observation-only stage trace, bound to this launch's real
         // identity; disabled recording changes nothing on this path.
@@ -714,25 +719,21 @@ public final class QemuInstanceLauncher {
         timeline.markCredentialsOnly(credentialsOutcome);
         Log.i(TAG, "credentials-only-launch outcome=" + credentialsOutcome.name()
                 + " fastPath=" + credentialsOnly);
-        // W1-04 (R-08): the network gateway (gvproxy) does not read any of the
-        // guest assets the bootstrapper verifies and repacks, so the gateway
-        // start and the bootstrap now run concurrently. Hard constraint: one
-        // unified failure recovery — every failure path below joins the start
-        // attempt (bounded) and stops a gateway that did start, so no
-        // half-started orphan gateway process survives a failed launch and the
-        // synchronous cleanup fence stays intact.
-        java.util.concurrent.ExecutorService gatewayExecutor =
-                java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
-                    Thread thread = new Thread(runnable, "qemu-gateway-" + parameters.instanceId);
-                    thread.setDaemon(true);
-                    return thread;
-                });
-        java.util.concurrent.Future<NetworkGatewayDaemon.Running> gatewayFuture =
-                gatewayExecutor.submit(() -> NetworkGatewayDaemon.start(context, parameters.instanceId,
-                        Paths.get(parameters.runtimeDirectory).toFile()));
+        // Starting gvproxy and staging the guest assets can overlap. The same
+        // worker owns failure cleanup until the launcher takes the gateway.
+        ExecutorService gatewayExecutor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "qemu-gateway-" + parameters.instanceId);
+            thread.setDaemon(true);
+            return thread;
+        });
         QemuRuntimeBootstrapper.RuntimePaths paths;
-        stageTrace.onGate(ProductionStageRecorder.Stage.INPUTS_BEGIN);
+        NetworkGatewayDaemon.Running gateway;
+        Future<NetworkGatewayDaemon.Running> gatewayFuture = gatewayExecutor.submit(
+                () -> NetworkGatewayDaemon.start(context, parameters.instanceId,
+                        Paths.get(parameters.runtimeDirectory).toFile()));
+        boolean assetsReady = false;
         try {
+            stageTrace.onGate(ProductionStageRecorder.Stage.INPUTS_BEGIN);
             paths = bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
                     parameters.guestPassword,
                     Paths.get(parameters.instanceRootVolume),
@@ -742,12 +743,30 @@ public final class QemuInstanceLauncher {
                     parameters.hostname, parameters.guestUser, parameters.hasSudo, timeline,
                     credentialsOnly);
             stageTrace.onGate(ProductionStageRecorder.Stage.INPUTS_VERIFIED);
-        } catch (IOException | RuntimeException | Error failure) {
-            stageTrace.onFailure(ProductionStageRecorder.Failure.CREATE_FAILED);
-            gatewayExecutor.shutdown();
-            stopStartedGatewayQuietly(gatewayFuture, GATEWAY_CLEANUP_JOIN_TIMEOUT_MS);
+            assetsReady = true;
+            try {
+                gateway = gatewayFuture.get(GATEWAY_START_JOIN_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException timeout) {
+                throw new IOException("gateway-start-unconfirmed-timeout", timeout);
+            } catch (ExecutionException failed) {
+                if (failed.getCause() instanceof IOException) throw (IOException) failed.getCause();
+                throw new IOException("gateway-start-failed", failed.getCause());
+            }
+        } catch (IOException | InterruptedException | RuntimeException | Error failure) {
+            StopResult cleanup = cleanUpGatewayStart(gatewayExecutor, gatewayFuture,
+                    GATEWAY_CLEANUP_JOIN_TIMEOUT_MS);
+            LAST_FAILED_CLEANUP.put(parameters.instanceId, cleanup);
+            stageTrace.onFailure(assetsReady ? ProductionStageRecorder.Failure.READINESS_FAILED
+                    : ProductionStageRecorder.Failure.CREATE_FAILED);
+            if (cleanup == StopResult.UNCONFIRMED) {
+                timeline.markStopUnconfirmed();
+                Log.w(TAG, "gateway-cleanup-unconfirmed");
+            }
             timeline.finish();
+            if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
             throw failure;
+        } finally {
+            gatewayExecutor.shutdown();
         }
 
         String controlSocket = "droidlayer-control-" + parameters.instanceId;
@@ -756,43 +775,8 @@ public final class QemuInstanceLauncher {
         // Rootless network plane: gvproxy bridges the guest onto the host stack (the
         // packaged QEMU has no slirp; passt is blocked by Android SELinux). Guest
         // addressing rides the kernel command line so distros without a DHCP client
-        // still come up deterministically. W1-04 (R-08): the start ran concurrently
-        // with the bootstrap above; here it is only joined and marked.
-        NetworkGatewayDaemon.Running joinedGateway = null;
-        String gatewayFailureMessage = null;
-        Throwable gatewayFailure = null;
-        try {
-            joinedGateway = gatewayFuture.get(GATEWAY_START_JOIN_TIMEOUT_MS,
-                    java.util.concurrent.TimeUnit.MILLISECONDS);
-        } catch (java.util.concurrent.TimeoutException timeout) {
-            gatewayFailure = timeout;
-            gatewayFailureMessage = "gateway-start-unconfirmed-timeout";
-        } catch (java.util.concurrent.ExecutionException
-                | java.util.concurrent.CancellationException execution) {
-            gatewayFailure = execution;
-            gatewayFailureMessage = "gateway-start-failed";
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            gatewayFailure = interrupted;
-            gatewayFailureMessage = "gateway-start-interrupted";
-        } finally {
-            gatewayExecutor.shutdown();
-        }
-        if (gatewayFailure != null) {
-            // W1-04: one fenced recovery for every gateway-start failure shape —
-            // same failure code, same bounded gateway stop, same honest record.
-            stageTrace.onFailure(ProductionStageRecorder.Failure.READINESS_FAILED);
-            stopStartedGatewayQuietly(gatewayFuture, GATEWAY_CLEANUP_JOIN_TIMEOUT_MS);
-            timeline.finish();
-            Throwable cause = gatewayFailure instanceof java.util.concurrent.ExecutionException
-                    && gatewayFailure.getCause() != null
-                    ? gatewayFailure.getCause() : gatewayFailure;
-            if (cause instanceof IOException) throw (IOException) cause;
-            throw new IOException(gatewayFailureMessage, cause);
-        }
+        // still come up deterministically.
         timeline.mark(LaunchTimeline.Stage.GATEWAY_READY);
-        // Effectively-final snapshot for the lambda-captured launch path below.
-        NetworkGatewayDaemon.Running gateway = joinedGateway;
         java.util.concurrent.atomic.AtomicReference<QemuProcessLauncher.ProcessHandle> startingHandle =
                 new java.util.concurrent.atomic.AtomicReference<>();
         java.util.concurrent.atomic.AtomicReference<Session> startingSession =
@@ -984,46 +968,35 @@ public final class QemuInstanceLauncher {
     }
 
     /**
-     * W1-04 (R-08): bounded failure recovery for the concurrent gateway start.
-     * Joins the start attempt, stops a gateway that did start, and never lets a
-     * half-started orphan gateway survive a failed launch. Best-effort and
-     * honest: an unconfirmable stop or a start thread that misses the bounded
-     * join is logged, not pretended. Returns true when the recovery settled
-     * (nothing to stop, or a started gateway was stopped), false when the join
-     * could not be confirmed.
+     * Queues cleanup on the gateway worker, behind the start. A timeout limits
+     * the caller's wait while the worker retains ownership of any late result.
      */
-    static boolean stopStartedGatewayQuietly(
-            java.util.concurrent.Future<? extends RuntimeGateway> gatewayFuture,
-            long joinTimeoutMs) {
-        RuntimeGateway started;
-        try {
-            started = gatewayFuture.get(joinTimeoutMs,
-                    java.util.concurrent.TimeUnit.MILLISECONDS);
-        } catch (java.util.concurrent.TimeoutException timeout) {
-            // The start thread is still running past the bounded join: interrupt it
-            // and say so. NetworkGatewayDaemon.start owns its own bounded setup, so
-            // this window is the honest residual risk, same class as an
-            // UNCONFIRMED stop elsewhere in the failure path.
-            gatewayFuture.cancel(true);
-            Log.w(TAG, "gateway-cleanup-join-unconfirmed");
-            return false;
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            return false;
-        } catch (java.util.concurrent.ExecutionException
-                | java.util.concurrent.CancellationException failed) {
-            // The start failed or was cancelled: there is no gateway process to stop.
-            return true;
-        }
-        if (started == null) return true;
-        try {
-            if (!started.stop(2000L)) {
-                Log.w(TAG, "launch-cleanup-gateway-unconfirmed");
+    static StopResult cleanUpGatewayStart(ExecutorService gatewayWorker,
+            Future<? extends RuntimeGateway> start, long timeoutMs) {
+        Future<StopResult> cleanup = gatewayWorker.submit(() -> {
+            try {
+                return cleanupFailedLaunch(null, null, start.get());
+            } catch (ExecutionException failed) {
+                // The gateway starter handles cleanup before handing back a handle.
+                return failed.getCause() instanceof NetworkGatewayDaemon.UnconfirmedStartCleanup
+                        ? StopResult.UNCONFIRMED : StopResult.ALREADY_STOPPED;
             }
-            return true;
-        } catch (RuntimeException failure) {
-            Log.w(TAG, "launch-cleanup-gateway-stop-failed");
-            return false;
+        });
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        boolean interrupted = false;
+        try {
+            while (true) {
+                try {
+                    return cleanup.get(Math.max(0L, deadline - System.nanoTime()),
+                            TimeUnit.NANOSECONDS);
+                } catch (InterruptedException retry) {
+                    interrupted = true;
+                }
+            }
+        } catch (TimeoutException | ExecutionException unconfirmed) {
+            return StopResult.UNCONFIRMED;
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
         }
     }
 

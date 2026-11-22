@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella;
 
+import android.os.SystemClock;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 
 /**
  * Thread-safe deep module for managing long-lived Linux terminal sessions.
@@ -28,6 +30,8 @@ import java.util.function.Consumer;
 public final class PersistentTerminalSessionPool {
 
     public enum StopIntent { NONE, GRACEFUL, FORCE }
+
+    enum InputSubmission { ACCEPTED, QUEUE_FULL, UNAVAILABLE }
 
     /** Receives the one-time guest Provisioning marker observed on a session's output stream. */
     @FunctionalInterface
@@ -44,10 +48,8 @@ public final class PersistentTerminalSessionPool {
     /**
      * W1-05 (T-14): lightweight monotonic-clock hooks along the write path, for the
      * Wave 2 real-PTY load tests (input submit → write completion → pump/model
-     * advance). Every timestamp is a {@link System#nanoTime()} value — the same
-     * CLOCK_MONOTONIC family as Android's {@code SystemClock.elapsedRealtimeNanos()},
-     * but also legal inside plain JVM unit tests. A probe is optional: with no probe
-     * set the hooks cost zero allocations and no extra clock reads.
+     * advance). Production timestamps use Android's elapsed-realtime clock.
+     * With no probe set the hooks cost zero allocations and no extra clock reads.
      */
     public interface IoProbe {
         /** A write (user input or protocol reply) entered the bounded write queue. */
@@ -61,6 +63,10 @@ public final class PersistentTerminalSessionPool {
 
         /** The pump thread appended a decoded chunk to the canonical screen model. */
         void onPumpChunkAppended(long monotonicNanos, int chars);
+    }
+
+    private record IoObservation(IoProbe probe, LongSupplier clock) {
+        long now() { return clock.getAsLong(); }
     }
 
     private static final PersistentTerminalSessionPool INSTANCE = new PersistentTerminalSessionPool();
@@ -130,7 +136,7 @@ public final class PersistentTerminalSessionPool {
          * piling up behind a dead pipe until the queue fills.
          */
         private volatile boolean writeStreamBroken;
-        private volatile IoProbe ioProbe;
+        private volatile IoObservation ioObservation;
         private final Object endListenerLock = new Object();
         private final ProvisioningListener provisioningListener;
         private final AtomicBoolean provisioningNotified = new AtomicBoolean(false);
@@ -214,12 +220,7 @@ public final class PersistentTerminalSessionPool {
 
         private void pumpLoop() {
             ProvisioningSignal provisioningSignal = new ProvisioningSignal();
-            // W1-04 (R-08): the same live console stream carries the shell
-            // handover markers, so the launch timeline's T0 → SHELL_READY chain
-            // closes from the only host-side point that observes the guest
-            // console from the first boot byte. Best-effort: engines without a
-            // timeline answer markShellReady() as a no-op.
-            ShellHandoverSignal shellHandover = new ShellHandoverSignal();
+            boolean shellReadyReported = false;
             boolean reachedEof = false;
             try {
                 // One decoder owns the whole stream: read boundaries may split a UTF-8
@@ -235,9 +236,7 @@ public final class PersistentTerminalSessionPool {
                     if (count == 0) continue;
                     String chunk = new String(buffer, 0, count);
                     boolean provisioned = provisioningSignal.accept(chunk);
-                    if (shellHandover.accept(chunk)) {
-                        session.markShellReady();
-                    }
+                    boolean observedFirstPrompt;
                     // Append and deliver under one write lock so attach() snapshots can
                     // never overlap delivery: a chunk is either in the snapshot or handed
                     // to the listener, never both and never neither.
@@ -245,6 +244,7 @@ public final class PersistentTerminalSessionPool {
                     try {
                         ringBuffer.append(chunk);
                         screenModel.append(chunk);
+                        observedFirstPrompt = !shellReadyReported && screenModel.hasObservedShellPrompt();
                         for (Consumer<String> listener : outputListeners) {
                             try {
                                 listener.accept(chunk);
@@ -256,9 +256,12 @@ public final class PersistentTerminalSessionPool {
                     } finally {
                         rwLock.writeLock().unlock();
                     }
-                    // W1-05 (T-14): the canonical screen model advanced by `count` chars.
-                    IoProbe pumpProbe = ioProbe;
-                    if (pumpProbe != null) pumpProbe.onPumpChunkAppended(System.nanoTime(), count);
+                    if (observedFirstPrompt) {
+                        shellReadyReported = true;
+                        session.markShellReady();
+                    }
+                    IoObservation observation = ioObservation;
+                    if (observation != null) observation.probe.onPumpChunkAppended(observation.now(), count);
                     // Persisting evidence touches the filesystem; never do that while the
                     // terminal write lock is held.
                     if (provisioned) notifyProvisioning(ProvisioningSignal.MARKER_VERSION);
@@ -273,11 +276,6 @@ public final class PersistentTerminalSessionPool {
                 // a host-side close is not evidence that the guest finished Provisioning.
                 if (reachedEof && provisioningSignal.finish()) {
                     notifyProvisioning(ProvisioningSignal.MARKER_VERSION);
-                }
-                // W1-04 (R-08): the same end-of-stream rule closes a handover marker
-                // whose trailing whitespace never arrived.
-                if (reachedEof && shellHandover.finish()) {
-                    session.markShellReady();
                 }
                 pumpFinished.set(true);
                 notifySessionEnded();
@@ -351,9 +349,26 @@ public final class PersistentTerminalSessionPool {
             if (writeStreamBroken) {
                 throw new IOException("Terminal input stream failed for instance " + instanceId);
             }
-            if (!offerToWriteQueue(bytes, true)) {
+            boolean accepted;
+            try {
+                accepted = writeQueue.offer(bytes.clone(), WRITE_ENQUEUE_WAIT_MS, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while enqueueing terminal input for instance " + instanceId, interrupted);
+            }
+            reportOffer(bytes.length, accepted);
+            if (!accepted) {
                 throw new IOException("Terminal write queue saturated for instance " + instanceId);
             }
+        }
+
+        /** UI entry point. Returns immediately when the PTY queue has no room. */
+        InputSubmission trySendBytes(byte[] bytes) {
+            if (!isAlive() || writeStreamBroken) return InputSubmission.UNAVAILABLE;
+            if (bytes == null || bytes.length == 0) return InputSubmission.ACCEPTED;
+            boolean accepted = writeQueue.offer(bytes.clone());
+            reportOffer(bytes.length, accepted);
+            return accepted ? InputSubmission.ACCEPTED : InputSubmission.QUEUE_FULL;
         }
 
         /**
@@ -364,53 +379,26 @@ public final class PersistentTerminalSessionPool {
          * the pump keeps draining the guest output either way.
          */
         private void enqueueResponseBytes(byte[] bytes) {
-            if (writeStreamBroken) {
-                IoProbe probe = ioProbe;
-                if (probe != null) probe.onWriteDropped(System.nanoTime(), bytes.length, writeQueue.size());
-                return;
-            }
-            try {
-                offerToWriteQueue(bytes, false);
-            } catch (IOException unreachable) {
-                // A non-blocking offer never waits, so it cannot be interrupted;
-                // treat any IOException defensively as a drop so the pump thread
-                // never dies on an unexpected failure.
-                IoProbe probe = ioProbe;
-                if (probe != null) probe.onWriteDropped(System.nanoTime(), bytes.length, writeQueue.size());
-            }
+            reportOffer(bytes.length, isAlive() && !writeStreamBroken && writeQueue.offer(bytes));
         }
 
-        /**
-         * Shared enqueue primitive: offers the bytes to the bounded write queue and
-         * reports the outcome on the probe. The timestamp is taken after the offer
-         * settles, so {@code onWriteSubmitted} consistently means "entered the
-         * queue". Returns false when the queue had no room; the caller decides
-         * whether that is a drop (protocol replies) or a failure (user input).
-         */
-        private boolean offerToWriteQueue(byte[] bytes, boolean waitForRoom) throws IOException {
-            boolean accepted;
-            if (waitForRoom) {
-                try {
-                    accepted = writeQueue.offer(bytes, WRITE_ENQUEUE_WAIT_MS, TimeUnit.MILLISECONDS);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Interrupted while enqueueing terminal input for instance " + instanceId);
-                }
-            } else {
-                accepted = writeQueue.offer(bytes);
-            }
-            IoProbe probe = ioProbe;
+        private void reportOffer(int bytes, boolean accepted) {
+            IoObservation observation = ioObservation;
+            if (observation == null) return;
             if (accepted) {
-                if (probe != null) probe.onWriteSubmitted(System.nanoTime(), bytes.length, writeQueue.size());
-            } else if (probe != null) {
-                probe.onWriteDropped(System.nanoTime(), bytes.length, writeQueue.size());
+                observation.probe.onWriteSubmitted(observation.now(), bytes, writeQueue.size());
+            } else {
+                observation.probe.onWriteDropped(observation.now(), bytes, writeQueue.size());
             }
-            return accepted;
         }
 
         /** Sets (or clears with {@code null}) the diagnostic probe for this holder. */
         public void setIoProbe(IoProbe probe) {
-            this.ioProbe = probe;
+            setIoProbe(probe, SystemClock::elapsedRealtimeNanos);
+        }
+
+        void setIoProbe(IoProbe probe, LongSupplier clock) {
+            this.ioObservation = probe == null ? null : new IoObservation(probe, clock);
         }
 
         /**
@@ -430,7 +418,9 @@ public final class PersistentTerminalSessionPool {
                 try {
                     bytes = writeQueue.poll(WRITE_POLL_MS, TimeUnit.MILLISECONDS);
                 } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
+                    // The poll cleared the flag. Reject future writes and drain
+                    // the remaining jobs as dropped instead of polling in a spin.
+                    writeStreamBroken = true;
                     continue;
                 }
                 if (bytes == null) {
@@ -438,21 +428,21 @@ public final class PersistentTerminalSessionPool {
                     continue;
                 }
                 if (writeStreamBroken) {
-                    IoProbe probe = ioProbe;
-                    if (probe != null) probe.onWriteDropped(System.nanoTime(), bytes.length, writeQueue.size());
+                    reportOffer(bytes.length, false);
                     continue;
                 }
                 try {
                     OutputStream out = session.terminalInput();
-                    if (out == null) continue;
-                    IoProbe probe = ioProbe;
-                    long start = probe != null ? System.nanoTime() : 0L;
+                    if (out == null) throw new IOException("Terminal input unavailable");
+                    IoObservation observation = ioObservation;
+                    long start = observation != null ? observation.now() : 0L;
                     synchronized (out) {
                         out.write(bytes);
                         out.flush();
                     }
-                    if (probe != null) {
-                        probe.onWriteCompleted(System.nanoTime(), bytes.length, System.nanoTime() - start);
+                    if (observation != null) {
+                        long end = observation.now();
+                        observation.probe.onWriteCompleted(end, bytes.length, end - start);
                     }
                 } catch (IOException | RuntimeException writeFailure) {
                     // The PTY input stream is gone (or the guest stalled until the
@@ -460,8 +450,7 @@ public final class PersistentTerminalSessionPool {
                     // failure visible on the probe (no android.util dependency: this
                     // thread also runs inside plain JVM unit tests).
                     writeStreamBroken = true;
-                    IoProbe probe = ioProbe;
-                    if (probe != null) probe.onWriteDropped(System.nanoTime(), bytes.length, writeQueue.size());
+                    reportOffer(bytes.length, false);
                 }
             }
         }

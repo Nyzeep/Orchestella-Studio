@@ -116,12 +116,7 @@ public class TerminalActivity extends ComponentActivity {
     private MultiTerminalSessionManager multiManager;
     private final java.util.concurrent.atomic.AtomicBoolean sessionDeathHandled =
             new java.util.concurrent.atomic.AtomicBoolean(false);
-    private final java.util.concurrent.ExecutorService sendExecutor =
-            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "terminal-send-queue");
-                t.setDaemon(true);
-                return t;
-            });
+    private long nextInputNoticeAt;
     private final java.util.concurrent.ExecutorService terminalBgExecutor =
             java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
                 Thread t = new Thread(r, "terminal-bg-decode");
@@ -179,6 +174,11 @@ public class TerminalActivity extends ComponentActivity {
             @Override
             public void sendBytes(byte[] bytes) {
                 sendRaw(bytes);
+            }
+
+            @Override
+            public boolean trySendBytes(byte[] bytes) {
+                return sendRaw(bytes);
             }
         };
         terminalView.setInputSink(inputSink);
@@ -736,7 +736,6 @@ public class TerminalActivity extends ComponentActivity {
         detachTerminalListener();
         terminalConnected = false;
         if (ui != null) ui.removeCallbacksAndMessages(null);
-        sendExecutor.shutdownNow();
         terminalBgExecutor.shutdownNow();
         // G-10：直启解析 executor 与同族 executor 一并关闭；在途投递由 cancel 失效。
         directLaunchExecutor.shutdownNow();
@@ -865,30 +864,27 @@ public class TerminalActivity extends ComponentActivity {
         // W1-05 (T-14): the buffer above is bounded (PENDING_OUTPUT_BUDGET_CHARS);
         // the canonical screen model in the pool never drops bytes, only this
         // render/ring-buffer path keeps the newest tail under a stalled UI thread.
-        final StringBuilder pendingOutput = new StringBuilder();
+        final TerminalRingBuffer pendingOutput = new TerminalRingBuffer(PENDING_OUTPUT_BUDGET_CHARS);
         final boolean[] outputScheduled = {false};
-        final int[] droppedOutputChars = {0};
+        final long[] droppedOutputChars = {0};
         // One marker per flood episode: re-armed only after a clean tick, so a
         // sustained flood does not stamp the transcript every flush interval.
         final boolean[] truncationMarked = {false};
         terminalOutputListener = chunk -> {
             if (chunk == null || chunk.isEmpty()) return;
             synchronized (pendingOutput) {
+                droppedOutputChars[0] += Math.max(0L,
+                        (long) pendingOutput.length() + chunk.length() - PENDING_OUTPUT_BUDGET_CHARS);
                 pendingOutput.append(chunk);
-                int excess = pendingOutput.length() - PENDING_OUTPUT_BUDGET_CHARS;
-                if (excess > 0) {
-                    pendingOutput.delete(0, excess);
-                    droppedOutputChars[0] += excess;
-                }
                 if (outputScheduled[0]) return;
                 outputScheduled[0] = true;
             }
             ui.post(() -> {
-                int dropped;
+                long dropped;
                 String batch;
                 synchronized (pendingOutput) {
-                    batch = pendingOutput.toString();
-                    pendingOutput.setLength(0);
+                    batch = pendingOutput.snapshot();
+                    pendingOutput.clear();
                     dropped = droppedOutputChars[0];
                     droppedOutputChars[0] = 0;
                     outputScheduled[0] = false;
@@ -915,7 +911,7 @@ public class TerminalActivity extends ComponentActivity {
                     }
                     active.appendOutput(batch);
                 }
-                terminalView.appendOutput(batch);
+                terminalView.requestSessionRender();
                 LogViewerActivity.appendGuestConsole(this, boundInstanceId, batch);
             });
         };
@@ -1333,24 +1329,27 @@ public class TerminalActivity extends ComponentActivity {
         }
     }
 
-    private void sendRaw(byte[] bytes) {
-        if (!terminalConnected || instanceId == null || bytes == null || bytes.length == 0 || sendExecutor.isShutdown()) return;
-        final PersistentTerminalSessionPool.SessionHolder target = attachedHolder;
-        final int generation = bindingGeneration;
-        final byte[] payload = bytes.clone();
-        if (target == null) return;
-        sendExecutor.execute(() -> {
-            try {
-                // Bind to the holder at enqueue time. A queued key can never reach a newly
-                // selected instance or a restarted shell with the same instance ID.
-                target.sendBytes(payload);
-            } catch (Exception e) {
-                if (ui != null) ui.post(() -> {
-                    if (generation == bindingGeneration && sessionDeathHandled.compareAndSet(false, true))
-                        reconcileAndConnect();
-                });
-            }
-        });
+    private boolean sendRaw(byte[] bytes) {
+        PersistentTerminalSessionPool.SessionHolder target = attachedHolder;
+        if (!terminalConnected || target == null || bytes == null) return false;
+        // Admission is immediate on the UI thread. The holder owns the only
+        // queue, so stale keys cannot accumulate in an Activity executor.
+        PersistentTerminalSessionPool.InputSubmission result = target.trySendBytes(bytes);
+        if (result == PersistentTerminalSessionPool.InputSubmission.ACCEPTED) return true;
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (now >= nextInputNoticeAt) {
+            nextInputNoticeAt = now + 2_000L;
+            int message = result == PersistentTerminalSessionPool.InputSubmission.QUEUE_FULL
+                    ? R.string.terminal_input_queue_full : R.string.terminal_input_unavailable;
+            android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show();
+        }
+        if (result == PersistentTerminalSessionPool.InputSubmission.UNAVAILABLE && !target.isAlive()
+                && sessionDeathHandled.compareAndSet(false, true)) {
+            ui.post(() -> {
+                if (attachedHolder == target) reconcileAndConnect();
+            });
+        }
+        return false;
     }
 
     private void scheduleTerminalResize() {

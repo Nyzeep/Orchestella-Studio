@@ -44,15 +44,19 @@ public final class TerminalScreenModel {
     private boolean oscString;
     private boolean oscOverflow;
     private final StringBuilder osc = new StringBuilder();
+    private boolean shellPromptObserved;
     private long displayEpoch;
 
     public synchronized long displayEpoch() { return displayEpoch; }
+
+    /** True after this stream's first complete integrated prompt. */
+    public synchronized boolean hasObservedShellPrompt() { return shellPromptObserved; }
 
     /** Local visible-history action; no cursor reset, process input or shell history mutation. */
     public synchronized boolean clearVisibleHistory() {
         if (screen == alternate) return false;
         history.clear(); historyCells = 0; evictedHistoryRows = 0;
-        if (commandTranscript != null) commandTranscript.clearVisibleHistory(true);
+        if (commandTranscript != null) commandTranscript.clearVisibleHistory(true, false);
         displayEpoch++;
         return true;
     }
@@ -172,8 +176,9 @@ public final class TerminalScreenModel {
                     if (codePoint == 7) commandTranscript.accept(7);
                     else { commandTranscript.accept(27); commandTranscript.accept('\\'); }
                 }
-                if (oscString && !oscOverflow && commandTranscript != null && screen == primary)
-                    commandTranscript.marker(osc.toString(), snapshot());
+                if (oscString && !oscOverflow && commandTranscript != null && screen == primary) {
+                    shellPromptObserved |= commandTranscript.marker(osc.toString(), snapshot());
+                }
                 state = 0; osc.setLength(0); oscString = oscOverflow = false;
             } else if (codePoint == 27) state = 4;
             else {
@@ -206,7 +211,7 @@ public final class TerminalScreenModel {
                     ShellCommandTranscript retainedCommands = commandTranscript;
                     reset();
                     // A user-requested terminal reset starts a new visible display epoch.
-                    if (retainedCommands != null) retainedCommands.clearVisibleHistory(false);
+                    if (retainedCommands != null) retainedCommands.clearVisibleHistory(false, true);
                     commandTranscript = retainedCommands;
                     break;
                 default: break;
@@ -449,7 +454,7 @@ public final class TerminalScreenModel {
             history.clear(); historyCells = 0;
             if (screen == primary && commandTranscript != null && commandTranscript.enabled()) {
                 // 3J 只清回看，编辑中的输入必须留下来。
-                commandTranscript.clearVisibleHistory(true);
+                commandTranscript.clearVisibleHistory(true, false);
                 displayEpoch++;
             }
             return;
@@ -461,7 +466,7 @@ public final class TerminalScreenModel {
                     && commandTranscript != null && commandTranscript.enabled() && commandTranscript.isEditingPrompt()) {
                 // Readline 的 Ctrl+L 就是 HOME + 2J。此前这里丢弃编辑态，
                 // 随后的 133;C 落到 BETWEEN 被丢弃，PS2 的 "> " 变成裸文本残留。
-                commandTranscript.clearVisibleHistory(true);
+                commandTranscript.clearVisibleHistory(true, true);
                 displayEpoch++;
             }
             for (int row = 0; row < rows; row++) screen.lines[row] = blankLine();
@@ -472,7 +477,7 @@ public final class TerminalScreenModel {
             // redraws keep their existing grid and semantic-history behavior.
             if (screen == primary && screen.row == 0 && screen.column == 0
                     && commandTranscript != null && commandTranscript.enabled()) {
-                commandTranscript.clearVisibleHistory(true);
+                commandTranscript.clearVisibleHistory(true, true);
                 displayEpoch++;
             }
             eraseLine(0);

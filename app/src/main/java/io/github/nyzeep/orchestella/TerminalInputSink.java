@@ -12,6 +12,12 @@ public interface TerminalInputSink {
      */
     void sendBytes(byte[] bytes);
 
+    /** Returns false when a bounded input transport cannot accept the payload. */
+    default boolean trySendBytes(byte[] bytes) {
+        sendBytes(bytes);
+        return true;
+    }
+
     /**
      * Helper method to send UTF-8 encoded text string.
      */

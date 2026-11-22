@@ -350,14 +350,14 @@ def check_notice_uml_consistency(archive: zipfile.ZipFile) -> list[Problem]:
     must never disagree", so the fullpkg smoke enforces exactly that, in both
     directions: every entry the packaged notice declares (the libuml_* native
     libraries and the Alpine rootfs tar) must be really shipped, and every
-    shipped `lib/<abi>/libuml_*` entry must be declared. The notice carries
+    shipped UML library and the pinned rootfs tar must be declared. The notice carries
     no digests, so this check is presence/declaration-level — the digest
     proof stays with the accounting manifests — and it only appends problems,
     no Verified. Missing notice, unreadable notice, or any disagreement all
     fail closed.
     """
     problems: list[Problem] = []
-    names = archive.namelist()
+    names = set(archive.namelist())
     if NOTICE_UML_ENTRY not in names:
         problems.append(Problem(
             NOTICE_UML_ENTRY,
@@ -370,20 +370,15 @@ def check_notice_uml_consistency(archive: zipfile.ZipFile) -> list[Problem]:
         problems.append(Problem(NOTICE_UML_ENTRY, f"unreadable notice text: {exc}"))
         return problems
     declared_libs, declared_tars = parse_notice_uml_entries(text)
-    for entry in sorted(declared_libs | declared_tars):
-        if entry not in names:
-            problems.append(Problem(
-                entry,
-                f"declared by {NOTICE_UML_ENTRY} but missing from the APK "
-                "(the notice and the shipped payload must never disagree)",
-            ))
-    for entry in sorted(names):
-        if _APK_UML_LIB_ENTRY.match(entry) and entry not in declared_libs:
-            problems.append(Problem(
-                entry,
-                f"shipped in the APK but not declared by {NOTICE_UML_ENTRY} "
-                "(the GPL notice of record is incomplete)",
-            ))
+    declared = declared_libs | declared_tars
+    shipped = {entry for entry in names if _APK_UML_LIB_ENTRY.match(entry)}
+    shipped.update(names & {FULLPKG_ROOTFS_TAR})
+    for entry in sorted(declared - names):
+        problems.append(Problem(entry, f"declared by {NOTICE_UML_ENTRY} but missing from the APK "
+                                      "(the notice and the shipped payload must never disagree)"))
+    for entry in sorted(shipped - declared):
+        problems.append(Problem(entry, f"shipped in the APK but not declared by {NOTICE_UML_ENTRY} "
+                                      "(the GPL notice of record is incomplete)"))
     return problems
 
 

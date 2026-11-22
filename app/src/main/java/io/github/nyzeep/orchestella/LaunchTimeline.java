@@ -17,6 +17,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.LongSupplier;
 
 /**
  * Records the ordered stages of one QEMU launch and appends one structured
@@ -55,11 +56,8 @@ public final class LaunchTimeline {
         QEMU_STARTED,
         SESSION_REGISTERED,
         /**
-         * W1-04 (R-08): the host observed the guest shell handover on the
-         * terminal stream (the guest init hands the console to the shell), the
-         * closest honest host-side proxy for "first prompt/command echo is
-         * ready". Closes the T0 → SHELL_READY chain next to SESSION_REGISTERED
-         * so the QEMU fast path and a future UML engine compare on one schema.
+         * The terminal pump observed the first complete integrated shell prompt.
+         * Absent when the guest does not emit the prompt markers.
          */
         SHELL_READY,
         STOP_REQUESTED,
@@ -124,13 +122,13 @@ public final class LaunchTimeline {
         this.sink = Objects.requireNonNull(sink, "sink");
     }
 
-    /** Opens the production recorder appending to the instance runtime directory. */
+    /** Opens a recorder using the host's elapsed-realtime clock in nanoseconds. */
     public static LaunchTimeline open(Path runtimeDirectory, String instanceId, String distroId,
-            int guestMemoryMb, int vcpuCount) {
+            int guestMemoryMb, int vcpuCount, LongSupplier elapsedRealtimeNanos) {
         Objects.requireNonNull(runtimeDirectory, "runtimeDirectory");
         Path file = runtimeDirectory.resolve(FILE_NAME);
         return new LaunchTimeline(instanceId, distroId, guestMemoryMb, vcpuCount,
-                monotonicClock(), line -> {
+                monotonicClock(elapsedRealtimeNanos), line -> {
                     Files.createDirectories(runtimeDirectory);
                     // Files.write keeps this usable on API 26 without desugaring java.nio.file additions.
                     Files.write(file, (line + "\n").getBytes(StandardCharsets.UTF_8),
@@ -138,15 +136,8 @@ public final class LaunchTimeline {
                 });
     }
 
-    /**
-     * W1-04 (R-08): one monotonic clock per launch. The recorder only ever
-     * consumes relative elapsed time between marks on the same clock, so the
-     * production recorder anchors {@link System#nanoTime()} (the JVM-portable
-     * monotonic source, same domain as {@code SystemClock.elapsedRealtimeNanos()})
-     * at open time; absolute instants never leave this class. Injected fake
-     * clocks in tests keep full control of the timeline's clock.
-     */
-    private static Clock monotonicClock() {
+    /** Only differences between these instants are consumed or serialized. */
+    private static Clock monotonicClock(LongSupplier elapsedRealtimeNanos) {
         return new Clock() {
             @Override public ZoneId getZone() {
                 return ZoneOffset.UTC;
@@ -157,7 +148,7 @@ public final class LaunchTimeline {
             }
 
             @Override public Instant instant() {
-                return Instant.ofEpochSecond(0L, System.nanoTime());
+                return Instant.ofEpochSecond(0L, elapsedRealtimeNanos.getAsLong());
             }
         };
     }

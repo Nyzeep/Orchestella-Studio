@@ -453,6 +453,14 @@ class FullpkgSmokeTest(unittest.TestCase):
         self.assertEqual("fail", result.status)
         self.assertTrue(any(NOTICE_UML_ENTRY in p.entry for p in result.problems))
 
+    def test_undeclared_rootfs_fails_even_when_the_manifest_matches_the_apk(self) -> None:
+        entries = self._fullpkg_entries()
+        entries[NOTICE_UML_ENTRY] = entries[NOTICE_UML_ENTRY].replace(ROOTFS_ENTRY.encode(), b"")
+        result = gate.check_apk(self._apk(entries), False, True)
+        self.assertEqual("fail", result.status)
+        self.assertEqual([ROOTFS_ENTRY], [problem.entry for problem in result.problems])
+        self.assertIn(NOTICE_UML_ENTRY, result.problems[0].reason)
+
     def test_missing_net_helper_entry_fails(self) -> None:
         entries = self._fullpkg_entries()
         del entries[PASST_ENTRY]

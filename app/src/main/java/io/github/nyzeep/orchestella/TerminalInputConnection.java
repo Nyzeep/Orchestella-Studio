@@ -64,8 +64,7 @@ public class TerminalInputConnection implements InputConnection {
         // ESC must not be able to terminate a bracketed paste early.
         value = value.replace("\u001b", "");
         if (bracketedPaste.getAsBoolean()) value = "\u001b[200~" + value + "\u001b[201~";
-        sink.sendBytes(value.getBytes(StandardCharsets.UTF_8));
-        return true;
+        return sink.trySendBytes(value.getBytes(StandardCharsets.UTF_8));
     }
 
     public TerminalInputConnection(TerminalInputSink sink, StickyModifierStateMachine stickyStateMachine) {

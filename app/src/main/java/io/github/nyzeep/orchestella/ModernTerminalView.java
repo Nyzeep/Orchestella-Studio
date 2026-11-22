@@ -12,6 +12,7 @@ import android.os.Looper;
 import android.text.Layout;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
+import android.text.TextPaint;
 import android.text.style.BackgroundColorSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
@@ -41,6 +42,7 @@ public class ModernTerminalView extends ScrollView {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private TerminalScreenModel screen = new TerminalScreenModel(80, 24);
     private boolean sessionScreen;
+    private boolean sessionRenderPending;
     private final java.util.concurrent.ConcurrentLinkedQueue<String> pendingChunks =
             new java.util.concurrent.ConcurrentLinkedQueue<>();
     private final java.util.concurrent.atomic.AtomicBoolean flushScheduled =
@@ -118,6 +120,7 @@ public class ModernTerminalView extends ScrollView {
         lastDisplayEpoch = screen.displayEpoch();
         lastEvictedHistoryRows = screen.displaySnapshot().evictedHistoryRows;
         pendingChunks.clear();
+        sessionRenderPending = false;
         mainHandler.removeCallbacks(flushTask);
         flushScheduled.set(false);
         if (!sessionScreen) screen.setResponseSink(response -> {
@@ -369,8 +372,10 @@ public class ModernTerminalView extends ScrollView {
 
     private void updateTerminalSize() {
         if (transcriptView == null || getWidth() <= 0 || getHeight() <= 0) return;
-        float cellWidth = transcriptView.getPaint().measureText("M")
-                + transcriptView.getLetterSpacing() * transcriptView.getTextSize();
+        // Measure the additional mono cell with the TextView's active paint.
+        // Differencing cancels edge spacing and includes inter-cell tracking once.
+        TextPaint paint = transcriptView.getPaint();
+        float cellWidth = Layout.getDesiredWidth("MM", paint) - Layout.getDesiredWidth("M", paint);
         int width = getWidth() - getPaddingLeft() - getPaddingRight()
                 - transcriptView.getPaddingLeft() - transcriptView.getPaddingRight();
         int height = getHeight() - getPaddingTop() - getPaddingBottom()
@@ -389,6 +394,12 @@ public class ModernTerminalView extends ScrollView {
     public void appendOutput(String text) {
         if (text == null || text.isEmpty()) return;
         pendingChunks.offer(text);
+        if (flushScheduled.compareAndSet(false, true)) mainHandler.postDelayed(flushTask, FLUSH_INTERVAL_MS);
+    }
+
+    /** UI-thread repaint request for a screen already advanced by its PTY pump. */
+    void requestSessionRender() {
+        sessionRenderPending = true;
         if (flushScheduled.compareAndSet(false, true)) mainHandler.postDelayed(flushTask, FLUSH_INTERVAL_MS);
     }
 
@@ -415,7 +426,8 @@ public class ModernTerminalView extends ScrollView {
     private void flushPendingOutput() {
         flushScheduled.set(false);
         String chunk;
-        boolean changed = false;
+        boolean changed = sessionRenderPending;
+        sessionRenderPending = false;
         while ((chunk = pendingChunks.poll()) != null) {
             // Session screens share a model that their owner already writes to:
             // PersistentTerminalSessionPool.pumpLoop() appends every PTY chunk to the

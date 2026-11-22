@@ -31,6 +31,13 @@ import java.util.regex.Pattern;
 
 /** Owns the packaged gvproxy gateway and its private forwarding API for one QEMU instance. */
 public final class NetworkGatewayDaemon {
+    /** Startup failed after spawning a process whose exit could not be verified. */
+    static final class UnconfirmedStartCleanup extends IOException {
+        UnconfirmedStartCleanup(Throwable cause) {
+            super("gateway-start-cleanup-unconfirmed", cause);
+        }
+    }
+
     public static final class Running implements RuntimeGateway {
         public final String unixSocketPath;
         public final int tcpPort;
@@ -193,6 +200,7 @@ public final class NetworkGatewayDaemon {
         if (!runtimePath.startsWith(privateRoot) || runtimePath.equals(privateRoot)) {
             throw new IOException("gateway runtime must be app-private");
         }
+        Files.createDirectories(runtimePath);
         // Keep the pathname below sockaddr_un's limit even with a full UUID runtime directory.
         Path apiRoot = privateRoot.resolve("net-api");
         Path apiDirectory = apiRoot.resolve(Integer.toUnsignedString(instanceId.hashCode(), 16));
@@ -223,23 +231,24 @@ public final class NetworkGatewayDaemon {
 
         Process process = new ProcessBuilder(gvproxyPath, "-config", configFile.getAbsolutePath())
                 .redirectErrorStream(true).start();
-        Thread logger = new Thread(() -> {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) Log.d(TAG, line);
-            } catch (IOException ignored) {
-                // The log pump dies with the gvproxy process: readLine failing here is the
-                // expected teardown, not a gateway failure of its own.
-            }
-        }, "gvproxy-log-" + instanceId);
-        logger.setDaemon(true);
-        logger.start();
         ForwardingEngine engine = new ForwardingEngine(
                 (method, endpoint, body) -> unixRequest(apiSocket, method, endpoint, body), process::isAlive);
+        Running running = new Running(configFile.getAbsolutePath(), port,
+                process, instanceId, apiSocket, engine);
         String stage = "services-socket";
         int probes = 0;
         IOException lastProbeFailure = null;
         try {
+            Thread logger = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) Log.d(TAG, line);
+                } catch (IOException ignored) {
+                    // The process closes its output stream during teardown.
+                }
+            }, "gvproxy-log-" + instanceId);
+            logger.setDaemon(true);
+            logger.start();
             long deadline = android.os.SystemClock.elapsedRealtime() + SOCKET_WAIT_MILLIS;
             while (android.os.SystemClock.elapsedRealtime() < deadline) {
                 if (!process.isAlive()) throw new IOException("gvproxy exited during startup");
@@ -258,10 +267,8 @@ public final class NetworkGatewayDaemon {
                                     throw new IOException("configured forward was not installed");
                                 }
                             }
-                            Running running = new Running(configFile.getAbsolutePath(), port,
-                                    process, instanceId, apiSocket, engine);
-                            LIVE.put(instanceId, running);
                             Log.i(TAG, "gateway-ready api=200 forwards=" + engine.appliedCount() + " probes=" + probes);
+                            LIVE.put(instanceId, running);
                             return running;
                         }
                     } catch (ApiTransportFailure transientFailure) {
@@ -280,10 +287,14 @@ public final class NetworkGatewayDaemon {
                 }
             }
             throw new IOException("gateway API did not become ready at " + stage, lastProbeFailure);
-        } catch (IOException failure) {
+        } catch (IOException | RuntimeException | Error failure) {
+            if (!running.stop(0)) {
+                // Keep the slot fenced while the process still owns its listener.
+                LIVE.put(instanceId, running);
+                throw new UnconfirmedStartCleanup(failure);
+            }
             Log.w(TAG, "gateway-start-failed stage=" + stage + " probes=" + probes
                     + " reason=" + diagnosticReason(failure));
-            terminateProcess(process, 0, FORCE_WAIT_MS);
             try { Files.deleteIfExists(apiSocket.toPath()); }
             catch (IOException cleanupFailure) { failure.addSuppressed(cleanupFailure); }
             throw failure;
@@ -496,7 +507,7 @@ public final class NetworkGatewayDaemon {
         }
     }
 
-    private static String diagnosticReason(IOException failure) {
+    private static String diagnosticReason(Throwable failure) {
         String message = failure.getMessage();
         // These are local parser/stage diagnostics, never response bodies or guest data.
         if (message != null && message.matches("(?:gvproxy-api-|gateway |invalid gateway |configured forward |unknown forwarding |duplicate forwarding |invalid forwarding )[A-Za-z0-9 ._-]{0,100}")) {

@@ -59,10 +59,8 @@ public interface ExecutionSession {
     }
 
     /**
-     * W1-04 (R-08): the terminal pump observed the guest shell handover, so the
-     * launch timeline may close its T0 → SHELL_READY chain. Best-effort and
-     * once-per-launch: engines without a launch timeline (and every strategy
-     * that predates this stage) accept the call as a no-op.
+     * The terminal pump observed the first complete integrated shell prompt.
+     * Engines can record this once per launch on their launch timeline.
      */
     default void markShellReady() {
     }

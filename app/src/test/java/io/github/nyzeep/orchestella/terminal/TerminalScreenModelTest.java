@@ -259,8 +259,7 @@ public final class TerminalScreenModelTest {
     /**
      * 命令块只用字重强调（反色块已删除，用户反馈"不要用高亮色块框住指令"）。
      * 终端默认字号 14sp 属于 WCAG 2.2 SC 1.4.3 的普通正文，命令文字必须 >= 4.5:1。
-     * ShellCommandTranscript 显式传入主题前景色（fg != null），绕过 bold 触发的
-     * softenForeground() 25% 向背景柔化——因此命令对比度必须与主题正文自身持平。
+     * 命令 span 使用当前主题前景色，粗体日志仍按原规则柔化。
      * 调色板自身不合格（如前景=背景）时直接断言失败，不再静默跳过或降级到 3.0。
      */
     @Test public void commandIsBoldWithoutInverseBlockOnLightAndDarkThemes() {
@@ -289,6 +288,23 @@ public final class TerminalScreenModelTest {
                 assertTrue("Command contrast=" + inkContrast, inkContrast >= 4.5);
             }
         } finally { DraculaPalette.setPaletteOverride(null, 0, 0); }
+    }
+
+    @Test public void archivedCommandRecolorsWithTheTheme() {
+        try {
+            DraculaPalette.setPaletteOverride(new int[16], 0xfff8f8f2, 0xff282a36);
+            TerminalScreenModel model = new TerminalScreenModel(40, 6);
+            prompt(model);
+            model.append("echo recolor\r\n" + commandMarker("echo recolor") + marker("D;0"));
+
+            DraculaPalette.setPaletteOverride(new int[16], 0xff1f1f1f, 0xfff5f5f5);
+            TerminalSpan archived = model.displaySnapshot().spans.stream()
+                    .filter(span -> span.getText().equals("echo recolor")).findFirst().get();
+            assertEquals(DraculaPalette.themedForeground(), archived.getEffectiveForegroundColor());
+            assertTrue(contrast(archived.getEffectiveForegroundColor(), DraculaPalette.themedBackground()) >= 4.5);
+        } finally {
+            DraculaPalette.setPaletteOverride(null, 0, 0);
+        }
     }
 
     private static double contrast(int a, int b) {
@@ -433,6 +449,29 @@ public final class TerminalScreenModelTest {
                 1, countOf(rendered, "echo red \\"));
         assertTrue(rendered.contains("echo red \\\nblue"));
         assertTrue(rendered.contains("RED\nBLUE"));
+    }
+
+    @Test public void clearingOnlyHistoryPreservesAVisibleContinuationWithoutRedraw() {
+        for (boolean guestClear : new boolean[]{false, true}) {
+            TerminalScreenModel model = new TerminalScreenModel(60, 6);
+            prompt(model);
+            model.append("cat \\\r\n"
+                    + marker("B;continuation=1") + "> " + marker("B;continuation=2"));
+            if (guestClear) model.append("\u001b[3J");
+            else model.clearVisibleHistory();
+            model.append("continued\r\n" + commandMarker("cat \\\ncontinued") + marker("D;0"));
+            String text = model.displaySnapshot().text();
+            assertEquals(1, countOf(text, "cat \\"));
+            assertEquals(0, countOf(text, ">"));
+        }
+    }
+
+    @Test public void trailingCommandBlanksDoNotDuplicateTheEcho() {
+        TerminalScreenModel model = new TerminalScreenModel(60, 6);
+        prompt(model);
+        model.append("echo blanks  \r\n" + commandMarker("echo blanks  ") + marker("D;0"));
+        assertEquals(1, countOf(model.displaySnapshot().text(), "echo blanks"));
+        assertEquals("echo blanks  ", highlightedCommand(model.displaySnapshot()));
     }
 
     @Test public void payloadlessCommandBoundaryKeepsInputLineAsPlainVtText() {

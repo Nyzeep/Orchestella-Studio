@@ -345,18 +345,18 @@ public final class LaunchTimelineTest {
     }
 
     @Test
-    public void productionOpenUsesAMonotonicClockSource() throws Exception {
+    public void fileRecorderUsesTheSuppliedElapsedRealtimeClock() throws Exception {
         Path runtimeDirectory = temporaryFolder.newFolder("monotonic").toPath();
+        java.util.concurrent.atomic.AtomicLong nanos = new java.util.concurrent.atomic.AtomicLong(1_000_000_000L);
         LaunchTimeline timeline = LaunchTimeline.open(
-                runtimeDirectory, INSTANCE_ID, DISTRO_ID, 2048, 2);
+                runtimeDirectory, INSTANCE_ID, DISTRO_ID, 2048, 2, nanos::get);
         timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        nanos.addAndGet(3_000_000L);
         timeline.mark(LaunchTimeline.Stage.ASSETS_VERIFIED);
-        Thread.sleep(15);
+        nanos.addAndGet(15_000_000L);
         timeline.mark(LaunchTimeline.Stage.SHELL_READY);
-        assertTrue("the production clock must be monotonic: later marks never precede earlier ones",
-                timeline.elapsedMs(LaunchTimeline.Stage.SHELL_READY)
-                        >= timeline.elapsedMs(LaunchTimeline.Stage.ASSETS_VERIFIED));
-        assertTrue(timeline.elapsedMs(LaunchTimeline.Stage.SHELL_READY) >= 0);
+        assertEquals(3L, timeline.elapsedMs(LaunchTimeline.Stage.ASSETS_VERIFIED));
+        assertEquals(18L, timeline.elapsedMs(LaunchTimeline.Stage.SHELL_READY));
         timeline.markStopConfirmed(StopResult.CONFIRMED);
         assertTrue(timeline.finish());
     }
@@ -394,15 +394,13 @@ public final class LaunchTimelineTest {
     @Test
     public void appendSinkWritesExactlyOneJsonLinePerLaunch() throws Exception {
         Path runtimeDirectory = temporaryFolder.newFolder("runtime").toPath();
-        FakeClock clock = new FakeClock(Instant.parse("2026-10-18T08:00:00Z"));
-
-        LaunchTimeline first = LaunchTimeline.open(runtimeDirectory, INSTANCE_ID, DISTRO_ID, 2048, 2);
+        LaunchTimeline first = LaunchTimeline.open(runtimeDirectory, INSTANCE_ID, DISTRO_ID, 2048, 2, System::nanoTime);
         first.mark(LaunchTimeline.Stage.LAUNCH_START);
         first.markStopConfirmed(StopResult.CONFIRMED);
         assertTrue(first.finish());
         assertFalse(first.finish());
 
-        LaunchTimeline second = LaunchTimeline.open(runtimeDirectory, "instance-8b1c", "debian", 1024, 1);
+        LaunchTimeline second = LaunchTimeline.open(runtimeDirectory, "instance-8b1c", "debian", 1024, 1, System::nanoTime);
         second.mark(LaunchTimeline.Stage.LAUNCH_START);
         second.markStopConfirmed(StopResult.ALREADY_STOPPED);
         assertTrue(second.finish());

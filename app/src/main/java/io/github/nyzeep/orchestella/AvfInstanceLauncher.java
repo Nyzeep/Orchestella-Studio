@@ -429,7 +429,7 @@ public final class AvfInstanceLauncher {
 
         LaunchTimeline timeline = LaunchTimeline.open(Paths.get(parameters.runtimeDirectory),
                 parameters.instanceId, "unknown", (int) prepared.plan.memoryMb(),
-                prepared.plan.cpuCount());
+                prepared.plan.cpuCount(), android.os.SystemClock::elapsedRealtimeNanos);
         timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
         for (String degradation : degradations) {
             timeline.noteDegradation(degradation);
