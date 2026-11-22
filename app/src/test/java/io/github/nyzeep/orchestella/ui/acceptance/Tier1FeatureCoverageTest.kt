@@ -1418,7 +1418,10 @@ class Tier1FeatureCoverageTest {
 
     @Test
     fun t1_r5_02_glassFrameGateDemotesOnP90OrDroppedFrameThreshold_baseline() {
-        // Healthy 60 frames @ 8ms (< 16.67 * 0.7 = 11.669)
+        // W2-05 R-03 重标定（预算改 DEADLINE 实测口径）后的阈值基线：
+        // P90 降档线 = 预算×1.25 = 20.83ms；真滞留线 = 预算×1.5 = 25ms；
+        // 前 6 帧暖帧计入采样窗但剥离出裁决子集（以下剖面全部落在单一通道上）。
+        // Healthy: 60 帧 8ms——剥离暖帧后稳态 P90 8ms < 20.83，真滞留 0。
         var verdictHealthy = false
         var downgradedHealthy = true
         val healthyGate = Oe3GlassFrameGate(budgetMs = 16.67) { v ->
@@ -1429,17 +1432,19 @@ class Tier1FeatureCoverageTest {
         assertTrue(verdictHealthy)
         assertFalse(downgradedHealthy)
 
-        // High P90: 60 frames @ 12.0ms (> 11.669)
+        // High P90: 60 帧 22ms——(1.25, 1.5]×预算 的持续超限（> 20.83 且 < 25），
+        // P90 通道单独触发降档，真滞留 0。
         var downgradedP90 = false
         val p90Gate = Oe3GlassFrameGate(budgetMs = 16.67) { v -> downgradedP90 = v.downgrade }
-        repeat(60) { p90Gate.onFrame(12.0) }
+        repeat(60) { p90Gate.onFrame(22.0) }
         assertTrue(downgradedP90)
 
-        // High drop rate: 2 dropped (20ms > 16.67) out of 60 = 3.33% > 2%
+        // High drop rate: 58 帧 6ms + 2 帧 30ms——30 > 25 记真滞留，
+        // 2/54 = 3.7% > 2%，P90 良好（6ms）时真滞留通道独立触发降档。
         var downgradedDrop = false
         val dropGate = Oe3GlassFrameGate(budgetMs = 16.67) { v -> downgradedDrop = v.downgrade }
         repeat(58) { dropGate.onFrame(6.0) }
-        repeat(2) { dropGate.onFrame(20.0) }
+        repeat(2) { dropGate.onFrame(30.0) }
         assertTrue(downgradedDrop)
     }
 

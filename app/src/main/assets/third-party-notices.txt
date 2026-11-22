@@ -46,3 +46,37 @@ Copyright (c) 2020-2024 LSPosed
 Used only for an in-process hidden-API exemption on builds that expose the
 system virtualization APIs. It grants no Android permission, starts no
 service, and is installed once before any AVF platform class is loaded.
+
+Third-party notices: Glasmio (clean-room reference — nothing distributed)
+
+Component (reference only): Glasmio — no source, no binaries, no resources
+  from it are distributed with this application; no dependency is declared.
+Upstream: https://github.com/neoruaa/Glasmio
+License: Apache License, Version 2.0 (full text: app/src/main/assets/LICENSE.APACHE-2.0)
+Copyright 2025 Kyant
+Copyright 2026 Glasmio contributors
+  (attribution lines as written in the upstream source file headers; the
+  upstream LICENSE file itself is the unmodified Apache-2.0 template)
+
+Used only as design/formula reference, reimplemented from scratch for
+Orchestella's own AGSL/Kotlin code (clean-room, no code copied):
+  - RuntimeShader pooling pattern (Oe3RuntimeShaderPool)
+  - circular-arc displacement profile for edge refraction
+  - luminance roll-off highlight suppression (QuartzCore AIR formula semantics)
+  - hysteresis collapse state machine
+
+Third-party notices: ReFra (clean-room reference — nothing distributed)
+
+Component (reference only): ReFra — no source, no binaries, no resources
+  from it are distributed with this application; no dependency is declared.
+Upstream: https://github.com/IacobIonut01/ReFra
+License: Apache License, Version 2.0 (full text: app/src/main/assets/LICENSE.APACHE-2.0)
+SPDX-FileCopyrightText: 2023-2026 IacobIacob01
+  (attribution line as written in the upstream source file headers; the
+  upstream LICENSE file itself is the unmodified Apache-2.0 template)
+
+Used only as a pattern reference, reimplemented from scratch for Orchestella's
+own code (clean-room, no code copied):
+  - BlurUtils discrete blur-radius bucketing (limits GPU shader-pipeline churn
+    by snapping animated radii to fixed buckets)
+

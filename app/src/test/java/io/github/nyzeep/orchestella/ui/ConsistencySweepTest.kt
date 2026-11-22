@@ -93,6 +93,36 @@ class ConsistencySweepTest {
     }
 
     @Test
+    fun noGlasmioResidueInSources() {
+        // W2-05 净室红线：Glasmio（Apache-2.0）只允许「公式/模式净室重写」——
+        // app 源码不得出现其包引用（io.github.neoruaa.glasmio），也不得出现
+        // glasmio_ 前缀标识（照搬其命名同样违规）；借鉴声明只允许以
+        // 「Glasmio」字样出现在 KDoc 与 assets/third-party-notices.txt（本扫描
+        // 只盯包引用与前缀标识，不盯文档提及）。
+        val codeHits = offenders(files("java", ".kt") + files("java", ".java")) { line ->
+            line.contains("io.github.neoruaa.glasmio") || line.contains("glasmio_")
+        }
+        assertTrue(
+            "Glasmio 包引用与 glasmio_ 前缀标识必须为零（净室重写）: $codeHits",
+            codeHits.isEmpty(),
+        )
+        // res/assets 目录树：不得出现 glasmio_ 前缀文件名（资源/资产同样不得回流）。
+        val main = sourceRoot()
+        val assetHits = listOf("res", "assets").flatMap { relative ->
+            val root = File(main, relative)
+            assertTrue("missing resource dir: ${root.absolutePath}", root.isDirectory)
+            root.walkTopDown()
+                .filter { it.isFile && it.name.startsWith("glasmio_") }
+                .map { "$relative/${it.relativeTo(root)}" }
+                .toList()
+        }
+        assertTrue(
+            "res/assets 不得出现 glasmio_ 前缀文件名: $assetHits",
+            assetHits.isEmpty(),
+        )
+    }
+
+    @Test
     fun legacyLayoutTokensAreTrimmed() {
         val tokens = File(sourceRoot(), "res/values/oe_design_tokens.xml").readText()
         assertFalse("oe_space_xxxl had zero consumers", tokens.contains("<dimen name=\"oe_space_xxxl\""))

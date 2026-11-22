@@ -40,6 +40,7 @@ import io.github.nyzeep.orchestella.ui.design.components.OeDialogAction
 import io.github.nyzeep.orchestella.ui.design.components.OeDialogHost
 import io.github.nyzeep.orchestella.ui.design.components.OeDialogSpec
 import io.github.nyzeep.orchestella.ui.oe3.glass.GlassDeviceCap
+import io.github.nyzeep.orchestella.ui.oe3.glass.GlassGateVerdict
 import io.github.nyzeep.orchestella.ui.oe3.glass.GlassMode
 import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassDeviceCap
 import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassLowRam
@@ -160,6 +161,14 @@ class MainActivity : AppCompatActivity() {
 
     /** UI-06：性能门每进程只采样一次；启动后由快照刷新按需武装。 */
     private val oe3GlassGateArmed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * UI-06（R-03 生命周期加固）：进行中的帧采样监听器。帧门 60 帧采样完成时
+     * 在回调线程摘除并置空；[onDestroy] 再做一次幂等解绑兜底——Activity 销毁
+     * 时若监听器仍在（采样未完成），滞留的 FrameMetrics 回调会引用已失效的
+     * window/view，必须先解绑。
+     */
+    private var oe3GlassGateListener: android.view.Window.OnFrameMetricsAvailableListener? = null
 
     /** UI-06：设备是否为低内存（isLowRamDevice）；onCreate 探测一次。 */
     private val oe3GlassLowRamDevice by lazy {
@@ -598,11 +607,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * UI-06 运行时性能门控：玻璃 L1 真实渲染时，首帧起连续 60 帧采样**帧耗时**
-     * （`FrameMetrics.TOTAL_DURATION`）；P90 > 预算×0.7 或掉帧率 > 2% → 降档为
-     * L0 并持久化到本设备（ThemeStore 设备缓存）。已降档/玻璃关闭/省电/低内存/
-     * API < 31 时不动采样——避免把与玻璃无关的卡顿误记到玻璃头上。「始终」
-     * 模式在 CompositionLocal 侧绕过降档缓存，但采样照常跳过（没有可降的模糊层）。
+     * UI-06 运行时性能门控（W2-05 R-03 重构）：玻璃 L1 真实渲染时，首帧起连续
+     * 60 帧采样**帧耗时**（`FrameMetrics.TOTAL_DURATION`）；P90 > 预算×1.25 或
+     * 真滞留帧率 > 2% → 降档为 L0 并持久化到本设备（ThemeStore 设备缓存）。
+     * 已降档/玻璃关闭/省电/低内存/API < 31 时不动采样——避免把与玻璃无关的
+     * 卡顿误记到玻璃头上。「始终」模式在 CompositionLocal 侧绕过降档缓存，
+     * 但采样照常跳过（没有可降的模糊层）。
+     *
+     * W2-05 两处加固：
+     * - 预算优先取 API 31+ `FrameMetrics.DEADLINE`（本采样仅在 SDK ≥ 31 武装，
+     *   调用安全）：该指标返回本帧可用预算时长（纳秒）＝FrameDeadline −
+     *   IntendedVsync，系统已把刷新率与 SF 松弛换算好（实际预算可 > 1/刷新率）；
+     *   读不到（≤0）时回退 1000/刷新率。门在**首帧回调**时才构建（预算既定）。
+     * - 第三参按平台契约更名 `dropCountSinceLastInvocation` 并纳入漏报诊断：
+     *   帧突发时平台会丢弃部分已入队回调，只在该计数里报告，不能当事件类型用。
+     *   裁决日志区分三口径：`UserMode`（GlassMode Off/Auto/Always）、
+     *   `DeviceCap`（降档前后）、`EffectiveTier`（resolveTier 结果）。
      */
     private fun startGlassFrameGateIfNeeded() {
         if (oe3GlassGateArmed.get()) return
@@ -614,28 +634,85 @@ class MainActivity : AppCompatActivity() {
         val display = window.decorView.display ?: return
         if (!oe3GlassGateArmed.compareAndSet(false, true)) return
 
+        val glassMode = prefs.glassMode
         val refreshRate = display.refreshRate.takeIf { it > 0f } ?: 60f
-        val budgetMs = 1000.0 / refreshRate.toDouble()
+        val refreshBudgetMs = 1000.0 / refreshRate.toDouble()
 
-        val gate = Oe3GlassFrameGate(budgetMs = budgetMs) { verdict ->
+        // 回调只会在传入的 handler（主线程）派发，以下状态单线程可见即可。
+        var totalMissedReports = 0
+        var gate: Oe3GlassFrameGate? = null
+        var gateBudgetMs = refreshBudgetMs
+
+        fun onGateVerdict(verdict: GlassGateVerdict) {
+            val capBefore = oe3GlassDeviceCapState.value
             if (verdict.downgrade) {
                 themeStore.setUiGlassDeviceCap(GlassDeviceCap.L0.key)
                 oe3GlassDeviceCapState.value = GlassDeviceCap.L0
             }
+            val capAfter = oe3GlassDeviceCapState.value
+            // EffectiveTier：与 Oe3GlassSurface 同源的 resolveTier 输入，降档
+            // 后的落地档位（日志/设备窗可对照，非持久化依据）。
+            val tier = Oe3GlassStrategy.resolveTier(
+                level = prefs.glassLevel,
+                enabled = prefs.glassEnabled,
+                apiLevel = Build.VERSION.SDK_INT,
+                isLowRamDevice = oe3GlassLowRamDevice,
+                deviceCap = capAfter,
+                reducedMotion = prefs.reduceMotion,
+            )
+            android.util.Log.i(
+                "Oe3Glass",
+                "帧门裁决 UserMode=$glassMode DeviceCap=$capBefore->$capAfter " +
+                    "EffectiveTier=$tier p90=${verdict.p90Ms}ms " +
+                    "droppedRatio=${verdict.droppedRatio} budgetMs=$gateBudgetMs " +
+                    "refreshRate=$refreshRate missedFrames=$totalMissedReports",
+            )
         }
+
+        fun buildGateFromFirstFrame(frameMetrics: android.view.FrameMetrics): Oe3GlassFrameGate {
+            // 首帧回调时预算既定再喂该帧（后续帧直接喂既有门）：优先取 API 31+
+            // FrameMetrics.DEADLINE。AOSP 口径（core FrameMetrics.java DURATIONS
+            // 表 + getMetric 的 end−start 换算）：该指标 = FrameDeadline −
+            // IntendedVsync，是**本帧可用预算时长（纳秒）**——刷新率与 SF 松弛
+            // 已由系统换算进来。读点内联 SDK 守卫：版本闸在外层方法，lint 的
+            // NewApi 数据流不保证跨局部函数传播，就地自证。
+            val deadlineNs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                frameMetrics.getMetric(android.view.FrameMetrics.DEADLINE)
+            } else {
+                0L
+            }
+            // OEM 口径异常防线（W2-05 审查）：预算只在刷新率预算的合理倍带内
+            // 采信——SF 多缓冲可放宽到数个 interval，但绝不会是 0.25× 以下或
+            // 8× 以上（后者是「被当作绝对时间戳」的典型畸形值）。越带即回退
+            // 刷新率读数，失效方向恒为 fail-safe（退回已知好口径），不让畸形
+            // 预算放大或缩小降档判据。
+            val candidate = if (deadlineNs > 0) deadlineNs / 1_000_000.0 else refreshBudgetMs
+            val budget = if (candidate in (refreshBudgetMs * 0.25)..(refreshBudgetMs * 8.0)) {
+                candidate
+            } else {
+                refreshBudgetMs
+            }
+            gateBudgetMs = budget
+            return Oe3GlassFrameGate(budgetMs = budget) { verdict -> onGateVerdict(verdict) }
+        }
+
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
         val listener = object : android.view.Window.OnFrameMetricsAvailableListener {
-            // 回调只会在传入的 handler（主线程）派发，此标志单线程可见即可。
             var removed = false
             override fun onFrameMetricsAvailable(
                 window: android.view.Window,
                 frameMetrics: android.view.FrameMetrics,
-                eventType: Int,
+                dropCountSinceLastInvocation: Int,
             ) {
                 if (removed) return
+                // 漏报诊断（R-03）：帧突发下平台会跳过部分回调，被跳过的帧数
+                // 只经本参累计——采样窗可能由更少的回调覆盖，日志必须可区分。
+                totalMissedReports += dropCountSinceLastInvocation
+                val active = gate ?: buildGateFromFirstFrame(frameMetrics).also { gate = it }
                 val durationMs = frameMetrics.getMetric(android.view.FrameMetrics.TOTAL_DURATION) / 1_000_000.0
-                if (gate.onFrame(durationMs)) {
+                if (active.onFrame(durationMs)) {
                     removed = true
+                    oe3GlassGateListener = null
                     try {
                         window.removeOnFrameMetricsAvailableListener(this)
                     } catch (_: IllegalArgumentException) {
@@ -645,6 +722,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        oe3GlassGateListener = listener
         window.addOnFrameMetricsAvailableListener(listener, handler)
     }
 
@@ -1761,6 +1839,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // R-03 生命周期加固：60 帧采样未完成时监听器仍在位，Activity 销毁前必须
+        // 幂等解绑——否则滞留的 FrameMetrics 回调会引用已销毁的 window/view。
+        // try/catch 兜底与帧门完成路径同款：监听器可能已被采样完成回调移除，
+        // 二次 remove 抛 IllegalArgumentException 不代表状态异常。
+        oe3GlassGateListener?.let { listener ->
+            try {
+                window.removeOnFrameMetricsAvailableListener(listener)
+            } catch (_: IllegalArgumentException) {
+                // 帧突发下平台会在移除完成前继续派发已入队的回调（bench-a 设备窗
+                // 20261119 P0：二次 remove 抛 "never added" 直接 FATAL）。兜底幂等。
+            }
+        }
+        oe3GlassGateListener = null
         dashboardHandler.removeCallbacks(refreshDashboard)
         super.onDestroy()
         if (isFinishing) operations.shutdown()

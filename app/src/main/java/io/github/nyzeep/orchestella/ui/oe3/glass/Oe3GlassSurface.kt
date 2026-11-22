@@ -1,6 +1,9 @@
 package io.github.nyzeep.orchestella.ui.oe3.glass
 
 import android.os.Build
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -28,6 +31,7 @@ import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.haze
 import dev.chrisbanes.haze.rememberHazeState
+import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassTokens
@@ -148,72 +152,100 @@ fun Oe3GlassSurface(
             content = content,
         )
 
-        is Oe3GlassRender.Blurred -> {
-            val usableRadius = rememberGlassBlurRadius(render.blurRadius)
-            if (usableRadius == null || state == null) {
-                // 全部档位失败 / 非 IAE 异常 / 无源：放弃模糊，落到共享 token 的 L0 面
-                FallbackSurface(
-                    tokens = tokens,
-                    modifier = modifier,
-                    shape = shape,
-                    content = content,
-                )
-            } else {
-                val blurred = if (usableRadius == render.blurRadius) {
-                    render
-                } else {
-                    render.copy(blurRadius = usableRadius)
-                }
-                val style = remember(blurred) { blurred.toHazeStyle(tokens) }
-                val refraction = rememberOe3Refraction(
-                    enabled = resolvedTier == GlassTier.L2,
-                    shape = shape,
-                    isDark = info.isDark,
-                )
-                Box(modifier.clip(shape)) {
-                    // Apply refraction outermost so its RenderNode captures hazeChild's backdrop pixels.
-                    Box(
-                        Modifier
-                            .matchParentSize()
-                            .then(refraction)
-                            .oe3BackdropHaze(state = state, style = style),
+        // L0↔L1/L2 档位互转走交叉淡入（W2-05），但**只交叉背板**：模糊底板与
+        // L0 回退装饰在 Crossfade 内互转，[content] 恒在交叉层之上单实例渲染——
+        // 若连内容一起交叉，200ms 过渡窗内导航内容会双实例（语义节点与命中
+        // 目标翻倍，可读性/无障碍/命中都会短暂劣化）。两侧背板各按自身**静态**
+        // 半径渲染、只交叉 tint/alpha——红线：严禁逐帧动画化 RenderEffect 模糊
+        // 半径（GPU 会为每个新半径重编译模糊管线）；模糊半径探针的阶梯变化在
+        // 分支内原地换背板参数，是一次性瞬切而非动画，同样合法。`Blurred` 是
+        // data class、`Fallback` 是 object，相等性可作 Crossfade 键：静置不变
+        // 无动画（初始组合不触发、金样安全）。Solid 留在外面：显式关闭玻璃的
+        // 像素与引入玻璃前的基线一致，不过渡。
+        Oe3GlassRender.Fallback, is Oe3GlassRender.Blurred -> Box(modifier.clip(shape)) {
+            Crossfade(
+                targetState = render,
+                animationSpec = if (info.reducedMotion) snap() else tween(OeMotion.DURATION_SHORT_MS),
+                label = "oe3-glass-tier-crossfade",
+            ) { target ->
+                when (target) {
+                    is Oe3GlassRender.Blurred -> GlassBlurBacking(
+                        render = target,
+                        tokens = tokens,
+                        state = state,
+                        shape = shape,
+                        l2Refraction = resolvedTier == GlassTier.L2,
+                        isDark = info.isDark,
                     )
-                    content()
+
+                    Oe3GlassRender.Fallback -> FallbackBacking(tokens)
+
+                    // 不可达：Solid 在外层分流（Crossfade 键集只有 Blurred/Fallback）。
+                    Oe3GlassRender.Solid -> Unit
                 }
             }
+            content()
         }
-
-        Oe3GlassRender.Fallback -> FallbackSurface(
-            tokens = tokens,
-            modifier = modifier,
-            shape = shape,
-            content = content,
-        )
     }
 }
 
 /**
- * L0 回退面（假玻璃配方）：α0.96 填充 + 噪点 + 24dp 顶 scrim + 1dp 顶高光。
- * API<31/省电/低内存/性能门降档与「模糊探针全档失败」共用同一材质，保证
- * 任何降档路径的观感都由同一套 token 驱动。
+ * 真模糊背板（L1/L2）：refraction 挂最外层，使其 RenderNode 捕获 hazeChild
+ * 的背景像素。半径探针全档失败 / 无源时放弃模糊、原地落 [FallbackBacking]——
+ * 这是分支内的一次性瞬切（换背板材质），与档位互转的 Crossfade 是两条不同的
+ * 降级路径，不产生 alpha 交叉动画。
  */
 @Composable
-private fun FallbackSurface(
+private fun GlassBlurBacking(
+    render: Oe3GlassRender.Blurred,
     tokens: Oe3GlassTokens,
-    modifier: Modifier,
+    state: HazeState?,
     shape: Shape,
-    content: @Composable BoxScope.() -> Unit,
+    l2Refraction: Boolean,
+    isDark: Boolean,
 ) {
+    val usableRadius = rememberGlassBlurRadius(render.blurRadius)
+    if (usableRadius == null || state == null) {
+        // 全部档位失败 / 非 IAE 异常 / 无源：放弃模糊，落到共享 token 的 L0 背板
+        FallbackBacking(tokens)
+        return
+    }
+    val blurred = if (usableRadius == render.blurRadius) {
+        render
+    } else {
+        render.copy(blurRadius = usableRadius)
+    }
+    val style = remember(blurred) { blurred.toHazeStyle(tokens) }
+    val refraction = rememberOe3Refraction(
+        enabled = l2Refraction,
+        shape = shape,
+        isDark = isDark,
+    )
+    Box(
+        Modifier
+            .fillMaxSize()
+            .then(refraction)
+            .oe3BackdropHaze(state = state, style = style),
+    )
+}
+
+/**
+ * L0 回退背板（假玻璃配方）：α0.96 填充 + 噪点 + 24dp 顶 scrim + 1dp 顶高光。
+ * API<31/省电/低内存/性能门降档与「模糊探针全档失败」共用同一材质，保证
+ * 任何降档路径的观感都由同一套 token 驱动。内容不在此渲染——[Oe3GlassSurface]
+ * 的 content 在背板之上恒单实例（交叉层之外）。
+ */
+@Composable
+private fun FallbackBacking(tokens: Oe3GlassTokens) {
     val style = remember(tokens) { GlassStyle.of(tokens) }
     Box(
-        modifier
-            .clip(shape)
+        Modifier
+            .fillMaxSize()
             .background(Color(tokens.fallbackTint)),
     ) {
         NoiseOverlay()
         Scrim(tokens = tokens)
         TopRim(style = style)
-        content()
     }
 }
 
