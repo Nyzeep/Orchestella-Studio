@@ -54,12 +54,15 @@ class Oe3MotionTest {
     }
 
     @Test
-    fun pagePushIsACriticallyDampedSpring() {
-        // v4 spec §1.5：页面 push = spring(300ms, bounce 0)——bounce 0 即临界阻尼。
+    fun pagePushIsTheExpressiveGradeSpring() {
+        // W2-03（A4 §3.1 M2）：页面 push 弹簧并入 Expressive 档（700/0.9，受控
+        // 回弹）；标称时长不变，收敛由弹簧决定。旧 v4 临界阻尼（bounce 0）口径
+        // 已被 W2-03 重定标取代。
         val motion = Oe3Motion.standard()
         assertEquals(300, motion.pagePush.durationMillis)
-        assertEquals(1f, motion.pagePush.dampingRatio, 0.0001f)
-        assertEquals(1f, motion.pagePushSpring!!.dampingRatio, 0.0001f)
+        assertEquals(0.9f, motion.pagePush.dampingRatio, 0.0001f)
+        assertEquals(0.9f, motion.pagePushSpring!!.dampingRatio, 0.0001f)
+        assertEquals(700f, motion.pagePushSpring!!.stiffness, 0.0001f)
     }
 
     @Test

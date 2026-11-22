@@ -8,9 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,6 +58,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+import io.github.nyzeep.orchestella.ui.shell.Oe3PageTransitionSpec
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 
@@ -150,30 +149,32 @@ fun WizardScreen(
                     .fillMaxWidth()
                     .weight(1f),
             ) {
-                // 步骤切换复用页面切换 token（滑入 300ms decelerate + 淡入
-                // 220ms easeInOut）；减动效下时长由主题 token 归零。
-                val slideSpec = tween<IntOffset>(
-                    Oe3ThemeValues.motion.pageSlide.durationMillis,
-                    easing = Oe3ThemeValues.motion.pageSlide.easing,
-                )
-                val fadeSpec = tween<Float>(
-                    Oe3ThemeValues.motion.pageFade.durationMillis,
-                    easing = Oe3ThemeValues.motion.pageFade.easing,
-                )
+                // 步骤切换走 W2-03 fade-through 时间线（90ms 退场 + 20ms 留白 +
+                // 210ms 进场 = 320ms）：离场步骤在 90ms 内淡出并轻移 25%，进场
+                // 步骤延迟 110ms 后淡入滑入——两步透明度窗口零重叠，消除旧
+                // 220ms 对称交叉淡化里的双页叠化。淡入同时遮蔽了滑动的延迟
+                // 驻留窗（驻留期 alpha 为 0）。滚动状态提升在 stepScrollStates，
+                // 步骤往返各自保留滚动位置；减动效下时长与延迟一并归零。
+                val motion = Oe3ThemeValues.motion
+                val enterSlideSpec = Oe3PageTransitionSpec.enterSlide(motion)
+                val exitSlideSpec = Oe3PageTransitionSpec.exitSlide(motion)
+                val enterFadeSpec = Oe3PageTransitionSpec.enterFade(motion)
+                val exitFadeSpec = Oe3PageTransitionSpec.exitFade(motion)
                 AnimatedContent(
                     targetState = state.step,
                     transitionSpec = {
-                        val forward = targetState.ordinal >= initialState.ordinal
+                        val direction =
+                            if (targetState.ordinal >= initialState.ordinal) 1 else -1
                         (
-                            slideInHorizontally(slideSpec) { fullWidth ->
-                                if (forward) fullWidth / 4 else -fullWidth / 4
+                            slideInHorizontally(enterSlideSpec) { fullWidth ->
+                                Oe3PageTransitionSpec.slideOffsetX(fullWidth, direction)
                             } +
-                                fadeIn(fadeSpec)
+                                fadeIn(enterFadeSpec)
                             ) togetherWith (
-                            slideOutHorizontally(slideSpec) { fullWidth ->
-                                if (forward) -fullWidth / 4 else fullWidth / 4
+                            slideOutHorizontally(exitSlideSpec) { fullWidth ->
+                                Oe3PageTransitionSpec.exitSlideOffsetX(fullWidth, direction)
                             } +
-                                fadeOut(fadeSpec)
+                                fadeOut(exitFadeSpec)
                             )
                     },
                     label = "wizard-step",

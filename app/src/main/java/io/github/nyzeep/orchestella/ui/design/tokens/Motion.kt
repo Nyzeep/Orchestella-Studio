@@ -58,21 +58,39 @@ object OeMotion {
     const val DIALOG_SPRING_ALPHA_FROM = 0.5f
     const val DIALOG_SPRING_STIFFNESS = Spring.StiffnessMediumLow
 
-    // --- Page push (v4 spec §1.5, ticket UI-03) ---
-    // spring(300ms, bounce 0): bounce 0 is a critically damped spring; the
-    // stiffness below settles in ≈9.5/√k ≈ 300ms (same estimate that maps
-    // MediumLow≈400ms for the nav pill). The entering page is launched with an
-    // initial velocity of 9×distance per second, expressed once in progress
-    // units (offset = (1−progress)×pageWidth, so progress-velocity is
-    // width-independent). Pushing also scales the previous page to 80% and
-    // dims it by 15% — the stacked "previous page" treatment.
+    // --- Page push (v4 spec §1.5, ticket UI-03; Wave 2 M2 retune, W2-03) ---
+    // The stacked "previous page" treatment: the entering page is launched with
+    // an initial velocity expressed in progress units (offset =
+    // (1−progress)×pageWidth, so progress-velocity is width-independent) and
+    // the page beneath scales/dims/parallaxes against the same progress. The
+    // spring and the geometry were retuned to the W1-02 Expressive anchor
+    // (A4 §3.1 M2): stiffness 700 / damping 0.9 / v0 6 progress-units per
+    // second, under-scale 0.92, under-dim 0.10, under-parallax −12%.
     const val PAGE_PUSH_MS = 300
-    const val PAGE_PUSH_DAMPING = 1f
-    const val PAGE_PUSH_STIFFNESS = 1000f
-    const val PAGE_PUSH_VELOCITY_FACTOR = 9f
-    const val PAGE_PUSH_UNDER_SCALE = 0.8f
-    const val PAGE_PUSH_UNDER_DIM = 0.15f
-    const val PAGE_PUSH_SCALE_DELTA = 0.2f
+    const val PAGE_PUSH_DAMPING = 0.9f
+    const val PAGE_PUSH_STIFFNESS = 700f
+    const val PAGE_PUSH_VELOCITY_FACTOR = 6f
+    const val PAGE_PUSH_UNDER_SCALE = 0.92f
+    const val PAGE_PUSH_UNDER_DIM = 0.10f
+    const val PAGE_PUSH_SCALE_DELTA = 0.08f
+
+    /** 页宽比例计的底层视差：随 (1−p) 向反向平移 −12%（W2-03 M2）。 */
+    const val PAGE_PUSH_UNDER_PARALLAX = -0.12f
+
+    /** 栈分离渐变带宽度（W2-03 M2）：画在未裁剪层上，峰值不透明度见下。 */
+    const val PAGE_PUSH_SEAM_BAND_DP = 24
+    const val PAGE_PUSH_SEAM_BAND_ALPHA = 0.06f
+
+    // --- Page fade-through timeline (W2-03 / A4 §3.1 M2: 90 out + 20 gap +
+    //     210 in = 320ms, OeDuration.Medium) ---
+    // Outgoing content leaves over [PAGE_FADE_EXIT_MS], the stage rests for
+    // the remaining gap, incoming content arrives over [PAGE_FADE_ENTER_MS]
+    // after [PAGE_FADE_ENTER_DELAY_MS]. The two fade windows never overlap
+    // (exit 0..90, enter 110..320). Oe3Pager realizes the timeline with
+    // opaque slides and the wizard with fades — see those files for why.
+    const val PAGE_FADE_EXIT_MS = 90
+    const val PAGE_FADE_ENTER_MS = 210
+    const val PAGE_FADE_ENTER_DELAY_MS = 110
 
     // --- Dashboard edit mode (UI-09; reference prism_ui edit-mode specs) ---
 

@@ -1,8 +1,6 @@
 package io.github.nyzeep.orchestella.ui.shell
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -40,14 +38,26 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 
 /**
  * Pure mapping from the Oe3 motion tokens to the page transition curves
- * (spec §2.5, ticket ZD-W1). The entering page fades on the pageFade curve
- * and slides on the pageSlide curve; the leaving page keeps the plain fade.
- * The spec pins duration and easing only — the slide distance is a quarter of
- * the page width, kept subtle so the fade stays the leading motion.
+ * (spec §2.5, ticket ZD-W1; W2-03 retunes the timeline to the fade-through
+ * windows 90 out + 20 gap + 210 in).
+ *
+ * Two consumers with two realizations of the same timeline:
+ * - [Oe3Pager] sweeps whole pages **opaquely**: the leaving page exits to the
+ *   opposite edge over [OeMotion.PAGE_FADE_EXIT_MS] and the entering page
+ *   sweeps in over [OeMotion.PAGE_FADE_ENTER_MS] after
+ *   [OeMotion.PAGE_FADE_ENTER_DELAY_MS]. No alpha animation touches a page
+ *   subtree — the TransitionGhostPixelTest red-line probe counts any
+ *   partial-alpha page pixel as cross-blend ghosting (R-01), and a fading
+ *   solid page blends with the stage behind it no matter how the windows are
+ *   separated. Opaque [IntOffset] slides keep every mid-frame pixel either a
+ *   page color or the stage behind them.
+ * - [WizardScreen] fades step content through the same windows (its content
+ *   sits on the page plate, so a fade is a plain content fade, and the fade
+ *   also hides the slide's delay window).
  */
 object Oe3PageTransitionSpec {
 
-    /** Slide distance as a fraction of the page width. */
+    /** Slide distance as a fraction of the page width (wizard steps). */
     const val SLIDE_DISTANCE_FRACTION = 0.25f
 
     /** The 220ms easeInOut page fade, from the token. */
@@ -60,6 +70,32 @@ object Oe3PageTransitionSpec {
     fun slide(motion: Oe3MotionTokens) = tween<IntOffset>(
         durationMillis = motion.pageSlide.durationMillis,
         easing = motion.pageSlide.easing,
+    )
+
+    /** Outgoing fade-through window: 90ms emphasized-accelerate. */
+    fun exitFade(motion: Oe3MotionTokens) = tween<Float>(
+        durationMillis = motion.pageFadeExit.durationMillis,
+        easing = motion.pageFadeExit.easing,
+    )
+
+    /** Incoming fade-through window: 210ms emphasized-decelerate, delayed past the exit window. */
+    fun enterFade(motion: Oe3MotionTokens) = tween<Float>(
+        durationMillis = motion.pageFadeEnter.durationMillis,
+        easing = motion.pageFadeEnter.easing,
+        delayMillis = motion.pageFadeEnterDelayMillis,
+    )
+
+    /** Outgoing slide for the fade-through timeline (same 90ms window). */
+    fun exitSlide(motion: Oe3MotionTokens) = tween<IntOffset>(
+        durationMillis = motion.pageFadeExit.durationMillis,
+        easing = motion.pageFadeExit.easing,
+    )
+
+    /** Incoming slide for the fade-through timeline (210ms, delayed past the exit window). */
+    fun enterSlide(motion: Oe3MotionTokens) = tween<IntOffset>(
+        durationMillis = motion.pageFadeEnter.durationMillis,
+        easing = motion.pageFadeEnter.easing,
+        delayMillis = motion.pageFadeEnterDelayMillis,
     )
 
     /**
@@ -76,13 +112,27 @@ object Oe3PageTransitionSpec {
     /** Exit offset of the leaving page, moving away from the entering page. */
     fun exitSlideOffsetX(pageWidth: Int, direction: Int): Int =
         -slideOffsetX(pageWidth, direction)
+
+    /** W2-03 pager: the entering page starts fully off-screen on the travel side. */
+    fun enterSweepStartOffsetX(pageWidth: Int, direction: Int): Int =
+        pageWidth * direction
+
+    /** W2-03 pager: the leaving page sweeps fully out toward the opposite side. */
+    fun exitSweepTargetOffsetX(pageWidth: Int, direction: Int): Int =
+        -pageWidth * direction
 }
 
 /**
- * Page container (ticket UI3-02 §4, motion per spec §2.5): the entering page
- * fades on the pageFade curve and slides in from the direction of the tab
- * change on the pageSlide curve; the leaving page fades out symmetrically in
- * the opposite direction. No horizontal swipe, no shared element. Reduced
+ * Page container (ticket UI3-02 §4; W2-03 fade-through retune): pages switch
+ * through an **opaque** fade-through choreography — the leaving page sweeps
+ * fully out toward the opposite edge over the 90ms exit window, the stage
+ * rests for the 20ms gap, and the entering page sweeps in from the travel
+ * edge over the 210ms window delayed by 110ms (total 320ms =
+ * [OeMotion.DURATION_MEDIUM_MS]). No alpha animation touches a page subtree:
+ * partial-alpha pages are exactly the cross-blend ghosting (R-01) that
+ * `TransitionGhostPixelTest.pagerSwitch_hasNoCrossBlendMix` red-lines, so the
+ * timeline is realized with opaque [IntOffset] slides and the windows stay
+ * zero-overlap in time. No horizontal swipe, no shared element. Reduced
  * motion collapses both tokens to 0ms through [Oe3ThemeValues.motion].
  *
  * UI3-12: [pages] carries the real screens wired by the host activity; `null`
@@ -112,30 +162,22 @@ fun Oe3Pager(
                 initialState.ordinal,
                 targetState.ordinal,
             )
-            val fadeSpec = Oe3PageTransitionSpec.fade(motion)
-            val slideSpec = Oe3PageTransitionSpec.slide(motion)
-            if (direction == 0) {
-                fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec)
-            } else {
-                (
-                    fadeIn(fadeSpec) +
-                        slideInHorizontally(slideSpec) { pageWidth ->
-                            Oe3PageTransitionSpec.slideOffsetX(pageWidth, direction)
-                        }
-                    ) togetherWith (
-                    fadeOut(fadeSpec) +
-                        slideOutHorizontally(slideSpec) { pageWidth ->
-                            Oe3PageTransitionSpec.exitSlideOffsetX(pageWidth, direction)
-                        }
-                    )
+            // 端到端都不会在同标签内触发；方向为 0 时按 +1 兜底，保证分支完整。
+            val sweep = if (direction == 0) 1 else direction
+            val enterSpec = Oe3PageTransitionSpec.enterSlide(motion)
+            val exitSpec = Oe3PageTransitionSpec.exitSlide(motion)
+            slideInHorizontally(enterSpec) { pageWidth ->
+                Oe3PageTransitionSpec.enterSweepStartOffsetX(pageWidth, sweep)
+            } togetherWith slideOutHorizontally(exitSpec) { pageWidth ->
+                Oe3PageTransitionSpec.exitSweepTargetOffsetX(pageWidth, sweep)
             }
         },
         label = "oe3Pager",
     ) { tab ->
         stateHolder.SaveableStateProvider(key = tab.key) {
             CompositionLocalProvider(LocalOe3PageBottomPadding provides bottomReserve) {
-                // 底片必须挂在每一页内部：pager 的交叉淡化会让两页同时
-                // 在屏，透明页叠化就是"残影/糊"的另一个来源。
+                // 底片挂在每一页内部：页全程不透明（W2-03 起转场不再做任何
+                // 整页 alpha），与根背景逐像素同源，两页交叠窗口互不透底。
                 Box(Modifier.fillMaxSize()) {
                     OePagePlate()
                     val page = pages?.slot(tab)

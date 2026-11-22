@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,7 +39,11 @@ import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 壳层背景的三态（spec §1.7 前置条件）：壁纸图 / 主题渐变 / 纯色。
@@ -102,11 +106,17 @@ val LocalOeSurfaceAlpha = staticCompositionLocalOf { 1f }
  * 壁纸叠加页面底色遮罩以维持标题和正文的可读性。
  * 渐变由主题的 `primary`/`accent` 与 `background` 混出，浅色与暗色主题都
  * 落在同一套语义色上，不写死 hex。
+ *
+ * W2-03：壁纸解码与探活收敛到进程级 [WallpaperStore] 单源——壳层最多同时
+ * 挂 3 个实例（根背景 + 栈 Under/Moving 底片），并发挂载只做一次解码、同一
+ * 挂载波次只做一次可用性探活。[wallpaperParallaxFraction] 供栈 Moving 底片
+ * 反向补偿壁纸偏移，使壁纸在屏幕坐标系与根背景对齐（仅内容横向滑入）。
  */
 @Composable
 fun OeAppBackground(
     mode: OeAppBackgroundMode,
     modifier: Modifier = Modifier,
+    wallpaperParallaxFraction: (() -> Float)? = null,
 ) {
     val colors = Oe3ThemeValues.colors
     val info = Oe3ThemeValues.info
@@ -140,7 +150,13 @@ fun OeAppBackground(
 
     var retainedBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     val wallpaperLoadState = if (mode is OeAppBackgroundMode.Wallpaper) {
-        rememberWallpaper(mode.uri).value
+        val entry = remember(mode.uri) { WallpaperStore.entry(mode.uri) }
+        val state by entry.state.collectAsState()
+        val context = LocalContext.current
+        LaunchedEffect(mode.uri, context) {
+            WallpaperStore.attach(mode.uri, context)
+        }
+        state
     } else {
         null
     }
@@ -175,7 +191,15 @@ fun OeAppBackground(
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = wallpaperAlpha },
+                    .graphicsLayer {
+                        alpha = wallpaperAlpha
+                        // W2-03 底片对位：Moving 层平移时按 (1−p)×宽度反向补偿，
+                        // 壁纸保持屏幕对齐；可见窗口 ⊆ 补偿后的位图覆盖区间，
+                        // 不暴露边缘。渐变与两层 scrim 横向均匀，无需补偿。
+                        if (wallpaperParallaxFraction != null) {
+                            translationX = -wallpaperParallaxFraction() * size.width
+                        }
+                    },
                 contentScale = ContentScale.Crop,
             )
             // 文字可读性由壳层承担：壁纸之上盖一层页面底色 scrim，并在顶栏透明态区域叠加柔和顶部保护渐隐。
@@ -237,42 +261,88 @@ internal fun clearWallpaperCacheForTest() {
     WallpaperCache.clear()
 }
 
-private sealed interface WallpaperLoadState {
+internal sealed interface WallpaperLoadState {
     data object Loading : WallpaperLoadState
     data class Ready(val image: ImageBitmap) : WallpaperLoadState
     data object Failed : WallpaperLoadState
 }
 
-@Composable
-private fun rememberWallpaper(uri: String): State<WallpaperLoadState> {
-    val context = LocalContext.current
-    val cached = remember(uri) { WallpaperCache.get(uri) }
-    val initial: WallpaperLoadState = if (cached != null) {
-        WallpaperLoadState.Ready(cached)
-    } else {
-        WallpaperLoadState.Loading
+/**
+ * 壁纸单源（W2-03）：进程级唯一的壁纸加载状态。壳层同时最多挂 3 个
+ * [OeAppBackground] 实例（根背景 + 栈 Under/Moving 底片），旧实现里每个实例
+ * 各自 `rememberWallpaper`——并发首挂会重复解码同一 uri、每个实例挂载都重复
+ * `wallpaperAvailable` IO 探活。本单源以 uri 键共享一个状态流：
+ *
+ * - 缓存未命中 → mutex 收敛为**一次解码**，首个实例完成后的并发实例直接
+ *   复用结论（拿锁后重查缓存，不重复打开流）；
+ * - 缓存命中 → 同一挂载波次内只做**一次**可用性探活；此后重新挂载（模式
+ *   切走再切回）视为新波次，重新探活——授权被撤销仍能及时发现并回退渐变。
+ *
+ * 波次判定用挂载代计数器（严格、与锁序无关）：每个实例进锁前先读
+ * [Entry.probeGeneration] 快照，锁内核对——同波次并发实例共享同一快照，恰有
+ * 首个拿锁者探活并推进代数，其余快照失配直接跳过；新的顺序挂载读到已推进的
+ * 代数（快照 == 当前）则探活。探活全程持锁，故同帧挂载必然同快照。
+ *
+ * 条目表随 uri 增长有限（用户挑选的壁纸数量级）。
+ */
+internal object WallpaperStore {
+
+    internal class Entry {
+        val state = MutableStateFlow<WallpaperLoadState>(WallpaperLoadState.Loading)
+        val mutex = Mutex()
+
+        /** 已完成的探活代数；挂载波次以"进锁前快照 vs 锁内当前值"判定。 */
+        @Volatile
+        var probeGeneration: Long = 0L
     }
-    val state = remember(uri) { mutableStateOf(initial) }
-    LaunchedEffect(uri, context) {
+
+    private val entries = ConcurrentHashMap<String, Entry>()
+
+    fun entry(uri: String): Entry = entries.computeIfAbsent(uri) { Entry() }
+
+    /** 挂载时确保该 uri 有一份新鲜结论；并发挂载由 mutex 与挂载代收敛 IO。 */
+    suspend fun attach(uri: String, context: Context) {
+        val entry = entry(uri)
+        val cached = WallpaperCache.get(uri)
         if (cached != null) {
-            // A cache hit draws immediately. Check on attachment that the document still opens.
-            val available = withContext(Dispatchers.IO) { wallpaperAvailable(context, uri) }
-            if (!available) {
-                WallpaperCache.remove(uri)
-                state.value = WallpaperLoadState.Failed
+            // 缓存命中：先立即呈现，再探活文档是否仍可打开（旧语义保留）。
+            entry.state.value = WallpaperLoadState.Ready(cached)
+            val snapshotGeneration = entry.probeGeneration
+            entry.mutex.withLock {
+                if (entry.probeGeneration != snapshotGeneration) {
+                    return@withLock
+                }
+                val available = withContext(Dispatchers.IO) { wallpaperAvailable(context, uri) }
+                if (!available) {
+                    WallpaperCache.remove(uri)
+                    entry.state.value = WallpaperLoadState.Failed
+                }
+                entry.probeGeneration = snapshotGeneration + 1
             }
         } else {
-            state.value = WallpaperLoadState.Loading
-            val decoded = withContext(Dispatchers.IO) { decodeWallpaper(context, uri) }
-            state.value = if (decoded != null) {
-                WallpaperCache.put(uri, decoded)
-                WallpaperLoadState.Ready(decoded)
-            } else {
-                WallpaperLoadState.Failed
+            entry.mutex.withLock {
+                // 拿锁后重查缓存：并发波次里第一个实例可能刚完成解码。
+                val fresh = WallpaperCache.get(uri)
+                if (fresh != null) {
+                    entry.state.value = WallpaperLoadState.Ready(fresh)
+                    return
+                }
+                entry.state.value = WallpaperLoadState.Loading
+                val decoded = withContext(Dispatchers.IO) { decodeWallpaper(context, uri) }
+                entry.state.value = if (decoded != null) {
+                    WallpaperCache.put(uri, decoded)
+                    WallpaperLoadState.Ready(decoded)
+                } else {
+                    WallpaperLoadState.Failed
+                }
             }
         }
     }
-    return state
+
+    @VisibleForTesting
+    internal fun resetForTest() {
+        entries.clear()
+    }
 }
 
 private fun wallpaperAvailable(context: Context, uri: String): Boolean = try {

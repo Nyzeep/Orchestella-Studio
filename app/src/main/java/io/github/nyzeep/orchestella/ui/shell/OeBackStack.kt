@@ -20,8 +20,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 
@@ -45,7 +49,7 @@ internal data class StackEntry(
     val argument: String? = null,
 )
 
-internal enum class StackFlight { None, Push, Pop }
+internal enum class StackFlight { None, Push, Pop, Rebound }
 
 @Immutable
 internal data class StackTransition(
@@ -107,10 +111,13 @@ class OeBackStack {
     /**
      * 弹出栈顶。返回值即"本层是否消费了返回事件"：空栈返回 false，让
      * 宿主的上一层（tab 回工作站 / 系统退出）接管。
+     *
+     * W2-03 接管边界：任何飞行中（Push/Pop/Rebound）的返回都从当前进度与
+     * 速度续弹，绝不瞬切到端点——中途的返回键按下只是把动画接过来。
      */
     fun pop(): Boolean {
         val current = transitionState
-        return if (current.flight == StackFlight.Push) {
+        return if (current.flight != StackFlight.None && current.entries.isNotEmpty()) {
             popFromProgress(progressFor(current), velocityFor(current))
         } else {
             popFromProgress(1f)
@@ -133,6 +140,26 @@ class OeBackStack {
             leaving = popped,
             underIndex = nextEntries.size - 1,
             startProgress = initialProgress.coerceIn(0f, 1f),
+            initialVelocity = initialVelocity,
+        )
+        return true
+    }
+
+    /**
+     * 预测式返回手势取消（W2-03）：不弹层，从被拉开的当前位置 [startProgress]
+     * （1f = 未拉开）带初速弹簧回弹归位。条目不动，只推一次新的转场快照，
+     * 动画收敛后 [settleTransition] 把飞行清回 None、恢复静止态。
+     */
+    internal fun reboundToRest(startProgress: Float, initialVelocity: Float = 0f): Boolean {
+        val current = transitionState.entries
+        if (current.isEmpty()) return false
+        transitionState = StackTransition(
+            transitionId = nextTransitionId++,
+            entries = current,
+            flight = StackFlight.Rebound,
+            leaving = current.last(),
+            underIndex = current.size - 2,
+            startProgress = startProgress.coerceIn(0f, 1f),
             initialVelocity = initialVelocity,
         )
         return true
@@ -161,8 +188,9 @@ class OeBackStack {
             }
             progress.snapTo(start)
             animatedTransitionId = snapshot.transitionId
+            // Pop 向 0（弹离）；Push 与 Rebound（取消回弹）都向 1（落位）。
             progress.animateTo(
-                targetValue = if (snapshot.flight == StackFlight.Push) 1f else 0f,
+                targetValue = if (snapshot.flight == StackFlight.Pop) 0f else 1f,
                 animationSpec = spring,
                 initialVelocity = velocity,
             )
@@ -211,13 +239,14 @@ val LocalOeBackStack = staticCompositionLocalOf<OeBackStack?> { null }
  * push/pop 转场的纯几何（motion token 的消费端，脱离组合可断言）。
  *
  * 单进度驱动两个方向：进入/离场页的偏移 = (1−p)×页宽（push 时 p 0→1 从
- * 右缘滑入，pop 时 p 1→0 滑回右缘）；其下一层的缩放 1→0.8 与压暗 0→15%
- * 同样绑定 p。初速用"进度速度"表达：偏移对时间的导数 = −页宽×进度速度，
- * 进度初速 9/s 正是"初速 = 9×距离/s"，与页宽、屏幕密度无关。
+ * 右缘滑入，pop 时 p 1→0 滑回右缘）；其下一层的缩放 1→0.92、压暗 0→10% 与
+ * 同向视差 0→−12% 页宽同样绑定 p，三者共享"p=0 恒等位、p=1 满层叠"的锚定
+ * （W2-03 M2 重定标）。初速用"进度速度"表达：偏移对时间的导数 = −页宽×进度
+ * 速度，进度初速 6/s 正是"初速 = 6×距离/s"，与页宽、屏幕密度无关。
  */
 object OeBackStackTransitionSpec {
 
-    /** 初速 = 9 × 距离/s，换算成进度即 9/s（v4 spec §1.5）。 */
+    /** 初速 = 6 × 距离/s，换算成进度即 6/s（W2-03 M2 重定标）。 */
     const val INITIAL_VELOCITY_PER_SECOND = OeMotion.PAGE_PUSH_VELOCITY_FACTOR
 
     /** 以进度为单位的初速；方向由动画目标决定（push 向 1 收敛）。 */
@@ -227,18 +256,64 @@ object OeBackStackTransitionSpec {
     fun movingOffsetPx(pageWidthPx: Float, progress: Float): Float =
         (1f - progress) * pageWidthPx
 
-    /** 其下一层缩放：p=0 → 1（原位），p=1 → 0.8（压后的层叠态）。 */
+    /** 其下一层缩放：p=0 → 1（原位），p=1 → 0.92（压后的层叠态）。 */
     fun underScale(progress: Float): Float =
         1f - OeMotion.PAGE_PUSH_SCALE_DELTA * progress
 
-    /** 其下一层压暗：p=1 → 15%。 */
+    /** 其下一层压暗：p=1 → 10%。 */
     fun underDim(progress: Float): Float =
         OeMotion.PAGE_PUSH_UNDER_DIM * progress
+
+    /**
+     * 其下一层水平视差（W2-03）：p=0 → 0（与缩放/压暗同为恒等位——静止栈、
+     * pop 收敛端零平移，不产生分数像素与 settle 跳变），p=1 → −12% 页宽。
+     * 与移动层同向、幅度更小，构成前景快/背景慢的纵深视差。
+     */
+    fun underParallaxPx(pageWidthPx: Float, progress: Float): Float =
+        OeMotion.PAGE_PUSH_UNDER_PARALLAX * progress * pageWidthPx
+
+    /**
+     * 栈分离渐变带（W2-03）：跟随移动层左缘的 24dp 黑色渐隐带，画在未裁剪的
+     * 兄弟层上（[StackLayer.Moving] 自带 clip，渐变带不能画进它的
+     * graphicsLayer）。p=0 / p=1 / 栈静止时零绘制；峰值不透明度
+     * [OeMotion.PAGE_PUSH_SEAM_BAND_ALPHA]，紧贴页面边缘最深、向外渐隐。
+     */
+    fun seamBandLeftPx(pageWidthPx: Float, progress: Float, bandWidthPx: Float): Float =
+        movingOffsetPx(pageWidthPx, progress) - bandWidthPx
 }
 
 private enum class LayerRole { RestTop, Under, Moving }
 
 private const val BASE_STATE_KEY = "oe-backstack-base"
+
+/**
+ * 预测式返回手势的末段速度估算器（W2-03，净室借鉴 Metrolist `SwipeBackLayout`
+ * 的"速度+距离"释放哲学，零源码拷贝）：只看最近两次手势事件，用其时间差估算
+ * 事件进度（event.progress，0→1 越拉越开）的变化率。提交与取消动画把它取负
+ * 换成屏幕进度速度作初速，让释放/回弹带真实手感。
+ *
+ * 纯数据层：时间由调用方注入（处理器传 `System.nanoTime()`），单测直接喂样本。
+ */
+internal class PredictiveBackVelocityEstimator {
+
+    private var lastProgress = Float.NaN
+    private var lastAtMs = 0L
+    private var velocity = 0f
+
+    /** 事件进度速度（进度单位/秒，方向与"越拉越开"一致）。 */
+    fun eventVelocity(): Float = velocity
+
+    fun onSample(progress: Float, atMs: Long) {
+        if (!lastProgress.isNaN()) {
+            val dtSeconds = (atMs - lastAtMs) / 1000f
+            if (dtSeconds > 0f) {
+                velocity = (progress - lastProgress) / dtSeconds
+            }
+        }
+        lastProgress = progress
+        lastAtMs = atMs
+    }
+}
 
 /**
  * 栈宿主：底层 pager 与推入目的地共同的可视容器，同时是系统返回键的
@@ -276,19 +351,40 @@ internal fun OeBackStackHost(
         }
     }
     PredictiveBackHandler(enabled = backStack.canPop && gestureProgress == null) { progressFlow ->
+        val estimator = PredictiveBackVelocityEstimator()
         try {
             progressFlow.collect { event ->
-                predictiveProgress = event.progress
+                // 接管边界（W2-03）：飞行动画（Push/Pop/Rebound）独占进度，
+                // 飞行中到达的手势事件不写搓动状态，避免与动画抢进度撕裂。
+                if (backStack.transition.flight == StackFlight.None) {
+                    estimator.onSample(event.progress, System.nanoTime() / 1_000_000L)
+                    predictiveProgress = event.progress
+                }
             }
             val releaseProgress = predictiveProgress
             predictiveProgress = null
-            if (releaseProgress != null) {
-                backStack.popFromProgress(1f - releaseProgress)
+            if (releaseProgress != null && backStack.transition.flight == StackFlight.None) {
+                // 提交：从拉开的当前位置续弹，初速取手势末段速度（屏幕进度
+                // 方向与事件进度相反）。一次提交恰好走一次 popFromProgress。
+                backStack.popFromProgress(
+                    initialProgress = 1f - releaseProgress,
+                    initialVelocity = -estimator.eventVelocity(),
+                )
             } else {
                 backStack.pop()
             }
         } catch (cancelled: CancellationException) {
+            val cancelledProgress = predictiveProgress
             predictiveProgress = null
+            if (cancelledProgress != null && cancelledProgress > 0f) {
+                // 取消（W2-03）：从当前位置弹簧回弹归位，不再瞬切；初速带
+                // 手势末段速度，回弹手感与拉开速度一致。减动效下
+                // pagePushSpring 为 null，animate 直接落位（瞬归）。
+                backStack.reboundToRest(
+                    startProgress = 1f - cancelledProgress,
+                    initialVelocity = -estimator.eventVelocity(),
+                )
+            }
             throw cancelled
         }
     }
@@ -347,16 +443,22 @@ internal fun OeBackStackHost(
             }
             add(transition.entries.last() to LayerRole.Moving)
         }
-        transition.flight == StackFlight.Pop -> buildList {
-            if (activeUnderIndex >= 0 && activeUnderIndex < transition.entries.size) {
-                add(transition.entries[activeUnderIndex] to LayerRole.Under)
+        transition.flight == StackFlight.Pop || transition.flight == StackFlight.Rebound ->
+            buildList {
+                if (activeUnderIndex >= 0 && activeUnderIndex < transition.entries.size) {
+                    add(transition.entries[activeUnderIndex] to LayerRole.Under)
+                }
+                if (pushSpring != null) {
+                    transition.leaving?.let { add(it to LayerRole.Moving) }
+                }
             }
-            if (pushSpring != null) {
-                transition.leaving?.let { add(it to LayerRole.Moving) }
-            }
-        }
         else -> emptyList()
     }
+
+    // 分离渐变带（W2-03）画在未裁剪的兄弟层上：Under 之上、Moving 之下，
+    // 跟随移动层左缘。base 作为 Under 时（深度 1）同样有效。
+    val bandVisible = visibleEntries.any { it.second == LayerRole.Moving } &&
+        (visibleEntries.any { it.second == LayerRole.Under } || (!stackIdle && activeUnderIndex == -1))
 
     Box(modifier.fillMaxSize()) {
         if (!stackIdle && activeUnderIndex == -1) {
@@ -365,6 +467,9 @@ internal fun OeBackStackHost(
             }
         }
         for ((entry, role) in visibleEntries) {
+            if (role == LayerRole.Moving && bandVisible) {
+                StackSeamBand(progress = effectiveProgress)
+            }
             key(entry.id) {
                 stateHolder.SaveableStateProvider(key = entry.id) {
                     StackLayer(
@@ -402,6 +507,9 @@ private fun StackLayer(
                         val s = OeBackStackTransitionSpec.underScale(p)
                         scaleX = s
                         scaleY = s
+                        // W2-03：底层同向视差（−12% 页宽 × p，前景快/背景慢的
+                        // 纵深）；p=0 恒等位、p=1 满偏移（被页面覆盖，不可见）。
+                        translationX = OeBackStackTransitionSpec.underParallaxPx(size.width, p)
                     }
                     LayerRole.Moving -> {
                         translationX = OeBackStackTransitionSpec.movingOffsetPx(size.width, p)
@@ -409,7 +517,17 @@ private fun StackLayer(
                 }
             },
     ) {
-        if (plate) OePagePlate()
+        if (plate) {
+            // W2-03 底片对位：Moving 平移时反向补偿底片内的壁纸偏移，让壁纸
+            // 与根背景在屏幕坐标系保持对齐——只有页面内容随卡片横向滑入。
+            OePagePlate(
+                wallpaperParallaxFraction = if (role == LayerRole.Moving) {
+                    { 1f - progress() }
+                } else {
+                    null
+                },
+            )
+        }
         content()
         Box(
             modifier = Modifier
@@ -424,4 +542,35 @@ private fun StackLayer(
                 },
         )
     }
+}
+
+/**
+ * 栈分离渐变带（W2-03 M2）：宽度 [OeMotion.PAGE_PUSH_SEAM_BAND_DP]dp、峰值
+ * [OeMotion.PAGE_PUSH_SEAM_BAND_ALPHA] 的黑色垂直渐隐带，紧贴移动层左缘
+ * （最深处贴边、向外渐隐），承担移动页与底层的边缘分离（边缘分离一律走
+ * drawBehind 渐变，不进阴影/描边体系，见 ConsistencySweepTest 红线）。
+ * 画在宿主未裁剪的兄弟层上，[StackLayer.Moving] 渲染前插入；p == 0 / p == 1
+ * / 栈静止时零绘制。
+ */
+@Composable
+private fun StackSeamBand(progress: () -> Float) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .drawBehind {
+                val p = progress()
+                if (p <= 0f || p >= 1f) return@drawBehind
+                val bandWidth = OeMotion.PAGE_PUSH_SEAM_BAND_DP.dp.toPx()
+                val bandLeft = OeBackStackTransitionSpec.seamBandLeftPx(size.width, p, bandWidth)
+                if (bandLeft >= size.width || bandLeft + bandWidth <= 0f) return@drawBehind
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        0f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = OeMotion.PAGE_PUSH_SEAM_BAND_ALPHA),
+                    ),
+                    topLeft = Offset(bandLeft, 0f),
+                    size = Size(bandWidth, size.height),
+                )
+            },
+    )
 }

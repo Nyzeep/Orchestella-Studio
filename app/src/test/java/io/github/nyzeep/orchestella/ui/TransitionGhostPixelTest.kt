@@ -337,22 +337,24 @@ class TransitionGhostPixelTest {
     // =========================================================================
 
     /**
-     * R-01（解锁：Wave 2 M2）：Oe3Pager 页签切换全程不得出现交叉混叠。
+     * R-01（W2-03 已解锁）：Oe3Pager 页签切换全程不得出现交叉混叠。
      *
      * 纯洋红 / 纯青两个测试页切换，冻结 mainClock 以 16ms 步长逐帧采样 30 帧
-     * （覆盖 220ms fade + 300ms slide 全窗口），断言任何中帧不出现混合紫。
+     * （覆盖 320ms 滑移全窗口），断言任何中帧不出现混合紫。
      *
      * 混合紫判定（R>40 && B>40 && G<40）有一个必须的口径修正：纯洋红端色自身
      * 满足该谓词（R=255、B=255、G=0），若不排除端色则断言在任何实现下都不可满足。
-     * 因此计数排除与两页端色同通道的像素（容差 [ENDPOINT_TOLERANCE]），保留对
-     * 「洋红里混进青色残影（或反向）」的检出力——当前实现的交叉淡化在转场早/晚段
-     * 产生 (≈184, 38, ≈224) 一类的混合紫，正落进判定。
+     * 因此计数排除与两页端色同通道的像素（容差 [ENDPOINT_TOLERANCE]）。
      *
-     * 解锁条件：Wave 2 M2 完成 Oe3Pager 转场重构（转场中帧只出现两端色与背景色）
-     * 后移除 @Ignore；届时端点自检断言保证采样口径有效，防止凑绿。
+     * W2-03 解锁实现（opaque slide-through）：任何端色页在部分 alpha 下叠加
+     * 主题背景都会落进判定（数学上 α∈0.08..0.97 的洋红混入必计数），所以
+     * fade-through 时间线（90 出 + 20 留白 + 210 进）在 pager 以**全程不透明
+     * 的整页 IntOffset 滑移**实现——退场页 90ms 整页滑出、留白 20ms、进场页
+     * 延迟 110ms 后 210ms 滑入。中帧像素只可能是端色（不透明页）或背景
+     * （构成主义红金调，B 通道恒 <40，永不触发判定），整数像素偏移保证接缝
+     * 无抗锯齿混色。
      */
     @Test
-    @Ignore("Wave 2 M2 fix target: R-01 页签切换交叉混叠（中帧混合紫）。解锁：Wave 2 M2 转场重构完成后移除本注解。")
     fun pagerSwitch_hasNoCrossBlendMix() {
         var selected by mutableStateOf(Oe3Tab.Workstation)
         compose.setContent {
@@ -580,16 +582,15 @@ class TransitionGhostPixelTest {
     }
 
     /**
-     * 无底片必红负例（解锁：Wave 2 M2）：证明正例 [backStackCoverage_zeroUnderlaySeeThrough]
+     * 无底片必红负例（W2-03 已解锁）：证明正例 [backStackCoverage_zeroUnderlaySeeThrough]
      * 的采样口径对「撤掉 OePagePlate」的回归有检出力。
      *
      * 以与 `StackLayer.Moving` 相同的几何（translationX = (1−p)×页宽）复刻一个
      * **不带不透明底片**的移动层（页面内容 α0.6），下层青色必然透进覆盖区——
-     * 正例的「覆盖区全是纯端色」口径在此必然破防。若 Wave 2 M2 重构移除了真实
+     * 正例的「覆盖区全是纯端色」口径在此必然破防。若后续重构移除了真实
      * StackLayer 的 OePagePlate，正例立即转红，本负例固定该检出能力的基准。
      */
     @Test
-    @Ignore("Wave 2 M2 companion: 无底片负例（固定采样口径的检出能力），随 Wave 2 M2 转场重构解锁。")
     fun backStackCoverage_negative_withoutPlateMustFail() {
         compose.setContent {
             Box(Modifier.fillMaxSize().background(PageCyan)) {
@@ -620,6 +621,149 @@ class TransitionGhostPixelTest {
             "无底片复刻必须检出透底混合（纯端色 $pure / $total）——" +
                 "撤掉 OePagePlate 后正例口径必须破防",
             pure < total,
+        )
+    }
+
+    /**
+     * W2-03：预测式返回取消回弹——从被拉开的当前位置弹簧归位，绝不瞬切、
+     * 绝不弹层。
+     *
+     * 真实手势取消（PredictiveBackHandler 的 CancellationException 分支）在
+     * Robolectric 不可注入；本用例驱动同一动画路径的可注入入口
+     * [OeBackStack.reboundToRest]（手势取消时以 `startProgress = 1 − p` 调用它），
+     * 冻结 mainClock 逐帧观察：
+     * - 首帧后移动层位置严格介于"拉开位"与"落位"之间（平滑回弹，非瞬切）；
+     * - 收敛后栈深不变、栈顶不变（取消绝不弹层）。
+     */
+    @Test
+    fun predictiveBack_cancelReboundsFromCurrentPositionWithoutPopping() {
+        val backStack = OeBackStack()
+        compose.setContent {
+            Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = false) {
+                OeBackStackHost(backStack = backStack) {
+                    Box(Modifier.fillMaxSize().testTag("w102:pager-base"))
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.runOnUiThread {
+            Snapshot.withMutableSnapshot {
+                backStack.push(
+                    OeDestination("w102-rebound", "回弹层") {
+                        Box(Modifier.fillMaxSize().testTag("w102:rebound-dest"))
+                    },
+                )
+            }
+        }
+        compose.waitForIdle()
+        val rootWidth = compose.onRoot().fetchSemanticsNode().boundsInRoot.width
+        fun movingLeft(): Float =
+            compose.onNodeWithTag("w102:rebound-dest").fetchSemanticsNode().boundsInRoot.left
+
+        // 手势拉到 p=0.4（移动层进度 0.6，页面离开右缘 40%）后取消。
+        val startLeft = rootWidth * 0.4f
+        compose.mainClock.autoAdvance = false
+        compose.runOnUiThread { backStack.reboundToRest(startProgress = 0.6f, initialVelocity = 0f) }
+        // 逐帧采样：跳过写入前的陈旧帧与弹簧挂载帧，捕获连续三帧回弹轨迹。
+        // （生产里写入前的最后一帧就是搓动帧本身，无视觉跳变；此处从静止态
+        // 直写，故前几帧仍显示静止位。）
+        val reboundTrace = mutableListOf<Float>()
+        repeat(14) {
+            compose.mainClock.advanceTimeByFrame()
+            reboundTrace += movingLeft()
+        }
+        // 动画起点 = 最后一个贴着拉开位的帧（其前的 0.0 是写入前的静止陈旧帧）。
+        val startIdx = reboundTrace.indexOfLast { abs(it - startLeft) <= 1f }
+        assertTrue(
+            "回弹必须从拉开位($startLeft)启动且留有 ≥3 帧收敛轨迹，轨迹=$reboundTrace",
+            startIdx in 0..reboundTrace.size - 4,
+        )
+        val a = reboundTrace[startIdx + 1]
+        val b = reboundTrace[startIdx + 2]
+        val c = reboundTrace[startIdx + 3]
+        assertTrue(
+            "取消回弹必须逐帧平滑收敛（非瞬切）：$a → $b → $c 必须 0 < c < b < a < 拉开位",
+            a > b && b > c && c > 1f && a < startLeft,
+        )
+
+        compose.mainClock.advanceTimeBy(2_000)
+        compose.waitForIdle()
+        compose.mainClock.autoAdvance = true
+        compose.waitForIdle()
+        assertEquals("取消回弹绝不弹层：栈深必须保持 1", 1, backStack.size)
+        assertEquals("w102-rebound", backStack.top?.key)
+        compose.onNodeWithTag("w102:rebound-dest").assertIsDisplayed()
+        assertTrue("收敛后必须落位", movingLeft() < 1f)
+    }
+
+    /**
+     * W2-03：预测式返回提交传递手势末段速度——popFromProgress 的初速进入
+     * pop 弹簧，释放越快弹得越远。
+     *
+     * 同一栈上先后做两次等距提交（唯一差异：初速 -12 进度/s vs 0），冻结
+     * mainClock 各推进一帧：带速度的一帧必须弹出更远（移动层更靠外）。
+     * 处理器把 event.progress 末段变化率取负传入（屏幕进度方向），此处直接
+     * 驱动同一入口 [OeBackStack.popFromProgress]。
+     */
+    @Test
+    fun predictiveBack_releaseVelocityCarriesIntoThePopAnimation() {
+        val backStack = OeBackStack()
+        compose.setContent {
+            Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = false) {
+                OeBackStackHost(backStack = backStack) {
+                    Box(Modifier.fillMaxSize().testTag("w102:pager-base"))
+                }
+            }
+        }
+        compose.waitForIdle()
+        val rootWidth = compose.onRoot().fetchSemanticsNode().boundsInRoot.width
+        fun pushTagged(key: String) {
+            compose.runOnUiThread {
+                Snapshot.withMutableSnapshot {
+                    backStack.push(
+                        OeDestination(key, key) {
+                            Box(Modifier.fillMaxSize().testTag("w102:$key"))
+                        },
+                    )
+                }
+            }
+            compose.waitForIdle()
+        }
+
+        /** 冻结时钟后提交并逐帧采样 8 帧（跳过写入前陈旧帧后的完整轨迹）。 */
+        fun popAndTrace(key: String, velocity: Float): List<Float> {
+            compose.mainClock.autoAdvance = false
+            compose.runOnUiThread { backStack.popFromProgress(0.8f, initialVelocity = velocity) }
+            val trace = mutableListOf<Float>()
+            repeat(8) {
+                compose.mainClock.advanceTimeByFrame()
+                trace += compose.onNodeWithTag("w102:$key").fetchSemanticsNode().boundsInRoot.left
+            }
+            compose.mainClock.autoAdvance = true
+            compose.waitForIdle()
+            compose.onNodeWithTag("w102:$key").assertDoesNotExist()
+            return trace
+        }
+
+        // 快速甩出：初速 -12 进度/s；零初速对照。两次都从 0.2×W 起步。
+        pushTagged("w102-velocity-fast")
+        val fastTrace = popAndTrace("w102-velocity-fast", velocity = -12f)
+        pushTagged("w102-velocity-slow")
+        val slowTrace = popAndTrace("w102-velocity-slow", velocity = 0f)
+
+        // 取两条轨迹都进入动画段后的同一位点比较：带速度的一帧必须弹出更远。
+        val idx = fastTrace.indexOfFirst { it > rootWidth * 0.2f + 1f }
+        assertTrue(
+            "速度轨迹必须进入动画段：fast=$fastTrace slow=$slowTrace",
+            idx in 0..fastTrace.size - 2,
+        )
+        assertTrue(
+            "释放速度必须传入 pop 弹簧：快速甩出帧(${fastTrace[idx]})必须比同位点零初速(${slowTrace[idx]})更靠外",
+            fastTrace[idx] > slowTrace[idx] + 1f,
+        )
+        assertTrue(
+            "零初速轨迹自身也必须平滑弹出：$slowTrace",
+            slowTrace[idx] > rootWidth * 0.2f && slowTrace[idx + 1] > slowTrace[idx],
         )
     }
 

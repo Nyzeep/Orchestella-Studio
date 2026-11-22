@@ -1747,11 +1747,15 @@ class Tier1FeatureCoverageTest {
             compose.mainClock.advanceTimeByFrame()
             compose.onNodeWithText(Oe3Tab.Distros.label).performClick()
             compose.mainClock.advanceTimeByFrame()
+            // W2-03 起页签切换是整页滑移：进场页从行进侧 ±100% 起步（减动效下
+            // 0ms 补间），首帧应用重组、次帧落位——再推一帧即瞬落基线。
+            compose.mainClock.advanceTimeByFrame()
             compose.onNodeWithTag("distros-grid").assertIsDisplayed()
 
             compose.runOnUiThread {
                 backStack.push(OeDestination("snap", "Snap") { Box(Modifier.fillMaxSize().testTag("snap:dest")) })
             }
+            compose.mainClock.advanceTimeByFrame()
             compose.mainClock.advanceTimeByFrame()
             compose.onNodeWithTag("snap:dest").assertIsDisplayed()
         } finally {

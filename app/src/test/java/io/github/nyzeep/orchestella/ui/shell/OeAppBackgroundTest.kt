@@ -15,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -81,6 +82,7 @@ class OeAppBackgroundTest {
     @Before
     fun setUp() {
         clearWallpaperCacheForTest()
+        WallpaperStore.resetForTest()
         FakeWallpaperProvider.openCount.set(0)
         val context = ApplicationProvider.getApplicationContext<Context>()
         tempImageA = File(context.cacheDir, "wallpaper_a.png").also { writeSamplePng(it) }
@@ -93,6 +95,7 @@ class OeAppBackgroundTest {
     @After
     fun tearDown() {
         clearWallpaperCacheForTest()
+        WallpaperStore.resetForTest()
         FakeWallpaperProvider.fileA = null
         FakeWallpaperProvider.fileB = null
         tempImageA.delete()
@@ -180,6 +183,46 @@ class OeAppBackgroundTest {
         // Invalid/revoked URI falls back without throwing.
         mode = OeAppBackgroundMode.Wallpaper("content://test.wallpaper/missing")
         compose.waitForIdle()
+    }
+
+    @Test
+    fun concurrentMountsShareOneDecodeAndOneProbePerAttachWave() {
+        // W2-03 壁纸单源：壳层最多同时挂 3 个 OeAppBackground（根背景 + 栈
+        // Under/Moving 底片）。同一挂载波次内：缓存未命中只解码一次（mutex
+        // 收敛），缓存命中只探活一次（挂载代计数器：进锁前快照 vs 锁内当前，
+        // 与锁序无关地保证同波次恰一次探活）。
+        var mode by mutableStateOf<OeAppBackgroundMode>(
+            OeAppBackgroundMode.Wallpaper("content://test.wallpaper/a"),
+        )
+        compose.setContent {
+            Oe3Theme(theme = ThemeCatalog.mascotDark, reduceMotion = true) {
+                Column {
+                    OeAppBackground(mode = mode)
+                    OeAppBackground(mode = mode)
+                    OeAppBackground(mode = mode)
+                }
+            }
+        }
+        compose.waitUntil(timeoutMillis = 5_000) { showsWallpaper() }
+        compose.waitForIdle()
+        // 并发 3 实例首挂 = 一次解码（bounds + decode 共两次流打开），不重复。
+        assertEquals("并发首挂必须单次解码", 2, FakeWallpaperProvider.openCount.get())
+
+        // 缓存命中路径：模式切走再切回（同一新波次）→ 恰好一次探活。
+        compose.runOnIdle { mode = OeAppBackgroundMode.Gradient }
+        compose.waitForIdle()
+        compose.runOnIdle { mode = OeAppBackgroundMode.Wallpaper("content://test.wallpaper/a") }
+        compose.waitUntil(timeoutMillis = 5_000) { showsWallpaper() }
+        compose.waitForIdle()
+        assertEquals("缓存命中重挂必须恰好一次探活", 3, FakeWallpaperProvider.openCount.get())
+
+        // 新波次再挂 → 再探一次；两波之间不得共享探活结论。
+        compose.runOnIdle { mode = OeAppBackgroundMode.Gradient }
+        compose.waitForIdle()
+        compose.runOnIdle { mode = OeAppBackgroundMode.Wallpaper("content://test.wallpaper/a") }
+        compose.waitUntil(timeoutMillis = 5_000) { showsWallpaper() }
+        compose.waitForIdle()
+        assertEquals("每个新挂载波次恰好一次探活", 4, FakeWallpaperProvider.openCount.get())
     }
 
     @Test

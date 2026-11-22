@@ -29,15 +29,23 @@ val LocalOeShellBackgroundMode = staticCompositionLocalOf<OeAppBackgroundMode> {
  * 1. 底片**永远不透明**，也不参与内容 alpha 动画——半透明底片会重新透出下层；
  * 2. 只在"可独立呈现的页面"外层各挂一块（pager 子页、栈目的地），`base` 层
  *    不重复挂载，避免同一帧画两遍整屏背景。
+ *
+ * W2-03：[wallpaperParallaxFraction] 供平移中的底片（栈 Moving 层）反向补偿
+ * 壁纸偏移——传入"移动层进度 p"的取值函数，壁纸按 (1−p)×宽度反向平移，与根
+ * 背景在屏幕坐标系保持对齐，仅内容随卡片横向滑入。静止底片传 null（默认），
+ * 像素与旧实现逐字节一致。
  */
 @Composable
-internal fun OePagePlate(modifier: Modifier = Modifier) {
+internal fun OePagePlate(
+    modifier: Modifier = Modifier,
+    wallpaperParallaxFraction: (() -> Float)? = null,
+) {
     val mode = LocalOeShellBackgroundMode.current
     Box(
         modifier
             .fillMaxSize()
             .background(Color(Oe3ThemeValues.colors.background)),
     ) {
-        OeAppBackground(mode = mode)
+        OeAppBackground(mode = mode, wallpaperParallaxFraction = wallpaperParallaxFraction)
     }
 }

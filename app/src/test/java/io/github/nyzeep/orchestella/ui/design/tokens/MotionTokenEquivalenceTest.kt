@@ -33,15 +33,39 @@ class MotionTokenEquivalenceTest {
     }
 
     @Test
+    fun pageFadeThroughTimelineIsPinnedInTheSingleSource() {
+        // W2-03（A4 §3.1 M2）：90ms 退场 + 20ms 留白 + 210ms 进场 = 320ms
+        // （OeDuration.Medium）。退场窗 [0, 90) 与进场窗 [110, 320) 零重叠，
+        // 留白恰为 20ms。
+        assertEquals(90, OeMotion.PAGE_FADE_EXIT_MS)
+        assertEquals(210, OeMotion.PAGE_FADE_ENTER_MS)
+        assertEquals(110, OeMotion.PAGE_FADE_ENTER_DELAY_MS)
+        // 进场窗起点 − 退场窗终点 = 恰好 20ms 留白。
+        assertEquals(
+            20,
+            OeMotion.PAGE_FADE_ENTER_DELAY_MS - OeMotion.PAGE_FADE_EXIT_MS,
+        )
+        assertEquals(
+            OeMotion.DURATION_MEDIUM_MS,
+            OeMotion.PAGE_FADE_ENTER_DELAY_MS + OeMotion.PAGE_FADE_ENTER_MS,
+        )
+    }
+
+    @Test
     fun pagePushValuesArePinnedInTheSingleSource() {
-        // v4 spec §1.5：spring(300ms, bounce 0) + 初速 9×距离/s；前一页缩至
-        // 80% 并压暗 15%（UI-03 切片 2）。数值只落在 [OeMotion] 一处。
+        // v4 spec §1.5 + W2-03 M2 重定标：Expressive 弹簧（700/0.9）+ 初速
+        // 6×距离/s；前一页缩至 92%、压暗 10%、反向视差 −12% 页宽；分离渐变带
+        // 24dp / 峰值 6%。数值只落在 [OeMotion] 一处。
         assertEquals(300, OeMotion.PAGE_PUSH_MS)
-        assertEquals(1f, OeMotion.PAGE_PUSH_DAMPING, 0.0001f)
-        assertEquals(9f, OeMotion.PAGE_PUSH_VELOCITY_FACTOR, 0.0001f)
-        assertEquals(0.8f, OeMotion.PAGE_PUSH_UNDER_SCALE, 0.0001f)
-        assertEquals(0.15f, OeMotion.PAGE_PUSH_UNDER_DIM, 0.0001f)
+        assertEquals(0.9f, OeMotion.PAGE_PUSH_DAMPING, 0.0001f)
+        assertEquals(700f, OeMotion.PAGE_PUSH_STIFFNESS, 0.0001f)
+        assertEquals(6f, OeMotion.PAGE_PUSH_VELOCITY_FACTOR, 0.0001f)
+        assertEquals(0.92f, OeMotion.PAGE_PUSH_UNDER_SCALE, 0.0001f)
+        assertEquals(0.10f, OeMotion.PAGE_PUSH_UNDER_DIM, 0.0001f)
+        assertEquals(-0.12f, OeMotion.PAGE_PUSH_UNDER_PARALLAX, 0.0001f)
         assertEquals(1f - OeMotion.PAGE_PUSH_UNDER_SCALE, OeMotion.PAGE_PUSH_SCALE_DELTA, 0.0001f)
+        assertEquals(24, OeMotion.PAGE_PUSH_SEAM_BAND_DP)
+        assertEquals(0.06f, OeMotion.PAGE_PUSH_SEAM_BAND_ALPHA, 0.0001f)
     }
 
     @Test
@@ -59,6 +83,9 @@ class MotionTokenEquivalenceTest {
         assertEquals(OeMotion.PRESS_MS, standard.press.durationMillis)
         assertEquals(OeMotion.PAGE_FADE_MS, standard.pageFade.durationMillis)
         assertEquals(OeMotion.PAGE_SLIDE_MS, standard.pageSlide.durationMillis)
+        assertEquals(OeMotion.PAGE_FADE_EXIT_MS, standard.pageFadeExit.durationMillis)
+        assertEquals(OeMotion.PAGE_FADE_ENTER_MS, standard.pageFadeEnter.durationMillis)
+        assertEquals(OeMotion.PAGE_FADE_ENTER_DELAY_MS, standard.pageFadeEnterDelayMillis)
         assertEquals(OeMotion.CARD_ENTER_MS, standard.cardEnter.durationMillis)
         assertEquals(OeMotion.DIALOG_MS, standard.dialog.durationMillis)
         assertEquals(OeMotion.THEME_TWEEN_MS, standard.themeTween.durationMillis)
@@ -68,6 +95,10 @@ class MotionTokenEquivalenceTest {
         assertEquals(OeMotion.CARD_ENTER_SCALE_FROM, standard.cardEnterScaleFrom, 0.0001f)
         assertEquals(OeMotion.NAV_SELECTION_STIFFNESS, standard.navSelectionSpring!!.stiffness, 0.0001f)
         assertEquals(OeMotion.SPRING_DAMPING, standard.navSelectionSpring!!.dampingRatio, 0.0001f)
+        // W2-03：栈推入弹簧经 W1-02 交付的 OeSpring.push(v) 体系接线
+        // （Expressive 档 700/0.9，见 Oe3Motion.standard）。
+        assertEquals(OeSpring.push().spec.dampingRatio, standard.pagePushSpring!!.dampingRatio, 0.0001f)
+        assertEquals(OeSpring.push().spec.stiffness, standard.pagePushSpring!!.stiffness, 0.0001f)
     }
 
     @Test
@@ -80,6 +111,10 @@ class MotionTokenEquivalenceTest {
         assertSame(OeMotion.decelerateEasing, standard.cardEnter.easing)
         assertSame(OeMotion.easeInOutEasing, standard.pageFade.easing)
         assertSame(OeMotion.easeOutCubicEasing, standard.dialog.easing)
+        // W2-03 fade-through：离场走 emphasized-accelerate（空间离场），进场走
+        // emphasized-decelerate（空间进场），与 M3 曲线语义对齐。
+        assertSame(OeEase.EmphasizedAccelerate, standard.pageFadeExit.easing)
+        assertSame(OeEase.EmphasizedDecelerate, standard.pageFadeEnter.easing)
     }
 
     @Test
@@ -164,10 +199,13 @@ class MotionTokenEquivalenceTest {
             reduced.press,
             reduced.pageFade,
             reduced.pageSlide,
+            reduced.pageFadeExit,
+            reduced.pageFadeEnter,
             reduced.cardEnter,
             reduced.dialog,
             reduced.themeTween,
         ).forEach { spec -> assertEquals(0, spec.durationMillis) }
+        assertEquals(0, reduced.pageFadeEnterDelayMillis)
         assertEquals(OeMotion.REDUCED_CARD_ENTER_SCALE_FROM, reduced.cardEnterScaleFrom, 0.0001f)
         assertNull(reduced.navSelectionSpring)
     }

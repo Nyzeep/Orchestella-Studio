@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.runtime.Immutable
+import io.github.nyzeep.orchestella.ui.design.tokens.OeEase
 import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 
 /**
@@ -24,12 +25,22 @@ data class Oe3MotionTokens(
     val press: Oe3MotionSpec,
     val pageFade: Oe3MotionSpec,
     val pageSlide: Oe3MotionSpec,
+    /**
+     * W2-03 fade-through timeline (90 out + 20 gap + 210 in = 320ms): the
+     * outgoing and incoming windows never overlap. [pageFadeExit] paces the
+     * leaving content, [pageFadeEnter] the arriving one, and
+     * [pageFadeEnterDelayMillis] is the gap that keeps them apart.
+     */
+    val pageFadeExit: Oe3MotionSpec,
+    val pageFadeEnter: Oe3MotionSpec,
+    val pageFadeEnterDelayMillis: Int,
     val cardEnter: Oe3MotionSpec,
     val dialog: Oe3MotionSpec,
     val themeTween: Oe3MotionSpec,
     /**
-     * v4 (UI-03): page push, spring(300ms, bounce 0) nominally. The spring is
-     * what settles; [Oe3MotionSpec.durationMillis] stays the outward number.
+     * v4 (UI-03), retuned by W2-03 (A4 §3.1 M2): page push on the Expressive
+     * grade (700/0.9 controlled rebound). The spring is what settles;
+     * [Oe3MotionSpec.durationMillis] stays the outward number.
      */
     val pagePush: Oe3MotionSpec,
     /** Starting scale of the card entrance; 1.0 under reduced motion. */
@@ -63,6 +74,9 @@ object Oe3Motion {
         press = Oe3MotionSpec(OeMotion.PRESS_MS, OeMotion.decelerateEasing, dampingRatio = OeMotion.SPRING_DAMPING),
         pageFade = Oe3MotionSpec(OeMotion.PAGE_FADE_MS, OeMotion.easeInOutEasing),
         pageSlide = Oe3MotionSpec(OeMotion.PAGE_SLIDE_MS, OeMotion.decelerateEasing),
+        pageFadeExit = Oe3MotionSpec(OeMotion.PAGE_FADE_EXIT_MS, OeEase.EmphasizedAccelerate),
+        pageFadeEnter = Oe3MotionSpec(OeMotion.PAGE_FADE_ENTER_MS, OeEase.EmphasizedDecelerate),
+        pageFadeEnterDelayMillis = OeMotion.PAGE_FADE_ENTER_DELAY_MS,
         cardEnter = Oe3MotionSpec(OeMotion.CARD_ENTER_MS, OeMotion.decelerateEasing),
         dialog = Oe3MotionSpec(OeMotion.DIALOG_MS, OeMotion.easeOutCubicEasing),
         themeTween = Oe3MotionSpec(OeMotion.THEME_TWEEN_MS, OeMotion.standardEasing),
@@ -77,10 +91,7 @@ object Oe3Motion {
             dampingRatio = OeMotion.SPRING_DAMPING,
             stiffness = OeMotion.NAV_SELECTION_STIFFNESS,
         ),
-        pagePushSpring = SpringSpec(
-            dampingRatio = OeMotion.PAGE_PUSH_DAMPING,
-            stiffness = OeMotion.PAGE_PUSH_STIFFNESS,
-        ),
+        pagePushSpring = OeSpring.push().spec,
     )
 
     fun reduced(): Oe3MotionTokens {
@@ -91,6 +102,9 @@ object Oe3Motion {
             press = base.press.instant(),
             pageFade = base.pageFade.instant(),
             pageSlide = base.pageSlide.instant(),
+            pageFadeExit = base.pageFadeExit.instant(),
+            pageFadeEnter = base.pageFadeEnter.instant(),
+            pageFadeEnterDelayMillis = 0,
             cardEnter = base.cardEnter.instant(),
             dialog = base.dialog.instant(),
             themeTween = base.themeTween.instant(),

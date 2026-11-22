@@ -192,4 +192,104 @@ class OeBackStackTest {
         assertTrue(stack.popFromProgress(-0.5f))
         assertEquals(0f, stack.transition.startProgress, 0.0001f)
     }
+
+    @Test
+    fun reboundToRestKeepsTheEntriesAndMarksAReboundFlight() {
+        // W2-03 取消回弹：条目不动（绝不弹层），只推一次 Rebound 飞行快照，
+        // 收敛后 settle 恢复静止态。
+        val stack = OeBackStack()
+        stack.push(destination("a"))
+        stack.push(destination("b"))
+        val beforeId = stack.transition.transitionId
+        assertTrue(stack.reboundToRest(startProgress = 0.4f, initialVelocity = -3f))
+        val rebound = stack.transition
+        assertTrue(rebound.transitionId > beforeId)
+        assertEquals(StackFlight.Rebound, rebound.flight)
+        assertEquals(2, rebound.entries.size)
+        assertEquals("b", rebound.leaving?.destination?.key)
+        assertEquals(0.4f, rebound.startProgress, 0.0001f)
+        assertEquals(-3f, rebound.initialVelocity, 0.0001f)
+        assertEquals(2, stack.size)
+        assertEquals("b", stack.top?.key)
+
+        stack.settleTransition(rebound.transitionId)
+        assertEquals(StackFlight.None, stack.transition.flight)
+        assertNull(stack.transition.leaving)
+        assertEquals(2, stack.size)
+    }
+
+    @Test
+    fun reboundToRestOnAnEmptyStackIsANoOp() {
+        val stack = OeBackStack()
+        assertFalse(stack.reboundToRest(0.5f))
+        assertEquals(0L, stack.transition.transitionId)
+    }
+
+    @Test
+    fun popDuringAnyFlightContinuesFromCurrentProgressInsteadOfSnapping() {
+        // W2-03 接管边界：飞行中（Push/Pop/Rebound）的返回从当前进度续弹，
+        // 不再瞬切到端点（旧行为里 Pop 飞行退化为 1f 起点瞬切）。
+        val stack = OeBackStack()
+        stack.push(destination("a"))
+
+        // Push 飞行中 pop：弹出 a，起点取自 Push 飞行进度（动画未跟踪 → 0）。
+        assertTrue(stack.pop())
+        assertEquals(StackFlight.Pop, stack.transition.flight)
+        assertEquals("a", stack.transition.leaving?.destination?.key)
+        assertEquals(0f, stack.transition.startProgress, 0.0001f)
+        stack.settleTransition(stack.transition.transitionId)
+        assertEquals(0, stack.size)
+
+        // Pop 飞行中再 pop：栈已空 → 不消费（不为负）。
+        assertFalse(stack.pop())
+
+        // 重建 Pop 飞行后再 pop：起点 = 上一段 Pop 飞行的快照进度（0.7），
+        // 而非 1f 瞬切。
+        stack.push(destination("x"))
+        stack.push(destination("y"))
+        assertTrue(stack.popFromProgress(0.7f))
+        assertEquals(1, stack.size)
+        assertTrue(stack.pop())
+        assertEquals(StackFlight.Pop, stack.transition.flight)
+        assertEquals("x", stack.transition.leaving?.destination?.key)
+        assertEquals(0.7f, stack.transition.startProgress, 0.0001f)
+        assertEquals(0, stack.size)
+    }
+
+    @Test
+    fun popDuringReboundContinuesFromTheReboundProgress() {
+        val stack = OeBackStack()
+        stack.push(destination("a"))
+        assertTrue(stack.reboundToRest(startProgress = 0.3f, initialVelocity = 2f))
+        assertTrue(stack.pop())
+        assertEquals(StackFlight.Pop, stack.transition.flight)
+        assertEquals("a", stack.transition.leaving?.destination?.key)
+        // Rebound 的动画进度未被跟踪（animatedTransitionId 不匹配）→ 退回
+        // 快照 startProgress，即从取消时被拉开的位置继续弹出。
+        assertEquals(0.3f, stack.transition.startProgress, 0.0001f)
+        assertEquals(0, stack.size)
+    }
+
+    @Test
+    fun velocityEstimatorTracksTheTailRateOfTheGestureFlow() {
+        // W2-03：提交/取消初速 = progressFlow 末段变化率（事件进度单位/秒）。
+        val estimator = PredictiveBackVelocityEstimator()
+        assertEquals(0f, estimator.eventVelocity(), 0.0001f)
+
+        // 首个样本没有前驱，速度保持 0。
+        estimator.onSample(0.2f, atMs = 1_000L)
+        assertEquals(0f, estimator.eventVelocity(), 0.0001f)
+
+        // 0.2 → 0.5 跨 100ms：末段速率 = 0.3/0.1s = 3 进度/s。
+        estimator.onSample(0.5f, atMs = 1_100L)
+        assertEquals(3f, estimator.eventVelocity(), 0.0001f)
+
+        // 同毫秒重复样本（dt=0）不产生除零，保持上一速率。
+        estimator.onSample(0.5f, atMs = 1_100L)
+        assertEquals(3f, estimator.eventVelocity(), 0.0001f)
+
+        // 回拉：0.5 → 0.4 跨 50ms → −2 进度/s。
+        estimator.onSample(0.4f, atMs = 1_150L)
+        assertEquals(-2f, estimator.eventVelocity(), 0.0001f)
+    }
 }
