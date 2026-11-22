@@ -10,9 +10,9 @@ Rules (scanned in `ui/**/*.kt`, comments stripped):
   * `tween(<number>)`            -> violation, except the reduced-motion
                                      whitelist `tween(0)`.
   * `delay(<number>)`            -> violation (a fixed stagger/settling wait).
-  * `spring(...)` with a numeric  -> violation; spring parameters must come
-    literal argument                from a token (`OeMotion.*`).
-  * `spring(...)` passing         -> violation (W1-02): stiffness must come
+  * `spring(...)` / `SpringSpec(...)` with a number -> violation; parameters
+                                    must come from a token (`OeMotion.*`).
+  * Spring calls passing          -> violation (W1-02): stiffness must come
     `Spring.Stiffness*`             from a token constant, never the
     framework constant              framework's canned values.
   * retired / token-owned motion  -> violation (W1-02): the second-source
@@ -70,7 +70,7 @@ MOTION_TOKEN_FILE_SUFFIX = "design/tokens/Motion.kt"
 NUMBER = r"-?\d+(?:\.\d+)?"
 TWEEN_RE = re.compile(rf"\btween\s*\(\s*({NUMBER})\s*[fFlL]?\s*[,)]")
 DELAY_RE = re.compile(rf"\bdelay\s*\(\s*({NUMBER})\s*[fFlL]?\s*[,)]")
-SPRING_RE = re.compile(r"\bspring\s*\(([^()]*)\)", re.DOTALL)
+SPRING_RE = re.compile(r"\b(spring|SpringSpec)(?:\s*<[^<>()]+>)?\s*\(([^()]*)\)", re.DOTALL)
 SPRING_ARG_RE = re.compile(rf"(?:^|[,=]\s*)({NUMBER})\s*[fFlL]?\b")
 CONST_DECL_RE = re.compile(r"\b(?:const\s+val|val)\s+(\w+)\s*=\s*(.+?)\s*$")
 NUMERIC_INIT_RE = re.compile(rf"^{NUMBER}\s*[fFlL]?$")
@@ -172,18 +172,18 @@ def scan_text(text: str, origin: str = "<text>") -> list[str]:
                 )
 
     for match in SPRING_RE.finditer(stripped):
-        args = match.group(1)
+        call, args = match.groups()
         lineno = stripped.count("\n", 0, match.start()) + 1
         if SPRING_STIFFNESS_RE.search(args):
             violations.append(
-                f"{origin}:{lineno}: spring-stiffness-literal: spring({args.strip()})"
+                f"{origin}:{lineno}: spring-stiffness-literal: {call}({args.strip()})"
             )
             continue
         literal = SPRING_ARG_RE.search(args)
         if literal is None:
             continue
         violations.append(
-            f"{origin}:{lineno}: spring-literal: spring({args.strip()})"
+            f"{origin}:{lineno}: spring-literal: {call}({args.strip()})"
         )
     return violations
 
@@ -244,6 +244,9 @@ def _self_test() -> int:
         ("val a = spring(dampingRatio = Spring.StiffnessMedium)", 1),
         ("val a = spring(stiffness = OeMotion.PRESS_STIFFNESS)", 0),
         ("val a = spring(dampingRatio = motion.press.dampingRatio, stiffness = Spring.StiffnessMedium)", 1),
+        ("val a = SpringSpec<Float>(stiffness = Spring.StiffnessMedium)", 1),
+        ("val a = SpringSpec<Float>(stiffness = 400f)", 1),
+        ("val a = SpringSpec<Float>(stiffness = OeMotion.PRESS_STIFFNESS)", 0),
         # W1-02: retired second-source constants may not grow back.
         ("val previewTweenMillis = 300", 1),
         ("const val ACCORDION_MILLIS = 220", 1),

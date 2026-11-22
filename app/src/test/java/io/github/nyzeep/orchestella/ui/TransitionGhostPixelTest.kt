@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,12 +38,15 @@ import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.glass.GlassGateVerdict
 import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassChrome
 import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassFrameGate
+import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3MotionSystem
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
+import io.github.nyzeep.orchestella.ui.shell.LocalOeShellBackgroundMode
 import io.github.nyzeep.orchestella.ui.shell.Oe3App
 import io.github.nyzeep.orchestella.ui.shell.Oe3Pages
 import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
+import io.github.nyzeep.orchestella.ui.shell.OeAppBackgroundMode
 import io.github.nyzeep.orchestella.ui.shell.OeBackStack
 import io.github.nyzeep.orchestella.ui.shell.OeBackStackHost
 import io.github.nyzeep.orchestella.ui.shell.OeDestination
@@ -62,7 +66,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * W1-02（A4-M6）过渡幽灵像素回归钉：两个必绿用例 + Wave 2 红线探针组。
+ * W1-02（A4-M6）转场像素回归测试与 Wave 2 红线探针。
  *
  * == 必绿组（当前实现必须全绿，门禁过滤
  * `--tests "io.github.nyzeep.orchestella.ui.TransitionGhostPixelTest"`）==
@@ -70,12 +74,12 @@ import kotlin.math.roundToInt
  *    [OeDialogHost] 覆盖层实时跟随（W1-02 A4-M1 落地的 ContentObserver 热监听）。
  * 2. [predictiveBack_commitPopsOnce]：提交式返回绝不双弹的边界护栏（每派发一次
  *    返回恰好弹一层；连续提交深度精确递减；空栈第三次提交不消费、不为负）。
+ * 3. [backStackCoverage_zeroUnderlaySeeThrough]：透明目的页的覆盖区只显示真实栈底片。
  *
  * == Wave 2 红线探针组（全部 @Ignore，禁止把当前缺陷行为写成预期）==
  * - [pagerSwitch_hasNoCrossBlendMix]（R-01 → 解锁 Wave 2 M2）
  * - [scrollPastZero_keepsDockGlassStateNonNull]（R-02 → 解锁 Wave 2 M4）
  * - [frameGate120Hz_coldStartDoesNotLockL0]（R-03 → 解锁 Wave 2 M4）
- * - [backStackCoverage_zeroUnderlaySeeThrough]（栈覆盖零透底护栏 → 解锁 Wave 2 M2）
  * - [backStackCoverage_negative_withoutPlateMustFail]（无底片负例 → 解锁 Wave 2 M2）
  * - [cardPress_firstFrameFeedbackWithin32ms_andReleaseWithin240ms]（→ 解锁 Wave 2 M3）
  *
@@ -123,14 +127,8 @@ class TransitionGhostPixelTest {
      *    attach 时在 `Settings.Global.ANIMATOR_DURATION_SCALE` URI 上注册
      *    ContentObserver；对话框入场动画（0.88 缩放 / α0.5 起步，α 补间 250ms）
      *    处于中段（冻结 mainClock，只显式推进 2 帧）。
-     * 2. 写 0x：同时写 Settings.Global 与 ValueAnimator 隐藏档位（真机上系统会把
-     *    Settings 值推进 `ValueAnimator.setDurationScale`；Robolectric 无该推送，
-     *    测试同步写两侧保持与真机等价的观察者输入），再 `notifyChange` 触发观察者
-     *    （Robolectric 的 ShadowContentResolver 同步 dispatchChange；观察者经主
-     *    looper Handler 派发，`shadowOf(Looper).idle()` 兜底）。观察者把
-     *    `!ValueAnimator.areAnimatorsEnabled()` 写回 reduceMotion 状态 → 重组合 →
-     *    `Oe3DialogSpringEnterMotion` 的 `LaunchedEffect(motion)` 重启并 `snapTo`
-     *    终态。
+     * 2. 只写 Settings.Global 的 0x 并触发观察者。ValueAnimator 仍为 1x，
+     *    模拟平台更新进程缓存前收到设置通知。对话框应从设置读取 0x 并落位。
      * 3. 红线断言：切换后对话框立即稳定——再推进 1000ms 像素零变化（无动画残留）。
      *    若覆盖层不跟随（回归），入场弹簧/补间会在 mainClock 推进 1000ms 的窗口里
      *    继续演化，前后两帧必然不同。
@@ -179,10 +177,12 @@ class TransitionGhostPixelTest {
             val midFrame = captureContentBitmap()
             val midPixel = midFrame.getPixel(dialogCenter.x.roundToInt(), dialogCenter.y.roundToInt())
 
-            // 1x → 0x 热切换：写两侧档位 + notifyChange 触发观察者。
+            // 模拟 Settings 通知先于 ValueAnimator 缓存更新。
             compose.runOnUiThread {
-                Settings.Global.putFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
-                setAnimatorDurationScale(0f)
+                // Robolectric's putFloat shadow also updates ValueAnimator;
+                // putString changes only the backing setting.
+                Settings.Global.putString(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, "0")
+                assertTrue(ValueAnimator.areAnimatorsEnabled())
                 resolver.notifyChange(scaleUri, null)
             }
             Shadows.shadowOf(Looper.getMainLooper()).idle()
@@ -210,9 +210,9 @@ class TransitionGhostPixelTest {
 
             // 0x → 1x 恢复：同理热切换，内容不丢、终态不扰动。
             compose.runOnUiThread {
-                Settings.Global.putFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
-                setAnimatorDurationScale(1f)
+                Settings.Global.putString(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, "1")
                 resolver.notifyChange(scaleUri, null)
+                assertFalse(Oe3MotionSystem.isReducedMotion(compose.activity))
             }
             Shadows.shadowOf(Looper.getMainLooper()).idle()
             repeat(4) { compose.mainClock.advanceTimeByFrame() }
@@ -517,26 +517,28 @@ class TransitionGhostPixelTest {
      * 栈转场零透底护栏（解锁：Wave 2 M2）：push 后用 [OeBackStackHost] 的手势
      * 进度注入（internal 重载，Wave 2 M2 手势接入的同一注入点）把移动层钉在
      * 25% / 50% / 75% 覆盖，采样覆盖区断言**零下层透底**——每个像素都必须是
-     * 覆盖页端色（OePagePlate 不透明纪律）。
+     * OePagePlate 的主题底色。透明目的页自身不绘制底色。
      *
      * gestureProgress p 与移动层进度互为 1−p（1f = 未拉开）：p=0.75 → 移动层
      * 进度 0.25 → 覆盖右侧 25%。
      *
-     * 当前实现带底片，本断言今日即可满足；@Ignore 标记为 Wave 2 M2 的回归护栏
-     * ——M2 重构转场几何/底片挂载时必须先解锁本用例，重构后覆盖区仍须零透底。
+     * Wave 2 M2 重构转场几何与底片时也须保持此契约。
      */
     @Test
-    @Ignore("Wave 2 M2 guard: 栈转场 25/50/75% 覆盖区零下层透底护栏，随 Wave 2 M2 转场重构解锁。")
     fun backStackCoverage_zeroUnderlaySeeThrough() {
         val backStack = OeBackStack()
         var gestureProgress by mutableStateOf<Float?>(null)
+        var plateArgb = 0
         compose.setContent {
             Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = false) {
-                OeBackStackHost(
-                    backStack = backStack,
-                    gestureProgress = gestureProgress,
-                    base = { Box(Modifier.fillMaxSize().background(PageCyan)) },
-                )
+                plateArgb = Oe3ThemeValues.colors.background
+                CompositionLocalProvider(LocalOeShellBackgroundMode provides OeAppBackgroundMode.Solid) {
+                    OeBackStackHost(
+                        backStack = backStack,
+                        gestureProgress = gestureProgress,
+                        base = { Box(Modifier.fillMaxSize().background(PageCyan)) },
+                    )
+                }
             }
         }
         compose.waitForIdle()
@@ -544,7 +546,7 @@ class TransitionGhostPixelTest {
             Snapshot.withMutableSnapshot {
                 backStack.push(
                     OeDestination("w102-cover", "覆盖层") {
-                        Box(Modifier.fillMaxSize().background(PageMagenta))
+                        Box(Modifier.fillMaxSize())
                     },
                 )
             }
@@ -562,7 +564,7 @@ class TransitionGhostPixelTest {
             var leak = 0
             for (y in bandRange(img)) {
                 for (x in xFrom until img.width) {
-                    if (!isEndpointColor(img.getPixel(x, y), PURE_MAGENTA_ARGB)) leak++
+                    if (!isEndpointColor(img.getPixel(x, y), plateArgb)) leak++
                 }
             }
             assertEquals(

@@ -1,7 +1,15 @@
 package io.github.nyzeep.orchestella.ui.oe3.motion
 
+import android.animation.ValueAnimator
 import android.content.ContentResolver
+import android.content.Context
+import android.database.ContentObserver
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -47,21 +55,49 @@ object Oe3MotionSystem {
             DEFAULT_SCALE,
         )
 
-    /**
-     * One-shot read of the system reduced-motion signal. The app shell already
-     * receives its reduce-motion flag from the Activity
-     * (`ValueAnimator.areAnimatorsEnabled()` covers the same setting); this
-     * composable is the in-composition reader for surfaces that need to verify
-     * the signal themselves.
-     */
     fun isReducedMotion(resolver: ContentResolver): Boolean =
         isReducedMotion(readScale(resolver))
+
+    fun isReducedMotion(context: Context): Boolean {
+        // The setting observer can fire before WindowManager updates the
+        // process's ValueAnimator scale. Use the setting for user changes,
+        // and keep the effective scale for power saver and absent settings.
+        val rawScale = Settings.Global.getString(
+            context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE,
+        )
+        if (rawScale == null) return !ValueAnimator.areAnimatorsEnabled()
+        if (isReducedMotion(rawScale)) return true
+        return context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true &&
+            !ValueAnimator.areAnimatorsEnabled()
+    }
+
+    /** Observes user and effective scale changes on the main thread. */
+    internal fun observeAnimatorScale(context: Context, onChanged: () -> Unit): () -> Unit {
+        val resolver = context.contentResolver
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) = onChanged()
+        }
+        resolver.registerContentObserver(
+            Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, observer,
+        )
+        val stopEffectiveObserver = if (Build.VERSION.SDK_INT >= 33) observeEffectiveScale(onChanged) else null
+        return {
+            resolver.unregisterContentObserver(observer)
+            stopEffectiveObserver?.invoke()
+        }
+    }
+
+    @RequiresApi(33)
+    private fun observeEffectiveScale(onChanged: () -> Unit): () -> Unit {
+        val listener = ValueAnimator.DurationScaleChangeListener { onChanged() }
+        ValueAnimator.registerDurationScaleChangeListener(listener)
+        return { ValueAnimator.unregisterDurationScaleChangeListener(listener) }
+    }
 }
 
 /**
  * Composition-side read of [Oe3MotionSystem]. Evaluated once per composition
- * instance; a settings change re-enters through activity recreation, which is
- * where the shell re-resolves its reduce-motion flag today.
+ * instance. Activity and dialog hosts observe changes during their lifetimes.
  */
 @Composable
 fun rememberOe3ReducedMotion(): Boolean {

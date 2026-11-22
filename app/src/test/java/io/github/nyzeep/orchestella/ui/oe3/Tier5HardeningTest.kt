@@ -1,6 +1,6 @@
 package io.github.nyzeep.orchestella.ui.oe3
 
-import android.animation.ValueAnimator
+import android.provider.Settings
 import android.graphics.Bitmap
 import android.os.Build
 import androidx.activity.ComponentActivity
@@ -72,18 +72,13 @@ class Tier5HardeningTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
 
-    private fun setAnimatorDurationScale(scale: Float) {
-        val method = ValueAnimator::class.java
-            .getDeclaredMethod("setDurationScale", Float::class.javaPrimitiveType)
-        method.isAccessible = true
-        method.invoke(null, scale)
-    }
-
     @Test
     fun oeDialogHostWithSystemReduceMotionSnapsAtFullWidthOnFirstFrame() {
-        val originalScale = ValueAnimator.getDurationScale()
+        val resolver = compose.activity.contentResolver
+        val scaleSetting = Settings.Global.ANIMATOR_DURATION_SCALE
+        val originalScale = Settings.Global.getString(resolver, scaleSetting)
         val host = OeDialogHost.attach(compose.activity)
-        setAnimatorDurationScale(0f)
+        Settings.Global.putString(resolver, scaleSetting, "0")
         compose.mainClock.autoAdvance = false
         try {
             compose.setContent {
@@ -143,7 +138,7 @@ class Tier5HardeningTest {
             assertTrue("Dialog must render immediately under reduceMotion ($earlyWidth)", earlyWidth > 100)
             assertEquals("Reduced motion dialog must open at final width without scaling up", settledWidth, earlyWidth)
         } finally {
-            setAnimatorDurationScale(originalScale)
+            Settings.Global.putString(resolver, scaleSetting, originalScale)
             compose.mainClock.autoAdvance = true
             compose.runOnUiThread { host.dismiss() }
             compose.waitForIdle()

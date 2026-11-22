@@ -5,7 +5,6 @@ import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.database.ContentObserver
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
@@ -14,7 +13,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,6 +45,7 @@ import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassDeviceCap
 import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassLowRam
 import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassFrameGate
 import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassStrategy
+import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3MotionSystem
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
 import io.github.nyzeep.orchestella.ui.screens.wizard.WizardController
 import io.github.nyzeep.orchestella.ui.screens.wizard.WizardScreen
@@ -195,23 +194,7 @@ class MainActivity : AppCompatActivity() {
     private var batteryFacts = HardwareBatteryFacts()
     private var powerReceiverRegistered = false
 
-    /**
-     * W1-02（A4-M1）：系统「移除动画」（ANIMATOR_DURATION_SCALE）热监听。
-     * 前台切换动画倍率（1x ↔ 0x）时立即刷新壳层快照，让
-     * `Oe3ThemeValues.info.reducedMotion` 与玻璃能力在下一帧即落位；
-     * 缩放值只作布尔信号消费（动画是否被系统禁用），标准档绝不二次手乘
-     * 系统动画时钟。注册/注销跟随 onStart/onStop，与 surfaceOpacityListener
-     * 同一生命周期约定。
-     */
-    private val animatorScaleObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
-        override fun onChange(selfChange: Boolean) {
-            runOnUiThread {
-                if (!isFinishing && !isDestroyed) refreshOe3ShellSnapshot()
-            }
-        }
-    }
-
-    private var animatorScaleObserverRegistered = false
+    private var stopAnimatorScaleObserver: (() -> Unit)? = null
 
     // Lane A（2026-11-13）：随行 UML face 的 Android 侧绑定。face 经装配槽的
     // spawner 注入重载构造（drain 线程消费内置 initramfs 的 §4 契约串），生命
@@ -587,7 +570,7 @@ class MainActivity : AppCompatActivity() {
         val resolvedTheme = themeStore.resolve()
         oe3ThemeState.value = resolvedTheme
         // UI3-10 玻璃层的运行时闸：动效被系统关闭或省电模式时退到实色 scrim 面。
-        val animatorsEnabled = android.animation.ValueAnimator.areAnimatorsEnabled()
+        val animatorsEnabled = !Oe3MotionSystem.isReducedMotion(this)
         val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
         // UI-06 玻璃模式：off/auto/always 三档；auto 按设备能力解析渲染档位，
         // 并尊重旧档位键的显式关闭（从未写过旧键才给自动玻璃）。
@@ -1671,23 +1654,16 @@ class MainActivity : AppCompatActivity() {
         super.onStart()
         getSharedPreferences(ThemeStore.PREFS_NAME, Context.MODE_PRIVATE)
             .registerOnSharedPreferenceChangeListener(surfaceOpacityListener)
-        if (!animatorScaleObserverRegistered) {
-            contentResolver.registerContentObserver(
-                Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE),
-                /* notifyForDescendants = */ false,
-                animatorScaleObserver,
-            )
-            animatorScaleObserverRegistered = true
+        stopAnimatorScaleObserver = Oe3MotionSystem.observeAnimatorScale(this) {
+            if (!isFinishing && !isDestroyed) refreshOe3ShellSnapshot()
         }
         startPowerMonitoring()
     }
 
     override fun onStop() {
         stopPowerMonitoring()
-        if (animatorScaleObserverRegistered) {
-            contentResolver.unregisterContentObserver(animatorScaleObserver)
-            animatorScaleObserverRegistered = false
-        }
+        stopAnimatorScaleObserver?.invoke()
+        stopAnimatorScaleObserver = null
         getSharedPreferences(ThemeStore.PREFS_NAME, Context.MODE_PRIVATE)
             .unregisterOnSharedPreferenceChangeListener(surfaceOpacityListener)
         super.onStop()
