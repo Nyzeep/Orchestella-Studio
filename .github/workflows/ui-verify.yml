@@ -96,9 +96,18 @@ jobs:
       # The Aliyun mirror also covers Robolectric's out-of-band
       # android-all-instrumented download, which is rate-limited on Maven
       # Central from shared runners.
-      - name: Unit tests, screenshot verify and Lint
+      # Roborazzi's verify property changes how pixel probes capture their temporary images.
+      - name: Unit tests and pixel probes
         run: >-
-          ./gradlew :app:testDebugUnitTest :app:verifyRoborazziDebug :app:lintDebug
+          ./gradlew :app:testDebugUnitTest
+          -Porg.gradle.java.installations.paths="$JDK17_HOME"
+          -Porchestella.assets.allowMissingPayload=true
+          -Porchestella.repositories.useAliyunMirror=true
+          --no-daemon --stacktrace
+
+      - name: Verify screenshot baselines and Lint
+        run: >-
+          ./gradlew :app:verifyRoborazziDebug :app:lintDebug
           -Porg.gradle.java.installations.paths="$JDK17_HOME"
           -Porchestella.assets.allowMissingPayload=true
           -Porchestella.repositories.useAliyunMirror=true

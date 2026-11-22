@@ -47,7 +47,7 @@ import kotlin.math.roundToInt
 /**
  * W2-05 玻璃所有权仲裁端到端（R-02 红线）：底栏是第一类玻璃所有者，顶栏滚动
  * 边缘是 shell 唯一 haze 源的次级消费者——滚动过折叠阈值经**真实注册路径**
- * （页面位移 → OeScaffold 折叠滞回 → rememberOe3ScrollEdgeGlass → chrome 账本）
+ * （页面位移 → OeScaffold 折叠滞回 → ReportOe3ScrollEdge → chrome 账本）
  * 出现 scroll edge 后，dock 材质必须保持 haze 路径（L1/L2 模糊底板）。
  *
  * 环境口径与 TransitionGhostPixelTest 一致：Robolectric NATIVE、glassLevel=
@@ -137,7 +137,7 @@ class Oe3GlassChromeOwnershipTest {
         }
         compose.waitForIdle()
         assertTrue(
-            "滚过折叠阈值后必须经 rememberOe3ScrollEdgeGlass 真实路径注册 scroll edge",
+            "滚过折叠阈值后必须经 ReportOe3ScrollEdge 真实路径登记 scroll edge",
             chrome.hasScrollEdge,
         )
         val scrolled = captureRootBitmap(name = "ownership-scrolled")

@@ -7,6 +7,7 @@ import android.graphics.Typeface;
 import android.text.Layout;
 import android.text.TextPaint;
 import io.github.nyzeep.orchestella.TerminalSpan;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -34,18 +35,15 @@ public final class TerminalCanvasRenderer {
         public final int lineCount;
         final int textLength;
         final int[] lineStarts;
-        final int[] lineColumns;
         final TerminalSpan[] spans;
         /** Span i covers {@code [spanStarts[i], spanStarts[i+1])}; the runs partition the text. */
         final int[] spanStarts;
 
-        private LineModel(String text, int[] lineStarts, int[] lineColumns,
-                TerminalSpan[] spans, int[] spanStarts) {
+        private LineModel(String text, int[] lineStarts, TerminalSpan[] spans, int[] spanStarts) {
             this.text = text;
             this.textLength = text.length();
             this.lineCount = lineStarts.length;
             this.lineStarts = lineStarts;
-            this.lineColumns = lineColumns;
             this.spans = spans;
             this.spanStarts = spanStarts;
         }
@@ -68,7 +66,6 @@ public final class TerminalCanvasRenderer {
                 if (text.charAt(i) == '\n') lineCount++;
             }
             int[] lineStarts = new int[lineCount];
-            int[] lineColumns = new int[lineCount];
             int line = 0;
             for (int i = 0; i < text.length(); i++) {
                 if (text.charAt(i) == '\n') {
@@ -76,12 +73,7 @@ public final class TerminalCanvasRenderer {
                     lineStarts[line] = i + 1;
                 }
             }
-            for (int i = 0; i < lineCount; i++) {
-                lineColumns[i] = TerminalSelectionGeometry.lineColumns(
-                        text, lineStarts[i], lineEnd(lineStarts, lineCount, text.length(), i));
-            }
-            return new LineModel(text, lineStarts, lineColumns,
-                    spanList.toArray(new TerminalSpan[0]), spanStarts);
+            return new LineModel(text, lineStarts, spanList.toArray(new TerminalSpan[0]), spanStarts);
         }
 
         /** Char offset of the line's first cell. */
@@ -90,6 +82,10 @@ public final class TerminalCanvasRenderer {
         /** Exclusive end of the line's cell content; see {@link #lineEnd(int[], int, int, int)}. */
         public int lineEnd(int line) {
             return lineEnd(lineStarts, lineCount, textLength, line);
+        }
+
+        int lineColumns(int line) {
+            return TerminalSelectionGeometry.lineColumns(text, lineStart(line), lineEnd(line));
         }
 
         /** Style run covering {@code offset} (clamped into the text). */
@@ -187,7 +183,7 @@ public final class TerminalCanvasRenderer {
         styledTypefaces[1] = Typeface.create(typeface, Typeface.BOLD);
         styledTypefaces[2] = Typeface.create(typeface, Typeface.ITALIC);
         styledTypefaces[3] = Typeface.create(typeface, Typeface.BOLD_ITALIC);
-        java.util.Arrays.fill(asciiAdvances, 0f);
+        Arrays.fill(asciiAdvances, 0f);
         codePointAdvances.clear();
         fillPaint.setStyle(Paint.Style.FILL);
         railPaint.setStyle(Paint.Style.FILL);
@@ -250,7 +246,8 @@ public final class TerminalCanvasRenderer {
 
     /** First and last (inclusive) rows intersecting the clip, clamped into the model. */
     static int[] visibleRowRange(int clipTop, int clipBottom, int originY, int rowHeightPx, int lineCount) {
-        if (clipBottom <= originY || clipTop >= originY + rowHeightPx * lineCount) return new int[]{0, -1};
+        if (clipBottom <= clipTop || clipBottom <= originY || clipTop >= originY + rowHeightPx * lineCount)
+            return new int[]{0, -1};
         int first = 0;
         if (clipTop > originY) first = (clipTop - originY) / rowHeightPx;
         // Exclusive clip bottom: a row starting exactly at the edge is not visible.
@@ -392,6 +389,7 @@ public final class TerminalCanvasRenderer {
             List<TerminalScreenModel.Snapshot.CommandRange> commandRanges) {
         if (drawClipRect == null) drawClipRect = new Rect();
         Rect clip = drawClipRect;
+        lastDrawnRowCount = 0;
         if (!canvas.getClipBounds(clip)) return;
         int[] range = visibleRowRange(clip.top, clip.bottom, originY, rowHeightPx, model.lineCount);
         lastDrawnRowCount = range[1] - range[0] + 1;
@@ -399,16 +397,24 @@ public final class TerminalCanvasRenderer {
 
         int clampedCursor = Math.max(0, Math.min(cursorOffset, model.textLength));
         int cursorLine = cursorShown ? model.lineOfOffset(clampedCursor) : -1;
-        int cursorColumn = cursorLine >= 0
+        int cursorColumn = cursorLine >= range[0] && cursorLine <= range[1]
                 ? TerminalSelectionGeometry.columnAtOffset(model.text,
                         model.lineStarts[cursorLine], model.lineEnd(cursorLine), clampedCursor) : -1;
         float barWidth = Math.max(2f, textSizePx / 10f);
         if (drawPlan == null) drawPlan = new LinePlan();
         LinePlan plan = drawPlan;
+        int commandRangeIndex = firstCommandRangeAtOrAfter(commandRanges, range[0]);
         for (int row = range[0]; row <= range[1]; row++) {
             int top = originY + row * rowHeightPx;
             int bottom = top + rowHeightPx;
-            drawCommandRail(canvas, row, top, bottom, commandRanges);
+            while (commandRangeIndex < commandRanges.size() &&
+                    commandRanges.get(commandRangeIndex).endLineExclusive() <= row) {
+                commandRangeIndex++;
+            }
+            if (commandRangeIndex < commandRanges.size() && commandRanges.get(commandRangeIndex).startLine() <= row) {
+                float left = originX - railGapPx - railWidthPx;
+                canvas.drawRect(left, top, left + railWidthPx, bottom, railPaint);
+            }
             planLine(model, row, measuredAdvance, cellStepPx, plan);
             for (int i = 0; i < plan.bgRunCount; i++) {
                 fillPaint.setColor(plan.bgArgb[i]);
@@ -436,19 +442,16 @@ public final class TerminalCanvasRenderer {
         }
     }
 
-    /** Left-edge accent rail for archived command-head rows; never touches the text buffer. */
-    private void drawCommandRail(Canvas canvas, int row, int top, int bottom,
-            List<TerminalScreenModel.Snapshot.CommandRange> commandRanges) {
-        if (commandRanges.isEmpty()) return;
-        for (int i = 0; i < commandRanges.size(); i++) {
-            TerminalScreenModel.Snapshot.CommandRange range = commandRanges.get(i);
-            if (range.startLine() > row) break;
-            if (row < range.endLineExclusive()) {
-                float left = originX - railGapPx - railWidthPx;
-                canvas.drawRect(left, top, left + railWidthPx, bottom, railPaint);
-                return;
-            }
+    /** The transcript emits command ranges in display order, without overlap. */
+    private static int firstCommandRangeAtOrAfter(List<TerminalScreenModel.Snapshot.CommandRange> ranges, int row) {
+        int low = 0;
+        int high = ranges.size();
+        while (low < high) {
+            int mid = (low + high) >>> 1;
+            if (ranges.get(mid).endLineExclusive() <= row) low = mid + 1;
+            else high = mid;
         }
+        return low;
     }
 
     /** Selection band for one row in cell-space; boundaries are cell starts by construction. */
@@ -463,7 +466,7 @@ public final class TerminalCanvasRenderer {
                 ? TerminalSelectionGeometry.columnAtOffset(model.text, rowStart, rowEnd, selectionStart) : 0;
         int endColumn = row == lastRow
                 ? TerminalSelectionGeometry.columnAtOffset(model.text, rowStart, rowEnd, selectionEnd)
-                : model.lineColumns[row];
+                : model.lineColumns(row);
         if (endColumn <= startColumn) return;
         float left = originX + startColumn * cellStepPx;
         float right = originX + endColumn * cellStepPx;

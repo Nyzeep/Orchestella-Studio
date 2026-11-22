@@ -428,8 +428,8 @@ class TransitionGhostPixelTest {
      *   FallbackSurface（fallbackTint + 噪点 + 24dp scrim + 顶高光）。两条渲染
      *   路径逐像素可分，且本断言不依赖模糊渲染保真度——只断言「材质不退化」。
      *
-     * 滚动等价态：生产滚动头经 `rememberOe3ScrollEdgeGlass` 在 chrome 上注册
-     * scroll edge，但注册以「真实模糊半径解析成功」为门槛。这里直接在
+     * 滚动等价态：生产滚动头经 `ReportOe3ScrollEdge` 在 chrome 上记录
+     * 折叠状态。这里直接在
      * [LocalOe3GlassChrome] 上注册同一 chrome 状态（与生产 DisposableEffect 同一
      * 注册点），锁定「注册后底栏接线」这一受缺陷影响的状态组合。
      *

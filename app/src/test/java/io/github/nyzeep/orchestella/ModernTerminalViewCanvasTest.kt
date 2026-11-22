@@ -10,7 +10,6 @@ import android.view.View
 import android.view.ViewConfiguration
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import io.github.nyzeep.orchestella.terminal.TerminalCanvasAccessibilityHelper
 import io.github.nyzeep.orchestella.terminal.TerminalScreenModel
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.terminal.TerminalSelectionGeometry
@@ -166,6 +165,8 @@ class ModernTerminalViewCanvasTest {
         val first = StringBuilder()
         repeat(500) { first.append("row-").append(it).append("\r\n") }
         view.appendSessionOutput(first.toString())
+        layoutView(view)
+        view.scrollTo(0, 0)
 
         val bitmap = Bitmap.createBitmap(1080, 600, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -183,6 +184,8 @@ class ModernTerminalViewCanvasTest {
         val second = StringBuilder()
         repeat(1500) { second.append("more-").append(it).append("\r\n") }
         view.appendSessionOutput(second.toString())
+        layoutView(view)
+        view.scrollTo(0, 0)
         canvasView.draw(canvas)
         assertEquals(
             "drawn rows must not grow with history depth",
@@ -302,6 +305,54 @@ class ModernTerminalViewCanvasTest {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun reverseSelectionExposesCopyAndLongPressSurvivesLift() {
+        val (view, _) = newSessionView("touch-target\r\n")
+        view.setCanvasRenderingEnabled(true)
+        layoutView(view)
+        val canvas = view.canvasChild()
+        val renderer = view.canvasRenderer
+        val y = renderer.originYPx() + renderer.rowHeightPx() / 2f
+        val left = renderer.originXPx() + renderer.cellStepPx() * 0.5f
+        val right = left + renderer.cellStepPx() * 5f
+        fun send(action: Int, x: Float) {
+            val event = android.view.MotionEvent.obtain(0, 0, action, x, y, 0)
+            canvas.dispatchTouchEvent(event)
+            event.recycle()
+        }
+        send(android.view.MotionEvent.ACTION_DOWN, right)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ViewConfiguration.getLongPressTimeout().toLong()))
+        send(android.view.MotionEvent.ACTION_UP, right)
+        assertTrue(view.isCanvasSelectionActive)
+        send(android.view.MotionEvent.ACTION_DOWN, right)
+        send(android.view.MotionEvent.ACTION_MOVE, left)
+        send(android.view.MotionEvent.ACTION_UP, left)
+
+        val provider = canvas.accessibilityNodeProvider!!
+        val copy = android.view.accessibility.AccessibilityNodeInfo.ACTION_COPY
+        assertTrue(provider.createAccessibilityNodeInfo(0)!!.actions and copy != 0)
+        assertTrue(provider.performAction(0, copy, null))
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        assertEquals("touch", clipboard.primaryClip!!.getItemAt(0).text.toString())
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun canvasChildDrawsOnlyTheScrollViewportOnAnUnclippedRecording() {
+        val (view, _) = newSessionView((1..300).joinToString("\r\n") { "Row $it" })
+        view.setCanvasRenderingEnabled(true)
+        layoutView(view)
+        view.scrollTo(0, 1000)
+        val child = view.canvasChild()
+        val renderer = view.canvasRenderer
+        assertTrue(child.height > view.height * 2)
+        val bitmap = Bitmap.createBitmap(child.width, child.height, Bitmap.Config.ARGB_8888)
+        child.draw(Canvas(bitmap))
+        assertTrue(renderer.lastDrawnRowCount in 1..(view.height / renderer.rowHeightPx() + 2))
+        bitmap.recycle()
+    }
+
+    @Test
     fun canvasModeKeepsTheCjkImePathIntact() {
         // Ticket acceptance #4: CJK composition must survive the canvas switch —
         // the IME connection lives on the host ScrollView, not the swapped child.
@@ -353,45 +404,24 @@ class ModernTerminalViewCanvasTest {
         val (view, _) = newSessionView("alpha\r\n\r\nbeta\r\n")
         idleMainLooper()
         view.setCanvasRenderingEnabled(true)
+        layoutView(view)
         val renderer = view.canvasRenderer
-        val helper = object : TerminalCanvasAccessibilityHelper(
-            view,
-            { view.canvasModel },
-            { renderer },
-            { 0 },
-            { 4 * renderer.rowHeightPx() },
-            { true },
-            {},
-        ) {
-            fun nodeFor(id: Int) = androidx.core.view.accessibility.AccessibilityNodeInfoCompat
-                .obtain().also { onPopulateNodeForVirtualView(id, it) }
-            fun visibleIds(): List<Int> {
-                val ids = mutableListOf<Int>()
-                getVisibleVirtualViews(ids)
-                return ids
-            }
-            fun rowAt(x: Float, y: Float) = getVirtualViewAt(x, y)
-        }
+        val provider = view.canvasChild().accessibilityNodeProvider!!
+        fun nodeFor(id: Int) = provider.createAccessibilityNodeInfo(id)!!
 
         // Viewport of four rows over a three-line model (plus the trailing cursor row).
-        val ids = helper.visibleIds()
-        assertEquals(listOf(0, 1, 2, 3), ids)
+        assertEquals(4, nodeFor(android.view.View.NO_ID).childCount)
 
-        val node0 = helper.nodeFor(0)
+        val node0 = nodeFor(0)
         assertEquals("alpha", node0.text.toString())
         val bounds0 = android.graphics.Rect()
         node0.getBoundsInParent(bounds0)
         assertEquals(renderer.originYPx(), bounds0.top)
 
-        val node1 = helper.nodeFor(1)
+        val node1 = nodeFor(1)
         assertEquals(context.getString(R.string.terminal_a11y_blank_row), node1.text.toString())
 
-        assertEquals("beta", helper.nodeFor(2).text.toString())
-
-        assertTrue(
-            helper.nodeFor(0).actions and androidx.core.view.accessibility.AccessibilityNodeInfoCompat.ACTION_COPY != 0,
-        )
-        assertEquals(1, helper.rowAt(0f, renderer.originYPx() + (renderer.rowHeightPx() * 1.5f).toFloat()))
-        assertEquals(-1, helper.rowAt(0f, -100f))
+        assertEquals("beta", nodeFor(2).text.toString())
+        assertEquals(0, node0.actions and androidx.core.view.accessibility.AccessibilityNodeInfoCompat.ACTION_COPY)
     }
 }

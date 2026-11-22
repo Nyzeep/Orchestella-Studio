@@ -5,6 +5,9 @@ import androidx.compose.animation.core.TweenSpec
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -97,31 +101,32 @@ fun Oe3Card(
     val colors = Oe3ThemeValues.colors
     val press = Oe3ThemeValues.motion.press
     val interaction = remember { MutableInteractionSource() }
-    // Press/Release/Cancel are collected by hand rather than through
-    // collectIsPressedAsState: a scroll that steals the pointer emits Cancel,
-    // and that press must retreat faster than a plain release (W2-04).
-    var pressed by remember { mutableStateOf(false) }
+    var interactionPressed by remember { mutableStateOf(false) }
+    var touchPressed by remember { mutableStateOf(false) }
     var pressCancelled by remember { mutableStateOf(false) }
     LaunchedEffect(interaction) {
         interaction.interactions.collect { change ->
             when (change) {
                 is PressInteraction.Press -> {
-                    pressed = true
+                    interactionPressed = true
                     pressCancelled = false
                 }
-                is PressInteraction.Release -> pressed = false
+                is PressInteraction.Release -> interactionPressed = false
                 is PressInteraction.Cancel -> {
-                    pressed = false
+                    interactionPressed = false
                     pressCancelled = true
                 }
             }
         }
     }
+    val pressed = onClick != null && (touchPressed || interactionPressed)
     val pressFraction = remember { Animatable(0f) }
-    LaunchedEffect(pressed) {
+    LaunchedEffect(pressed, press.durationMillis) {
+        if (press.durationMillis == 0) {
+            pressFraction.snapTo(if (pressed) 1f else 0f)
+            return@LaunchedEffect
+        }
         val spec: TweenSpec<Float> = when {
-            // Reduced motion lands instantly (token-driven zero duration).
-            press.durationMillis == 0 -> tween(durationMillis = 0)
             pressed -> tween(
                 durationMillis = OeMotion.CARD_PRESS_TINT_FADE_IN_MS,
                 delayMillis = OeMotion.CARD_PRESS_REVEAL_DELAY_MS,
@@ -178,6 +183,20 @@ fun Oe3Card(
                             role = Role.Button,
                             onClick = onClick,
                         )
+                        // Observe the pointer inside clickable so a nested control still wins.
+                        // Clickable owns activation and semantics, including keyboard presses.
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                awaitFirstDown()
+                                touchPressed = true
+                                pressCancelled = false
+                                try {
+                                    pressCancelled = waitForUpOrCancellation() == null
+                                } finally {
+                                    touchPressed = false
+                                }
+                            }
+                        }
                 } else {
                     Modifier
                 },

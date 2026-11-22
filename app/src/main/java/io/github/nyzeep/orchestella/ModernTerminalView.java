@@ -88,20 +88,20 @@ public class ModernTerminalView extends ScrollView {
     private boolean hasBackgroundImage;
     private int scrimColor;
     // W2-02: runtime-switchable visible-row Canvas renderer. The selectable TextView
-    // stays attached as the instant fallback path; the switch only toggles visibility
-    // and which render path renderScreen() feeds, so any selection/IME regression can
-    // flip back to the TextView in one setting change.
+    // is kept as a fallback but only the active child is attached to the ScrollView.
     private final TerminalCanvasRenderer canvasRenderer =
             new TerminalCanvasRenderer();
     private TerminalCanvasView canvasView;
     private TerminalCanvasAccessibilityHelper canvasAccessibility;
     private boolean canvasRenderingEnabled;
     private TerminalCanvasRenderer.LineModel canvasModel;
+    private TerminalScreenModel.Snapshot canvasSnapshot;
     private java.util.List<TerminalScreenModel.Snapshot.CommandRange> lastCommandRanges = java.util.List.of();
     private int canvasSelectionStart;
     private int canvasSelectionEnd;
     private boolean canvasSelectionActive;
     private boolean canvasSelectionDragged;
+    private boolean canvasSelectionAtTouchDown;
     private float canvasTouchX;
     private float canvasTouchY;
     private boolean canvasLongPressArmed;
@@ -209,11 +209,16 @@ public class ModernTerminalView extends ScrollView {
                 addView(canvasView, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
             }
         } else {
+            cancelCanvasLongPress();
             if (canvasSelectionActive) clearCanvasSelection();
             removeView(canvasView);
+            canvasModel = null;
+            canvasSnapshot = null;
+            lastCommandRanges = java.util.List.of();
             addView(transcriptView, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         }
         // Both paths rebuild from the same model, so content and scroll semantics stay identical.
+        updateTerminalSize();
         renderScreen();
     }
 
@@ -444,6 +449,8 @@ public class ModernTerminalView extends ScrollView {
                     canvasTouchY = event.getY();
                     touchDownTime = event.getEventTime();
                     canvasSelectionDragged = false;
+                    canvasSelectionAtTouchDown = canvasSelectionActive;
+                    if (canvasSelectionActive) return true;
                     canvasLongPressArmed = true;
                     mainHandler.postDelayed(canvasLongPressTask, ViewConfiguration.getLongPressTimeout());
                     // Claim the DOWN so MOVE/UP/CANCEL keep flowing into this listener;
@@ -463,9 +470,8 @@ public class ModernTerminalView extends ScrollView {
                 case MotionEvent.ACTION_UP:
                     cancelCanvasLongPress();
                     if (canvasSelectionActive) {
-                        // A tap without drag dismisses the selection; a drag keeps it
-                        // so the floating action mode stays reachable.
-                        if (!canvasSelectionDragged) clearCanvasSelection();
+                        // Keep the menu after the lift that ends the initiating long press.
+                        if (canvasSelectionAtTouchDown && !canvasSelectionDragged) clearCanvasSelection();
                         if (canvasView.getParent() != null) {
                             canvasView.getParent().requestDisallowInterceptTouchEvent(false);
                         }
@@ -513,7 +519,10 @@ public class ModernTerminalView extends ScrollView {
 
     @Override protected void onScrollChanged(int x, int y, int oldX, int oldY) {
         super.onScrollChanged(x, y, oldX, oldY);
-        if (canvasAccessibility != null) canvasAccessibility.invalidateRoot();
+        if (canvasRenderingEnabled) {
+            canvasView.invalidate();
+            canvasAccessibility.invalidateRoot();
+        }
         if (!restoringViewport && !viewportRestorePending && (scrollState.isTouching() || userScrollAnimation)) {
             scrollState.userScrolled(y, maximumScrollY(), activeLineHeight());
             if (userScrollAnimation) {
@@ -663,16 +672,14 @@ public class ModernTerminalView extends ScrollView {
         lastEvictedHistoryRows = snapshot.evictedHistoryRows;
         viewportRestorePending = true;
         if (canvasRenderingEnabled && canvasView != null) {
-            canvasModel = TerminalCanvasRenderer.LineModel.from(snapshot);
-            lastCommandRanges = snapshot.commandLineRanges();
-            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) canvasView.getLayoutParams();
-            int contentHeight = canvasRenderer.contentHeightPx(canvasModel.lineCount);
-            if (params.height != contentHeight) {
-                params.height = contentHeight;
-                canvasView.setLayoutParams(params);
+            if (snapshot != canvasSnapshot) {
+                canvasModel = TerminalCanvasRenderer.LineModel.from(snapshot);
+                canvasSnapshot = snapshot;
+                lastCommandRanges = snapshot.commandLineRanges();
+                canvasAccessibility.invalidateRoot();
             }
+            canvasView.setContentHeight(canvasRenderer.contentHeightPx(canvasModel.lineCount));
             canvasView.invalidate();
-            if (canvasAccessibility != null) canvasAccessibility.invalidateRoot();
         } else {
             SpannableStringBuilder display = new SpannableStringBuilder();
             for (TerminalSpan span : snapshot.spans) appendStyled(display, span);
@@ -904,6 +911,8 @@ public class ModernTerminalView extends ScrollView {
 
     /** W2-02: visible-row Canvas child; the selectable TextView above stays as the fallback. */
     private final class TerminalCanvasView extends android.view.View {
+        private int contentHeight;
+
         TerminalCanvasView(Context context) {
             super(context);
             setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -917,9 +926,21 @@ public class ModernTerminalView extends ScrollView {
                     () -> ModernTerminalView.this.getHeight()
                             - ModernTerminalView.this.getPaddingTop()
                             - ModernTerminalView.this.getPaddingBottom(),
-                    () -> canvasSelectionActive && canvasSelectionEnd > canvasSelectionStart,
+                    ModernTerminalView.this::hasCanvasSelectionText,
                     ModernTerminalView.this::copySelection);
             androidx.core.view.ViewCompat.setAccessibilityDelegate(this, canvasAccessibility);
+        }
+
+        void setContentHeight(int height) {
+            if (contentHeight == height) return;
+            contentHeight = height;
+            requestLayout();
+        }
+
+        @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            // ScrollView measures its child with UNSPECIFIED height on the scrolling axis.
+            setMeasuredDimension(resolveSize(getSuggestedMinimumWidth(), widthMeasureSpec),
+                    resolveSize(contentHeight, heightMeasureSpec));
         }
 
         @Override public boolean performClick() {
@@ -928,17 +949,29 @@ public class ModernTerminalView extends ScrollView {
             return super.performClick();
         }
 
+        @Override public boolean dispatchHoverEvent(MotionEvent event) {
+            return canvasAccessibility.dispatchHoverEvent(event) || super.dispatchHoverEvent(event);
+        }
+
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             maybeFirePresentProbe();
             TerminalCanvasRenderer.LineModel model = canvasModel;
             if (model == null) return;
+            // A hardware display list can record the entire child. Intersect it with
+            // the ScrollView's viewport explicitly, and redraw that list on scroll.
+            int viewportTop = ModernTerminalView.this.getScrollY();
+            int viewportHeight = ModernTerminalView.this.getHeight()
+                    - ModernTerminalView.this.getPaddingTop() - ModernTerminalView.this.getPaddingBottom();
+            int saveCount = canvas.save();
+            canvas.clipRect(0, viewportTop, getWidth(), viewportTop + viewportHeight);
             canvasRenderer.draw(canvas, model, cursorOffset,
                     cursorEnabled && cursorVisible && screen.isCursorVisible() && !selecting,
                     canvasSelectionActive,
                     Math.min(canvasSelectionStart, canvasSelectionEnd),
                     Math.max(canvasSelectionStart, canvasSelectionEnd),
                     lastCommandRanges);
+            canvas.restoreToCount(saveCount);
         }
     }
 
@@ -990,6 +1023,7 @@ public class ModernTerminalView extends ScrollView {
         canvasSelectionEnd = offset;
         canvasSelectionDragged = true;
         canvasView.invalidate();
+        canvasAccessibility.invalidateRoot();
         if (selectionActionMode != null) {
             // invalidate() re-runs onPrepareActionMode (copy appears once the
             // selection is non-empty); invalidateContentRect() repositions the bar.
@@ -1000,6 +1034,7 @@ public class ModernTerminalView extends ScrollView {
 
     /** Clears the Canvas selection (package-private so tests can drive the mode). */
     void clearCanvasSelection() {
+        boolean hadSelection = canvasSelectionActive;
         canvasSelectionActive = false;
         canvasSelectionDragged = false;
         canvasSelectionStart = 0;
@@ -1013,7 +1048,11 @@ public class ModernTerminalView extends ScrollView {
             selectionActionMode = null;
             mode.finish();
         }
-        if (canvasView != null) canvasView.invalidate();
+        if (hadSelection) {
+            canvasView.invalidate();
+            canvasAccessibility.invalidateRoot();
+            post(this::renderScreen);
+        }
     }
 
     /** Selects the whole display text in Canvas mode (package-private for tests). */
@@ -1028,10 +1067,15 @@ public class ModernTerminalView extends ScrollView {
         canvasSelectionStart = 0;
         canvasSelectionEnd = model.text.length();
         canvasView.invalidate();
+        canvasAccessibility.invalidateRoot();
         if (selectionActionMode != null) {
             selectionActionMode.invalidate();
             selectionActionMode.invalidateContentRect();
         }
+    }
+
+    private boolean hasCanvasSelectionText() {
+        return canvasSelectionActive && canvasSelectionStart != canvasSelectionEnd;
     }
 
     private void startCanvasSelectionActionMode() {
@@ -1049,7 +1093,7 @@ public class ModernTerminalView extends ScrollView {
 
             @Override public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
                 MenuItem copy = menu.findItem(android.R.id.copy);
-                if (copy != null) copy.setVisible(canvasSelectionEnd > canvasSelectionStart);
+                if (copy != null) copy.setVisible(hasCanvasSelectionText());
                 return true;
             }
 

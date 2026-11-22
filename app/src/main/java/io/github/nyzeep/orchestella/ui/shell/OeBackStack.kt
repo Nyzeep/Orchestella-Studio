@@ -345,24 +345,28 @@ internal fun OeBackStackHost(
     val pushSpring = motion.pagePushSpring
 
     var predictiveProgress by remember(backStack) { mutableStateOf<Float?>(null) }
+    var predictiveTransitionId by remember(backStack) { mutableLongStateOf(-1L) }
     LaunchedEffect(backStack.canPop) {
         if (!backStack.canPop) {
             predictiveProgress = null
         }
     }
     PredictiveBackHandler(enabled = backStack.canPop && gestureProgress == null) { progressFlow ->
+        val startId = backStack.transition.transitionId
+        predictiveTransitionId = startId
         val estimator = PredictiveBackVelocityEstimator()
         try {
             progressFlow.collect { event ->
                 // 接管边界（W2-03）：飞行动画（Push/Pop/Rebound）独占进度，
                 // 飞行中到达的手势事件不写搓动状态，避免与动画抢进度撕裂。
-                if (backStack.transition.flight == StackFlight.None) {
+                if (backStack.transition.transitionId == startId && backStack.transition.flight == StackFlight.None) {
                     estimator.onSample(event.progress, System.nanoTime() / 1_000_000L)
                     predictiveProgress = event.progress
                 }
             }
             val releaseProgress = predictiveProgress
             predictiveProgress = null
+            if (backStack.transition.transitionId != startId) return@PredictiveBackHandler
             if (releaseProgress != null && backStack.transition.flight == StackFlight.None) {
                 // 提交：从拉开的当前位置续弹，初速取手势末段速度（屏幕进度
                 // 方向与事件进度相反）。一次提交恰好走一次 popFromProgress。
@@ -376,7 +380,7 @@ internal fun OeBackStackHost(
         } catch (cancelled: CancellationException) {
             val cancelledProgress = predictiveProgress
             predictiveProgress = null
-            if (cancelledProgress != null && cancelledProgress > 0f) {
+            if (backStack.transition.transitionId == startId && cancelledProgress != null && cancelledProgress > 0f) {
                 // 取消（W2-03）：从当前位置弹簧回弹归位，不再瞬切；初速带
                 // 手势末段速度，回弹手感与拉开速度一致。减动效下
                 // pagePushSpring 为 null，animate 直接落位（瞬归）。
@@ -408,7 +412,8 @@ internal fun OeBackStackHost(
     }
 
     val hasGesture by remember(backStack, gestureProgress) {
-        derivedStateOf { (gestureProgress ?: predictiveProgress) != null }
+        derivedStateOf { gestureProgress != null || (predictiveProgress != null &&
+            predictiveTransitionId == backStack.transition.transitionId) }
     }
     val isScrubbing = hasGesture &&
         transition.flight == StackFlight.None &&

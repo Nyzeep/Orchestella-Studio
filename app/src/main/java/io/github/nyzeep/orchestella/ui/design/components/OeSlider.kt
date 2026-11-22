@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -30,6 +31,8 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -44,6 +47,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import kotlin.math.roundToInt
+
+private const val RestingGlowPhase = 0.35f
 
 /**
  * The one slider of the app: a 16dp capsule with a theme-derived
@@ -78,14 +83,15 @@ fun OeSlider(
 
     var widthPx by remember { mutableFloatStateOf(0f) }
     var pressed by remember { mutableStateOf(false) }
-    var laidOut by remember { mutableStateOf(false) }
+    var visible by remember { mutableStateOf(false) }
+    val currentValue by rememberUpdatedState(value)
+    val changeValue by rememberUpdatedState(onValueChange)
+    val finishValueChange by rememberUpdatedState(onValueChangeFinished)
 
     // W2-04: the ambient glow burns frames only while the slider can actually
     // show it — motion allowed, host lifecycle RESUMED, interactive (enabled
-    // and not mid-drag) and laid out on screen. Any failed condition stops
-    // every frame callback: the phase freezes where it is (it only starts on
-    // the deterministic band when never run), so an off-screen or backgrounded
-    // slider costs nothing and the band never jumps on a gate toggle.
+    // and not mid-drag) and visible in the window. When a gate closes the draw
+    // uses the resting phase and the effect stops requesting frames.
     val lifecycleOwner = LocalLifecycleOwner.current
     var resumed by remember { mutableStateOf(false) }
     DisposableEffect(lifecycleOwner) {
@@ -96,14 +102,13 @@ fun OeSlider(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    val glowRunning = !themeInfo.reducedMotion && resumed && enabled && !pressed && laidOut
+    val glowRunning = !themeInfo.reducedMotion && resumed && enabled && !pressed && visible
 
     // Keep the phase as State and read it inside the draw lambda: the glow
-    // animates without recomposing this composable on every frame. Restarting
-    // a gated-off sweep resumes the remainder of the current cycle, so the
-    // band never jumps; the 8-dot / 90dp geometry it drives is untouched.
-    val phase = remember { Animatable(0.35f) }
+    // animates without recomposing this composable on every frame.
+    val phase = remember { Animatable(RestingGlowPhase) }
     LaunchedEffect(glowRunning) {
+        phase.snapTo(RestingGlowPhase)
         if (!glowRunning) return@LaunchedEffect
         while (true) {
             phase.animateTo(
@@ -183,7 +188,10 @@ fun OeSlider(
             .height(48.dp)
             .onSizeChanged {
                 widthPx = it.width.toFloat()
-                laidOut = it.width > 0 && it.height > 0
+            }
+            .onGloballyPositioned { coordinates ->
+                val bounds = coordinates.boundsInWindow()
+                visible = bounds.width > 0 && bounds.height > 0
             }
             .semantics {
                 if (stateDescription != null) this.stateDescription = stateDescription
@@ -197,12 +205,12 @@ fun OeSlider(
                     disabled()
                 }
             }
-            .pointerInput(enabled, valueRange, steps) {
+            .pointerInput(enabled, valueRange, steps, thumbRadiusPx, haptics) {
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     pressed = true
-                    var lastStep = stepIndex(value, valueRange, steps)
+                    var lastStep = stepIndex(currentValue, valueRange, steps)
                     fun emit(x: Float) {
                         // 拇指圆心被内缩一个半径：0%/100% 时圆不再被画布切掉一半，
                         // 触摸映射与绘制用同一段可用行程。
@@ -215,32 +223,33 @@ fun OeSlider(
                             valueRange,
                             steps,
                         )
-                        onValueChange(target)
+                        changeValue(target)
                         val nextStep = stepIndex(target, valueRange, steps)
                         if (steps > 0 && nextStep != lastStep) {
                             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                             lastStep = nextStep
                         }
                     }
-                    emit(down.position.x)
-                    down.consume()
-                    var pressedChange = true
-                    while (pressedChange) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull()
-                        if (change == null || !change.pressed) {
-                            pressedChange = false
-                        } else {
+                    try {
+                        emit(down.position.x)
+                        down.consume()
+                        while (true) {
+                            val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                            if (change == null || change.isConsumed) break
+                            if (!change.pressed) {
+                                finishValueChange?.invoke()
+                                break
+                            }
                             emit(change.position.x)
                             change.consume()
                         }
+                    } finally {
+                        pressed = false
                     }
-                    pressed = false
-                    onValueChangeFinished?.invoke()
                 }
             },
     ) {
-        val phaseValue = phase.value
+        val phaseValue = if (glowRunning) phase.value else RestingGlowPhase
         val glowAlpha = OeSliderSpec.glowAlpha(phaseValue)
         val trackTop = (size.height - trackHeightPx) / 2f
         val centerY = size.height / 2f

@@ -54,10 +54,9 @@ public class TerminalCanvasAccessibilityHelper extends ExploreByTouchHelper {
 
     @Override protected int getVirtualViewAt(float x, float y) {
         TerminalCanvasRenderer.LineModel model = modelSupplier.get();
-        if (model == null || model.lineCount == 0) return HOST_ID;
+        if (model == null || y < originYPx() || x < 0 || x >= host.getWidth()) return INVALID_ID;
         int row = (int) ((y - originYPx()) / Math.max(1, rowHeightPx()));
-        if (row < 0 || row >= model.lineCount) return HOST_ID;
-        return row;
+        return row < model.lineCount ? row : INVALID_ID;
     }
 
     @Override protected void getVisibleVirtualViews(List<Integer> virtualViewIds) {
@@ -66,37 +65,39 @@ public class TerminalCanvasAccessibilityHelper extends ExploreByTouchHelper {
         int rowHeight = Math.max(1, rowHeightPx());
         int top = viewportTopPx.getAsInt();
         int bottom = top + Math.max(0, viewportHeightPx.getAsInt());
-        int first = Math.max(0, (top - originYPx()) / rowHeight);
-        int last = Math.min(model.lineCount - 1, (bottom - originYPx() + rowHeight - 1) / rowHeight);
-        for (int row = first; row <= last; row++) virtualViewIds.add(row);
+        if (bottom <= top) return;
+        int[] rows = TerminalCanvasRenderer.visibleRowRange(top, bottom, originYPx(), rowHeight, model.lineCount);
+        for (int row = rows[0]; row <= rows[1]; row++) virtualViewIds.add(row);
     }
 
     @Override protected void onPopulateNodeForVirtualView(int virtualViewId, AccessibilityNodeInfoCompat node) {
         TerminalCanvasRenderer.LineModel model = modelSupplier.get();
-        int row = Math.max(0, Math.min(virtualViewId, model != null ? model.lineCount - 1 : 0));
+        int row = Math.max(0, virtualViewId);
         int rowHeight = Math.max(1, rowHeightPx());
         int top = originYPx() + row * rowHeight;
         node.setBoundsInParent(new Rect(0, top, Math.max(0, host.getWidth()), top + rowHeight));
         node.setClassName(android.widget.TextView.class.getName());
-        if (model != null && model.lineCount > 0) {
+        if (model != null && row < model.lineCount) {
             String line = model.text.substring(model.lineStart(row), model.lineEnd(row));
             if (line.isEmpty()) {
                 node.setText(host.getContext().getString(io.github.nyzeep.orchestella.R.string.terminal_a11y_blank_row));
             } else {
                 node.setText(line);
             }
-        }
-        node.addAction(AccessibilityNodeInfoCompat.ACTION_CLICK);
-        if (selectionAvailable.getAsBoolean()) {
-            node.addAction(AccessibilityNodeInfoCompat.ACTION_COPY);
+            if (selectionAvailable.getAsBoolean()) {
+                node.addAction(AccessibilityNodeInfoCompat.ACTION_COPY);
+            }
+        } else {
+            // The accessibility service may keep an ID from the previous viewport.
+            node.setText("");
         }
     }
 
     @Override protected boolean onPerformActionForVirtualView(int virtualViewId, int action, Bundle arguments) {
-        if (action == AccessibilityNodeInfoCompat.ACTION_COPY) {
+        if (action == AccessibilityNodeInfoCompat.ACTION_COPY && selectionAvailable.getAsBoolean()) {
             copySelection.run();
             return true;
         }
-        return action == AccessibilityNodeInfoCompat.ACTION_CLICK;
+        return false;
     }
 }

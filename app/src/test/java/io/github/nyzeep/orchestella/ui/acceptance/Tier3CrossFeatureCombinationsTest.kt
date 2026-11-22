@@ -47,6 +47,7 @@ import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassTierOverride
 import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassStrategy
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
+import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Motion
@@ -583,7 +584,7 @@ class Tier3CrossFeatureCombinationsTest {
     }
 
     @Test
-    fun t3_12_progressiveScrollEdgeBlurAtApi33PlusVsGradientFallbackAtApi29_m3() {
+    fun t3_12_scrollEdgeScrimFadesWithoutChangingDockTier_m3() {
         assertEquals(
             GlassTier.L0,
             Oe3GlassStrategy.resolveTier(Oe3GlassLevel.Standard, true, 29, false, GlassDeviceCap.Unlimited),
@@ -592,12 +593,24 @@ class Tier3CrossFeatureCombinationsTest {
             GlassTier.L2,
             Oe3GlassStrategy.resolveTier(Oe3GlassLevel.Standard, true, 33, false, GlassDeviceCap.Unlimited),
         )
-        // GPU blur strength is device-dependent. The host test can still guard the
-        // actual progressive Android integration independently of implementation layout.
-        val usesVerticalHaze = AcceptanceTestSupport.uiSourceRoot().walkTopDown()
-            .filter { it.isFile && it.extension == "kt" }
-            .any { "HazeProgressive.verticalGradient" in it.readText() }
-        assertTrue("API 31+ scroll edge must use a vertical Haze progression", usesVerticalHaze)
+        var offset by mutableStateOf(0)
+        compose.setContent {
+            Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = true) {
+                OeScaffold(title = "", scrollOffsetPx = { offset }) {
+                    Box(Modifier.fillMaxSize().background(Color.Cyan))
+                }
+            }
+        }
+        val resting = AcceptanceTestSupport.captureRootBitmap(compose)
+        compose.runOnIdle { offset = 120 }
+        val scrolled = AcceptanceTestSupport.captureRootBitmap(compose)
+        val x = resting.width / 2
+        fun tintDistance(y: Int): Double = AcceptanceTestSupport.colorDistance(
+            Color(resting.getPixel(x, y)), Color(scrolled.getPixel(x, y)),
+        )
+        assertTrue("The header scrim must visibly tint the top edge", tintDistance(10) > 10.0)
+        assertTrue("The scrim must fade along the header", tintDistance(60) < tintDistance(10))
+        assertEquals("The scrim must leave page content below it unchanged", 0.0, tintDistance(160), 0.0)
     }
 
     @Test

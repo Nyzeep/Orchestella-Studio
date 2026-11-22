@@ -352,6 +352,8 @@ fun Oe3NavBar(
                     Oe3NavPillSpec.travel(cellWidth, from, selectedIndex).toPx()
                 }
                 settlePillTravel(startPx, releaseVelocity)
+            } else if (pillTravel.value != 0f || info.reducedMotion) {
+                settlePillTravel(pillTravel.value, pillTravel.velocity)
             }
         }
 
@@ -501,7 +503,7 @@ fun Oe3NavBar(
                                         // W2-04: the pill stretches horizontally in
                                         // proportion to its cross-cell travel and
                                         // relaxes back to 1.0 as the travel settles.
-                                        val travelPx = dragOffsetPx ?: pillTravel.value
+                                        val travelPx = dragOffsetPx ?: if (info.reducedMotion) 0f else pillTravel.value
                                         translationX = travelPx
                                         scaleX = Oe3NavPillSpec.stretchFor(travelPx, cellWidthPx, motion)
                                     }

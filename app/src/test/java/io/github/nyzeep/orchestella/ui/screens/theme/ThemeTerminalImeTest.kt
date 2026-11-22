@@ -11,12 +11,19 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.shell.Oe3App
+import io.github.nyzeep.orchestella.ui.shell.Oe3NavStyle
+import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
+import io.github.nyzeep.orchestella.ui.shell.OeBackStack
+import io.github.nyzeep.orchestella.ui.shell.OeDestination
+import io.github.nyzeep.orchestella.ui.shell.pageBottomReserve
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -54,6 +61,37 @@ class ThemeTerminalImeTest {
         assertEquals(43.dp, ThemeTerminalImeSpec.residualBottomPadding(pageBottom = 83.dp, imeBottom = 40.dp))
         assertEquals(0.dp, ThemeTerminalImeSpec.residualBottomPadding(pageBottom = 83.dp, imeBottom = 83.dp))
         assertEquals(0.dp, ThemeTerminalImeSpec.residualBottomPadding(pageBottom = 83.dp, imeBottom = 300.dp))
+    }
+
+    @Test
+    fun terminalDestinationReceivesTheFixedDockAndNavigationInset() {
+        val stack = OeBackStack()
+        val state = themeStudioPreviewState(ThemeCatalog.constructivistWorkstation)
+        var hostView: View? = null
+        var reserve = Dp.Unspecified
+        compose.setContent {
+            hostView = LocalView.current
+            Oe3App(
+                selectedTab = Oe3Tab.Config,
+                onTabSelected = {},
+                theme = state.theme,
+                navStyle = Oe3NavStyle.Fixed,
+                reduceMotion = true,
+                backStack = stack,
+            )
+        }
+        compose.runOnIdle {
+            val insets = WindowInsetsCompat.Builder()
+                .setInsets(WindowInsetsCompat.Type.navigationBars(), Insets.of(0, 0, 0, 31))
+                .build()
+            ViewCompat.dispatchApplyWindowInsets(requireNotNull(hostView), insets)
+            stack.push(OeDestination("terminal", "Terminal settings") {
+                reserve = LocalOe3PageBottomPadding.current
+                ThemeTerminalScreen(state = state, onEvent = {}, onBack = {}, renderTerminalView = false)
+            })
+        }
+        compose.waitForIdle()
+        assertEquals(pageBottomReserve(Oe3NavStyle.Fixed, 31.dp), reserve)
     }
 
     @Test

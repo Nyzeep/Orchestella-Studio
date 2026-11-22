@@ -160,7 +160,9 @@ class MainActivity : AppCompatActivity() {
     private val oe3GlassDeviceCapState = mutableStateOf(GlassDeviceCap.Unlimited)
 
     /** UI-06：性能门每进程只采样一次；启动后由快照刷新按需武装。 */
-    private val oe3GlassGateArmed = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var oe3GlassGateResumed = false
+    private var oe3GlassGateCompleted = false
+    private var oe3GlassGateLevel: Oe3GlassLevel? = null
 
     /**
      * UI-06（R-03 生命周期加固）：进行中的帧采样监听器。帧门 60 帧采样完成时
@@ -625,14 +627,20 @@ class MainActivity : AppCompatActivity() {
      *   `DeviceCap`（降档前后）、`EffectiveTier`（resolveTier 结果）。
      */
     private fun startGlassFrameGateIfNeeded() {
-        if (oe3GlassGateArmed.get()) return
         val prefs = oe3PrefsState.value
-        if (prefs.glassLevel == Oe3GlassLevel.None || !prefs.glassEnabled) return
-        if (oe3GlassDeviceCapState.value != GlassDeviceCap.Unlimited) return
-        if (oe3GlassLowRamDevice) return
-        if (Build.VERSION.SDK_INT < Oe3GlassStrategy.MIN_REAL_BLUR_API) return
-        val display = window.decorView.display ?: return
-        if (!oe3GlassGateArmed.compareAndSet(false, true)) return
+        val decor = window.decorView
+        val eligible = oe3GlassGateResumed && !oe3GlassGateCompleted && prefs.glassMode == GlassMode.Auto &&
+            decor.isHardwareAccelerated && Oe3GlassStrategy.resolveTier(
+                level = prefs.glassLevel,
+                enabled = prefs.glassEnabled,
+                apiLevel = Build.VERSION.SDK_INT,
+                isLowRamDevice = oe3GlassLowRamDevice,
+                deviceCap = oe3GlassDeviceCapState.value,
+                reducedMotion = prefs.reduceMotion,
+            ).samplesBackdrop
+        if (!eligible || oe3GlassGateLevel != prefs.glassLevel) stopGlassFrameGate()
+        if (!eligible || oe3GlassGateListener != null) return
+        val display = decor.display ?: return
 
         val glassMode = prefs.glassMode
         val refreshRate = display.refreshRate.takeIf { it > 0f } ?: 60f
@@ -644,10 +652,12 @@ class MainActivity : AppCompatActivity() {
         var gateBudgetMs = refreshBudgetMs
 
         fun onGateVerdict(verdict: GlassGateVerdict) {
+            oe3GlassGateCompleted = true
+            stopGlassFrameGate()
             val capBefore = oe3GlassDeviceCapState.value
             if (verdict.downgrade) {
-                themeStore.setUiGlassDeviceCap(GlassDeviceCap.L0.key)
                 oe3GlassDeviceCapState.value = GlassDeviceCap.L0
+                themeStore.setUiGlassDeviceCap(GlassDeviceCap.L0.key)
             }
             val capAfter = oe3GlassDeviceCapState.value
             // EffectiveTier：与 Oe3GlassSurface 同源的 resolveTier 输入，降档
@@ -698,32 +708,34 @@ class MainActivity : AppCompatActivity() {
 
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
         val listener = object : android.view.Window.OnFrameMetricsAvailableListener {
-            var removed = false
             override fun onFrameMetricsAvailable(
                 window: android.view.Window,
                 frameMetrics: android.view.FrameMetrics,
                 dropCountSinceLastInvocation: Int,
             ) {
-                if (removed) return
+                if (oe3GlassGateListener !== this) return
                 // 漏报诊断（R-03）：帧突发下平台会跳过部分回调，被跳过的帧数
                 // 只经本参累计——采样窗可能由更少的回调覆盖，日志必须可区分。
                 totalMissedReports += dropCountSinceLastInvocation
                 val active = gate ?: buildGateFromFirstFrame(frameMetrics).also { gate = it }
                 val durationMs = frameMetrics.getMetric(android.view.FrameMetrics.TOTAL_DURATION) / 1_000_000.0
-                if (active.onFrame(durationMs)) {
-                    removed = true
-                    oe3GlassGateListener = null
-                    try {
-                        window.removeOnFrameMetricsAvailableListener(this)
-                    } catch (_: IllegalArgumentException) {
-                        // 帧突发下平台会在移除完成前继续派发已入队的回调（bench-a 设备窗
-                        // 20261119 P0：二次 remove 抛 "never added" 直接 FATAL）。兜底幂等。
-                    }
-                }
+                if (durationMs > 0) active.onFrame(durationMs)
             }
         }
         oe3GlassGateListener = listener
+        oe3GlassGateLevel = prefs.glassLevel
         window.addOnFrameMetricsAvailableListener(listener, handler)
+    }
+
+    private fun stopGlassFrameGate() {
+        val listener = oe3GlassGateListener ?: return
+        oe3GlassGateListener = null
+        oe3GlassGateLevel = null
+        try {
+            window.removeOnFrameMetricsAvailableListener(listener)
+        } catch (_: IllegalArgumentException) {
+            // Some devices deliver queued callbacks after platform removal.
+        }
     }
 
     private fun buildOe3Pages(): Oe3Pages = Oe3Pages(
@@ -1789,6 +1801,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        oe3GlassGateResumed = true
         // Theme Studio 在壳内做的偏好改动随快照周期生效；返回前台先补一轮判定。
         refreshOe3ShellSnapshot()
         if (::updateCenter.isInitialized) {
@@ -1810,6 +1823,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        oe3GlassGateResumed = false
+        stopGlassFrameGate()
         dashboardHandler.removeCallbacks(refreshDashboard)
         super.onPause()
     }
@@ -1839,19 +1854,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        // R-03 生命周期加固：60 帧采样未完成时监听器仍在位，Activity 销毁前必须
-        // 幂等解绑——否则滞留的 FrameMetrics 回调会引用已销毁的 window/view。
-        // try/catch 兜底与帧门完成路径同款：监听器可能已被采样完成回调移除，
-        // 二次 remove 抛 IllegalArgumentException 不代表状态异常。
-        oe3GlassGateListener?.let { listener ->
-            try {
-                window.removeOnFrameMetricsAvailableListener(listener)
-            } catch (_: IllegalArgumentException) {
-                // 帧突发下平台会在移除完成前继续派发已入队的回调（bench-a 设备窗
-                // 20261119 P0：二次 remove 抛 "never added" 直接 FATAL）。兜底幂等。
-            }
-        }
-        oe3GlassGateListener = null
+        stopGlassFrameGate()
         dashboardHandler.removeCallbacks(refreshDashboard)
         super.onDestroy()
         if (isFinishing) operations.shutdown()

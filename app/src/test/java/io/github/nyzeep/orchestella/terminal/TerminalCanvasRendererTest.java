@@ -93,7 +93,7 @@ public class TerminalCanvasRendererTest {
     @Test
     public void combiningMarkStaysInsideItsBaseCell() {
         TerminalCanvasRenderer.LineModel model = modelOf("e\u0301");
-        assertEquals(1, model.lineColumns[0]);
+        assertEquals(1, model.lineColumns(0));
         TerminalCanvasRenderer.LinePlan plan = planOf(model, 0, FAITHFUL, 10f);
         assertEquals(1, plan.textOpCount);
         assertEquals(0, plan.opStart[0]);
@@ -158,8 +158,8 @@ public class TerminalCanvasRendererTest {
         assertEquals(2, model.lineEnd(1));
         assertEquals(3, model.lineStart(2));
         assertEquals(4, model.lineEnd(2));
-        assertEquals(0, model.lineColumns[1]);
-        assertEquals(1, model.lineColumns[2]);
+        assertEquals(0, model.lineColumns(1));
+        assertEquals(1, model.lineColumns(2));
     }
 
     @Test

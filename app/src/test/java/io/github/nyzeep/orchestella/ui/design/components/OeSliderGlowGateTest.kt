@@ -15,15 +15,16 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.github.takahirom.roborazzi.RoborazziOptions
+import com.github.takahirom.roborazzi.RoborazziTaskType
 import com.github.takahirom.roborazzi.captureRoboImage
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
-import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
@@ -42,31 +43,8 @@ class OeSliderGlowGateTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private val recordProperty = "roborazzi.test.record"
-
-    /**
-     * 本类不是 golden：与 OeCardPressTimingTest 同口径，只在普通
-     * testDebugUnitTest（record/verify/compare 均未由插件接管）里临时开启
-     * record 写临时位图，否则 captureRoboImage 是空操作。
-     */
-    private var pluginOwnsCaptureMode = false
-
-    @Before
-    fun enableTemporaryCapture() {
-        pluginOwnsCaptureMode = System.getProperty("roborazzi.test.record") != null ||
-            System.getProperty("roborazzi.test.verify") != null ||
-            System.getProperty("roborazzi.test.compare") != null
-        if (!pluginOwnsCaptureMode) {
-            System.setProperty(recordProperty, "true")
-        }
-    }
-
-    @After
-    fun disableTemporaryCapture() {
-        if (!pluginOwnsCaptureMode) {
-            System.clearProperty(recordProperty)
-        }
-    }
+    @get:Rule
+    val captures = TemporaryFolder()
 
     /** 黑底居中渲染 40% 值的滑块，时钟冻结。 */
     private fun renderSlider(enabled: Boolean, reduceMotion: Boolean) {
@@ -89,8 +67,11 @@ class OeSliderGlowGateTest {
     }
 
     private fun frame(tag: String): Bitmap {
-        val image = File("build/tmp/oe-slider-glow-test").apply { mkdirs() }.resolve("$tag.png")
-        compose.onRoot().captureRoboImage(image.absolutePath)
+        val image = File(captures.root, "$tag.png")
+        compose.onRoot().captureRoboImage(
+            image.absolutePath,
+            roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record),
+        )
         assertTrue("帧未写出：${image.absolutePath}", image.exists() && image.length() > 0)
         return BitmapFactory.decodeFile(image.absolutePath)!!
     }
@@ -120,6 +101,7 @@ class OeSliderGlowGateTest {
     @Test
     fun glowRestsWhileDragged() {
         renderSlider(enabled = true, reduceMotion = false)
+        compose.mainClock.advanceTimeBy(750)
         compose.onRoot().performTouchInput { down(center) }
         // 先让拇指按压缩放落定，画面只剩流光一个变量。
         compose.mainClock.advanceTimeBy(500)
@@ -127,6 +109,13 @@ class OeSliderGlowGateTest {
         compose.mainClock.advanceTimeBy(2000)
         val later = frame("drag-2500")
         assertFalse("拖拽中的滑块流光必须静止（W2-04 门控）", differs(first, later))
+        compose.onRoot().performTouchInput { up() }
+        compose.mainClock.advanceTimeBy(1400)
+        compose.onRoot().performTouchInput { down(center) }
+        compose.mainClock.advanceTimeBy(500)
+        val secondDrag = frame("drag-resting-phase")
+        assertFalse("流光静态相位与拖拽开始前的进度无关", differs(first, secondDrag))
+        compose.onRoot().performTouchInput { up() }
     }
 
     @Test

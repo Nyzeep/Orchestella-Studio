@@ -1528,6 +1528,21 @@ class Tier1FeatureCoverageTest {
         assertTrue("Underlying page must show parallax while the gesture is active",
             underMidBounds.width < underRestBounds.width || underMidBounds.left != underRestBounds.left)
 
+        compose.runOnIdle { backStack.push(OeDestination("first", "First") {}) }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            dispatcher.dispatchOnBackStarted(BackEventCompat(0f, 0f, 0f, BackEventCompat.EDGE_LEFT))
+        }
+        compose.runOnIdle {
+            dispatcher.dispatchOnBackProgressed(BackEventCompat(40f, 0f, 0.45f, BackEventCompat.EDGE_LEFT))
+        }
+        compose.runOnIdle { backStack.push(OeDestination("new-top", "New top") {}) }
+        compose.waitForIdle()
+        compose.runOnIdle { dispatcher.onBackPressed() }
+        compose.waitForIdle()
+        assertEquals("A gesture from an earlier entry must leave the new destination open", "new-top", backStack.top?.key)
+        assertEquals(2, backStack.size)
+
         val manifestFile = File(AcceptanceTestSupport.appMainDir(), "AndroidManifest.xml")
         val manifestDoc = DocumentBuilderFactory.newInstance()
             .apply { isNamespaceAware = true }

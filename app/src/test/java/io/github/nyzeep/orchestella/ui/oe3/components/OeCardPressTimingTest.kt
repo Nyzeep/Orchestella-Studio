@@ -3,9 +3,13 @@ package io.github.nyzeep.orchestella.ui.oe3.components
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -168,7 +172,7 @@ class OeCardPressTimingTest {
                 surfaceArgb = colors.surface
                 // pressedFill 已是 ARGB Int，与卡面 lerp 的目标端完全一致。
                 pressedArgb = ThemeColors.pressedFill(colors.surface, colors.onSurface)
-                Box(Modifier.fillMaxSize().background(Color.Black)) {
+                Column(Modifier.fillMaxSize().background(Color.Black).verticalScroll(rememberScrollState())) {
                     Oe3Card(
                         modifier = Modifier
                             .testTag("press-card")
@@ -178,6 +182,7 @@ class OeCardPressTimingTest {
                     ) {
                         Box(Modifier.height(1.dp))
                     }
+                    Spacer(Modifier.height(1200.dp))
                 }
             }
         }

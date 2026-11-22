@@ -5,7 +5,9 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -27,8 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassChrome
 import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassEnabled
-import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3ShellGlassState
 import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassChromeState
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.oe3.glass.oe3GlassSource
 import io.github.nyzeep.orchestella.ui.oe3.glass.rememberOe3GlassState
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
@@ -93,9 +95,7 @@ fun Oe3App(
         cornerRadiusDp = cornerRadiusDp,
         monoBody = monoBody,
     ) {
-        // UI3-10 玻璃接线：内容区是唯一的 haze 源（W2-05 所有权仲裁：底栏是
-        // 第一类玻璃所有者，顶栏滚动边缘是同一源的次级消费者，见
-        // LocalOe3ShellGlassState）。源标记仅在玻璃等级非 None 时挂载：None 级
+        // 内容区是壳层唯一的 Haze 源，供底栏采样。源标记仅在玻璃等级非 None 时挂载：None 级
         // 在结构上就是基线组件树（不产生任何 haze 节点），像素与既有壳层一致。
         val glassChrome = remember { Oe3GlassChromeState() }
         val glassState = rememberOe3GlassState()
@@ -110,6 +110,8 @@ fun Oe3App(
         // 背景层之上、坞之下——背景不随栈转场缩放，坞持续采样玻璃源。
         val stack = backStack ?: rememberOeBackStack()
         val backgroundMode = OeAppBackgroundSpec.resolve(backgroundUri, Oe3ThemeValues.info.pureBlack)
+        val background = rememberOeBackground(backgroundMode)
+        val bottomReserve = pageBottomReserve(navStyle, WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
         var reselectCounts by rememberSaveable { mutableStateOf(LongArray(Oe3Tab.entries.size)) }
         val wrappedPages = remember(pages) {
             pages?.let { raw ->
@@ -128,14 +130,13 @@ fun Oe3App(
         CompositionLocalProvider(
             LocalOe3GlassChrome provides glassChrome,
             LocalOe3GlassEnabled provides glassEnabled,
-            // shell 唯一 haze 源的共享句柄：底栏与顶栏滚动边缘效果都从这里采样，
-            // 全屏单一采样源（W2-05）。
-            LocalOe3ShellGlassState provides glassState,
             LocalOeSurfaceAlpha provides surfaceAlpha,
             LocalOeBackStack provides stack,
             // 页面底片复用同一份背景模式：转场时进入页先盖住下层，静止时与
             // 根背景逐像素重合（见 OePagePlate）。
             LocalOeShellBackgroundMode provides backgroundMode,
+            LocalOeShellBackground provides background,
+            LocalOe3PageBottomPadding provides bottomReserve,
         ) {
             val horizontalInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
             Box(modifier.fillMaxSize()) {
@@ -168,9 +169,7 @@ fun Oe3App(
                     },
                     style = navStyle,
                     modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(horizontalInsets),
-                    // W2-05 所有权仲裁：底栏无条件持有实时玻璃预算。顶栏滚动边缘
-                    // 只是共享源的次级消费者（见 Oe3Backdrop.kt），不再降档底栏——
-                    // 滚动 1px 就把底栏从 L1/L2 打回 96% 回退面的 R-02 缺陷链就此切断。
+                    // 底栏独占实时采样。顶栏的滚动遮罩不影响它的玻璃档位。
                     glassState = glassState,
                     onTabReselected = { tab ->
                         val next = LongArray(maxOf(reselectCounts.size, Oe3Tab.entries.size)) { i ->

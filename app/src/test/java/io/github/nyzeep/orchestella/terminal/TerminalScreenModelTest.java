@@ -12,6 +12,18 @@ public final class TerminalScreenModelTest {
         return model.snapshot().text().split("\n", -1)[row].replaceFirst(" +$", "");
     }
 
+    @Test public void rawDisplaySnapshotIsImmutableAndReusedUntilTheGridChanges() {
+        TerminalScreenModel model = new TerminalScreenModel(20, 4, false);
+        model.append("before");
+        TerminalScreenModel.Snapshot before = model.displaySnapshot();
+        assertThrows(UnsupportedOperationException.class, before.spans::clear);
+        assertSame(before, model.displaySnapshot());
+        model.append(" after");
+        assertNotSame(before, model.displaySnapshot());
+        assertEquals("before", before.text().stripTrailing());
+        assertEquals("before after", model.displaySnapshot().text().stripTrailing());
+    }
+
     @Test public void carriageReturnOverwritesWithoutErasingTail() {
         TerminalScreenModel model = new TerminalScreenModel(20, 4);
         model.append("abcdef\rXY");

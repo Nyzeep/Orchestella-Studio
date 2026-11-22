@@ -62,7 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
-import io.github.nyzeep.orchestella.ui.oe3.glass.rememberOe3ScrollEdgeGlass
+import io.github.nyzeep.orchestella.ui.oe3.glass.ReportOe3ScrollEdge
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
@@ -264,12 +264,7 @@ fun OeScaffold(
     val collapsed = rememberOe3HeaderCollapse(
         offsetPx = scrollOffsetPx ?: { scrollDistancePx.roundToInt() },
     ).value
-    // 顶栏边缘效果以滞回折叠态为键（不再以连续 alpha>0 为键）：修饰符子树
-    // 只在真实翻转时增删；静置（collapsed=false）无边缘效果，与旧实现滚动前
-    // 像素一致。内容 Column 不再挂任何 haze 源——shell 根已是唯一源
-    // （见 Oe3Backdrop.kt 所有权仲裁），R-02 的滚动 1px 即夺走底栏玻璃的
-    // 缺陷链源头（独立 sourceModifier + hasScrollEdge 降档）就此拆除。
-    val scrollEdgeEffect = rememberOe3ScrollEdgeGlass(active = collapsed)
+    ReportOe3ScrollEdge(active = collapsed)
 
     Box(
         modifier = modifier
@@ -287,9 +282,7 @@ fun OeScaffold(
             alpha = alpha,
             leading = leading,
             actions = actions,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .then(scrollEdgeEffect ?: Modifier),
+            modifier = Modifier.align(Alignment.TopCenter),
         )
     }
 }

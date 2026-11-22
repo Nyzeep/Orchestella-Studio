@@ -48,6 +48,8 @@ public final class TerminalScreenModel {
     private long displayEpoch;
     private long snapshotVersion;
     private long snapshotProbe;
+    private long cachedDisplayVersion = -1;
+    private Snapshot cachedDisplaySnapshot;
 
     public synchronized long displayEpoch() { return displayEpoch; }
 
@@ -123,7 +125,7 @@ public final class TerminalScreenModel {
         }
         Snapshot(List<TerminalSpan> spans, int cursorOffset, int historyRows, long evictedHistoryRows,
                 List<CommandRange> commandLineRanges) {
-            this.spans = spans;
+            this.spans = List.copyOf(spans);
             this.cursorOffset = cursorOffset;
             this.historyRows = historyRows;
             this.evictedHistoryRows = evictedHistoryRows;
@@ -587,9 +589,12 @@ public final class TerminalScreenModel {
 
     /** Display projection only; VT cursor reports and full-screen programs use the original grid. */
     public synchronized Snapshot displaySnapshot() {
-        if (screen == primary && commandTranscript != null && commandTranscript.enabled())
-            return commandTranscript.snapshot();
-        return snapshot();
+        if (cachedDisplayVersion != snapshotVersion) {
+            cachedDisplaySnapshot = screen == primary && commandTranscript != null && commandTranscript.enabled()
+                    ? commandTranscript.snapshot() : snapshot();
+            cachedDisplayVersion = snapshotVersion;
+        }
+        return cachedDisplaySnapshot;
     }
 
     public synchronized Snapshot snapshot() {

@@ -19,7 +19,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,11 +40,7 @@ import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 壳层背景的三态（spec §1.7 前置条件）：壁纸图 / 主题渐变 / 纯色。
@@ -100,6 +97,17 @@ object OeAppBackgroundSpec {
  */
 val LocalOeSurfaceAlpha = staticCompositionLocalOf { 1f }
 
+internal val LocalOeShellBackground = staticCompositionLocalOf<OeBackgroundRenderState?> { null }
+
+internal class OeBackgroundRenderState(
+    val mode: OeAppBackgroundMode,
+    val base: State<Color>,
+    val top: State<Color>,
+    val bottom: State<Color>,
+    val wallpaper: State<ImageBitmap?>,
+    val wallpaperAlpha: State<Float>,
+)
+
 /**
  * 壳层最底层的背景画布。只负责"画什么"，不含导航与标题。
  *
@@ -107,9 +115,8 @@ val LocalOeSurfaceAlpha = staticCompositionLocalOf { 1f }
  * 渐变由主题的 `primary`/`accent` 与 `background` 混出，浅色与暗色主题都
  * 落在同一套语义色上，不写死 hex。
  *
- * W2-03：壁纸解码与探活收敛到进程级 [WallpaperStore] 单源——壳层最多同时
- * 挂 3 个实例（根背景 + 栈 Under/Moving 底片），并发挂载只做一次解码、同一
- * 挂载波次只做一次可用性探活。[wallpaperParallaxFraction] 供栈 Moving 底片
+ * 壳层根背景与页面底片共享同一份颜色动画和壁纸加载状态。
+ * [wallpaperParallaxFraction] 供栈 Moving 底片
  * 反向补偿壁纸偏移，使壁纸在屏幕坐标系与根背景对齐（仅内容横向滑入）。
  */
 @Composable
@@ -118,6 +125,19 @@ fun OeAppBackground(
     modifier: Modifier = Modifier,
     wallpaperParallaxFraction: (() -> Float)? = null,
 ) {
+    val shared = LocalOeShellBackground.current
+    val state = if (shared?.mode == mode) shared else rememberOeBackground(mode)
+    val animatedBg by state.base
+    val animatedTop by state.top
+    val animatedBottom by state.bottom
+    val activeBitmap by state.wallpaper
+    val wallpaperAlpha by state.wallpaperAlpha
+    DrawOeBackground(modifier, animatedBg, animatedTop, animatedBottom, activeBitmap, wallpaperAlpha,
+        wallpaperParallaxFraction)
+}
+
+@Composable
+internal fun rememberOeBackground(mode: OeAppBackgroundMode): OeBackgroundRenderState {
     val colors = Oe3ThemeValues.colors
     val info = Oe3ThemeValues.info
     val motion = Oe3ThemeValues.motion
@@ -144,40 +164,74 @@ fun OeAppBackground(
     val targetTop = if (isSolid) targetBg else Color(ThemeColors.blend(colors.background, colors.primary, 0.22f))
     val targetBottom = if (isSolid) targetBg else Color(ThemeColors.blend(colors.background, colors.accent, 0.16f))
 
-    val animatedBg by animateColorAsState(targetBg, colorSpec, label = "oeBgBase")
-    val animatedTop by animateColorAsState(targetTop, colorSpec, label = "oeBgTop")
-    val animatedBottom by animateColorAsState(targetBottom, colorSpec, label = "oeBgBottom")
+    val animatedBg = animateColorAsState(targetBg, colorSpec, label = "oeBgBase")
+    val animatedTop = animateColorAsState(targetTop, colorSpec, label = "oeBgTop")
+    val animatedBottom = animateColorAsState(targetBottom, colorSpec, label = "oeBgBottom")
 
-    var retainedBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    val retainedBitmap = remember { mutableStateOf<ImageBitmap?>(null) }
     val wallpaperLoadState = if (mode is OeAppBackgroundMode.Wallpaper) {
-        val entry = remember(mode.uri) { WallpaperStore.entry(mode.uri) }
-        val state by entry.state.collectAsState()
         val context = LocalContext.current
-        LaunchedEffect(mode.uri, context) {
-            WallpaperStore.attach(mode.uri, context)
+        var loadState by remember(mode.uri, context) {
+            mutableStateOf<WallpaperLoadState>(
+                WallpaperCache.get(mode.uri)?.let { WallpaperLoadState.Ready(it) } ?: WallpaperLoadState.Loading,
+            )
         }
-        state
+        LaunchedEffect(mode.uri, context) {
+            val uri = mode.uri
+            val cached = (loadState as? WallpaperLoadState.Ready)?.image
+            if (cached != null) {
+                if (!withContext(Dispatchers.IO) { wallpaperAvailable(context, uri) }) {
+                    WallpaperCache.remove(uri)
+                    loadState = WallpaperLoadState.Failed
+                }
+            } else {
+                val decoded = withContext(Dispatchers.IO) { decodeWallpaper(context, uri) }
+                loadState = if (decoded == null) {
+                    WallpaperLoadState.Failed
+                } else {
+                    WallpaperCache.put(uri, decoded)
+                    WallpaperLoadState.Ready(decoded)
+                }
+            }
+        }
+        loadState
     } else {
         null
     }
     val readyBitmap = (wallpaperLoadState as? WallpaperLoadState.Ready)?.image
-    val activeBitmap = readyBitmap ?: retainedBitmap
+    val activeBitmap = remember(readyBitmap) { derivedStateOf { readyBitmap ?: retainedBitmap.value } }
     val showWallpaper = readyBitmap != null ||
-        (wallpaperLoadState == WallpaperLoadState.Loading && retainedBitmap != null)
-    val wallpaperAlpha by animateFloatAsState(
+        (wallpaperLoadState == WallpaperLoadState.Loading && retainedBitmap.value != null)
+    val wallpaperAlpha = animateFloatAsState(
         targetValue = if (showWallpaper) 1f else 0f,
         animationSpec = alphaSpec,
         label = "oeBgWallpaperAlpha",
     )
-    val wallpaperHidden = !showWallpaper && wallpaperAlpha == 0f
+    val wallpaperHidden by remember(showWallpaper, wallpaperAlpha) {
+        derivedStateOf { !showWallpaper && wallpaperAlpha.value == 0f }
+    }
     LaunchedEffect(readyBitmap, wallpaperHidden) {
         if (readyBitmap != null) {
-            retainedBitmap = readyBitmap
+            retainedBitmap.value = readyBitmap
         } else if (wallpaperHidden) {
-            retainedBitmap = null
+            retainedBitmap.value = null
         }
     }
+    return remember(mode, activeBitmap) {
+        OeBackgroundRenderState(mode, animatedBg, animatedTop, animatedBottom, activeBitmap, wallpaperAlpha)
+    }
+}
 
+@Composable
+private fun DrawOeBackground(
+    modifier: Modifier,
+    animatedBg: Color,
+    animatedTop: Color,
+    animatedBottom: Color,
+    activeBitmap: ImageBitmap?,
+    wallpaperAlpha: Float,
+    wallpaperParallaxFraction: (() -> Float)?,
+) {
     val gradient = Brush.verticalGradient(listOf(animatedTop, animatedBg, animatedBottom))
     Box(modifier.fillMaxSize()) {
         if (animatedTop == animatedBg && animatedBottom == animatedBg) {
@@ -261,88 +315,10 @@ internal fun clearWallpaperCacheForTest() {
     WallpaperCache.clear()
 }
 
-internal sealed interface WallpaperLoadState {
+private sealed interface WallpaperLoadState {
     data object Loading : WallpaperLoadState
     data class Ready(val image: ImageBitmap) : WallpaperLoadState
     data object Failed : WallpaperLoadState
-}
-
-/**
- * 壁纸单源（W2-03）：进程级唯一的壁纸加载状态。壳层同时最多挂 3 个
- * [OeAppBackground] 实例（根背景 + 栈 Under/Moving 底片），旧实现里每个实例
- * 各自 `rememberWallpaper`——并发首挂会重复解码同一 uri、每个实例挂载都重复
- * `wallpaperAvailable` IO 探活。本单源以 uri 键共享一个状态流：
- *
- * - 缓存未命中 → mutex 收敛为**一次解码**，首个实例完成后的并发实例直接
- *   复用结论（拿锁后重查缓存，不重复打开流）；
- * - 缓存命中 → 同一挂载波次内只做**一次**可用性探活；此后重新挂载（模式
- *   切走再切回）视为新波次，重新探活——授权被撤销仍能及时发现并回退渐变。
- *
- * 波次判定用挂载代计数器（严格、与锁序无关）：每个实例进锁前先读
- * [Entry.probeGeneration] 快照，锁内核对——同波次并发实例共享同一快照，恰有
- * 首个拿锁者探活并推进代数，其余快照失配直接跳过；新的顺序挂载读到已推进的
- * 代数（快照 == 当前）则探活。探活全程持锁，故同帧挂载必然同快照。
- *
- * 条目表随 uri 增长有限（用户挑选的壁纸数量级）。
- */
-internal object WallpaperStore {
-
-    internal class Entry {
-        val state = MutableStateFlow<WallpaperLoadState>(WallpaperLoadState.Loading)
-        val mutex = Mutex()
-
-        /** 已完成的探活代数；挂载波次以"进锁前快照 vs 锁内当前值"判定。 */
-        @Volatile
-        var probeGeneration: Long = 0L
-    }
-
-    private val entries = ConcurrentHashMap<String, Entry>()
-
-    fun entry(uri: String): Entry = entries.computeIfAbsent(uri) { Entry() }
-
-    /** 挂载时确保该 uri 有一份新鲜结论；并发挂载由 mutex 与挂载代收敛 IO。 */
-    suspend fun attach(uri: String, context: Context) {
-        val entry = entry(uri)
-        val cached = WallpaperCache.get(uri)
-        if (cached != null) {
-            // 缓存命中：先立即呈现，再探活文档是否仍可打开（旧语义保留）。
-            entry.state.value = WallpaperLoadState.Ready(cached)
-            val snapshotGeneration = entry.probeGeneration
-            entry.mutex.withLock {
-                if (entry.probeGeneration != snapshotGeneration) {
-                    return@withLock
-                }
-                val available = withContext(Dispatchers.IO) { wallpaperAvailable(context, uri) }
-                if (!available) {
-                    WallpaperCache.remove(uri)
-                    entry.state.value = WallpaperLoadState.Failed
-                }
-                entry.probeGeneration = snapshotGeneration + 1
-            }
-        } else {
-            entry.mutex.withLock {
-                // 拿锁后重查缓存：并发波次里第一个实例可能刚完成解码。
-                val fresh = WallpaperCache.get(uri)
-                if (fresh != null) {
-                    entry.state.value = WallpaperLoadState.Ready(fresh)
-                    return
-                }
-                entry.state.value = WallpaperLoadState.Loading
-                val decoded = withContext(Dispatchers.IO) { decodeWallpaper(context, uri) }
-                entry.state.value = if (decoded != null) {
-                    WallpaperCache.put(uri, decoded)
-                    WallpaperLoadState.Ready(decoded)
-                } else {
-                    WallpaperLoadState.Failed
-                }
-            }
-        }
-    }
-
-    @VisibleForTesting
-    internal fun resetForTest() {
-        entries.clear()
-    }
 }
 
 private fun wallpaperAvailable(context: Context, uri: String): Boolean = try {
