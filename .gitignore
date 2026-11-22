@@ -22,6 +22,9 @@ skills-lock.json
 /app/src/main/jniLibs/
 /app/src/main/assets/*
 !/app/src/main/assets/third-party-notices.txt
+# W1-06: shipped font license (JetBrains Mono NL, SIL OFL-1.1); provenance is
+# pinned in NOTICE-jetbrains-mono.md and enforced by JetBrainsMonoNoticeTest.
+!/app/src/main/assets/licenses/
 # Guest shell integration is source, not a developer-local asset: OSC 133 markers
 # and prompt wrapping decide terminal behaviour, so they must be reviewable and
 # reproducible from a clean clone (2026-11-20 polish round).

@@ -46,7 +46,7 @@ object OeType {
         val spec = spec(role)
         return TextStyle(
             fontFamily = when {
-                role == OeTypeRole.Mono -> FontFamily.Monospace
+                role == OeTypeRole.Mono -> OeFonts.JetBrainsMono
                 baseFamily != null -> baseFamily
                 else -> FontFamily.Default
             },

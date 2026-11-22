@@ -16,6 +16,7 @@ import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import io.github.nyzeep.orchestella.StickyModifierStateMachine.Modifier;
 import io.github.nyzeep.orchestella.StickyModifierStateMachine.State;
+import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle;
 import io.github.nyzeep.orchestella.ui.theme.AppTheme;
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity;
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors;
@@ -336,7 +337,7 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
         Context context = getContext();
         Button btn = new Button(context, null, android.R.attr.buttonStyleSmall);
         btn.setText(label);
-        btn.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        btn.setTypeface(OeLegacyViewStyle.monoTypeface(context, Typeface.BOLD));
         btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         btn.setTextColor(theme.getText());
         btn.setBackground(createKeyBackground(theme.getSurface(), theme.getGlow()));

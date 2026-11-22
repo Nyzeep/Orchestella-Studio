@@ -10,6 +10,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import com.google.android.material.button.MaterialButton
+import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 
 /**
@@ -62,7 +63,7 @@ object DevToolchainCard {
         root.addView(TextView(activity).apply {
             text = command
             textSize = 12f
-            typeface = Typeface.MONOSPACE
+            typeface = OeLegacyViewStyle.monoTypeface(activity)
             setPadding(0, 4, 0, 8)
             setTextIsSelectable(true)
         })

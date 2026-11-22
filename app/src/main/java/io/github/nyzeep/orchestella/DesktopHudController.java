@@ -6,6 +6,7 @@ import android.view.Gravity;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle;
 import java.util.function.Supplier;
 
 /**
@@ -111,7 +112,7 @@ public final class DesktopHudController {
         TextView text = new TextView(context);
         text.setTextColor(0xFF00FF66);
         text.setTextSize(12f);
-        text.setTypeface(android.graphics.Typeface.MONOSPACE);
+        text.setTypeface(OeLegacyViewStyle.monoTypeface(context));
         text.setText("等待显示");
         return text;
     }

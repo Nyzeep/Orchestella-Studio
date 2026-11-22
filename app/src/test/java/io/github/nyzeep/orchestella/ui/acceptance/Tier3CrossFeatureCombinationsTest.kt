@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.github.nyzeep.orchestella.ui.design.tokens.OeFonts
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.glass.GlassDeviceCap
 import io.github.nyzeep.orchestella.ui.oe3.glass.GlassTier
@@ -443,7 +444,7 @@ class Tier3CrossFeatureCombinationsTest {
         compose.waitForIdle()
         assertEquals(20.dp, observedCorner)
         assertEquals(1.30f, observedFontScale, 0.01f)
-        assertEquals(FontFamily.Monospace, bodyFontFamily)
+        assertEquals(OeFonts.JetBrainsMono, bodyFontFamily)
 
         Oe3Tab.entries.forEach { tab ->
             AcceptanceTestSupport.assertTouchTargetAtLeast48Dp(

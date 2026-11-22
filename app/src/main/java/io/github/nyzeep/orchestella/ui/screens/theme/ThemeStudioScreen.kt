@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.design.components.OeSlider
+import io.github.nyzeep.orchestella.ui.design.tokens.OeFonts
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Chip
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
@@ -64,7 +65,7 @@ fun ThemeStudioScreen(
 ) {
     val colors = Oe3ThemeValues.colors
     val fontFamily = when (state.fontChoice) {
-        FontChoice.Mono -> FontFamily.Monospace
+        FontChoice.Mono -> OeFonts.JetBrainsMono
         FontChoice.System, FontChoice.Imported -> FontFamily.Default
     }
     val scrollState = rememberScrollState()

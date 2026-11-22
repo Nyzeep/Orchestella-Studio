@@ -3,6 +3,7 @@ package io.github.nyzeep.orchestella.ui.oe3
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
+import io.github.nyzeep.orchestella.ui.design.tokens.OeFonts
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TypeScale
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
@@ -70,22 +71,24 @@ class Oe3TypographyTest {
 
     @Test
     fun monoIsAMonospaceRole() {
-        assertEquals(FontFamily.Monospace, Oe3Typography.styleStatic(Oe3TextRole.Mono).fontFamily)
+        // W1-06: the mono role's monospace is the shipped JetBrains Mono NL family.
+        assertEquals(OeFonts.JetBrainsMono, Oe3Typography.styleStatic(Oe3TextRole.Mono).fontFamily)
     }
 
     /**
      * UI3-12 mono wiring: the shell's 等宽 choice overrides the base family
      * for every non-mono role, and the mono role stays monospace regardless.
+     * W1-06: that choice is now [OeFonts.JetBrainsMono] end to end.
      */
     @Test
     fun monoOverrideReplacesTheDefaultFamilyOnly() {
         assertEquals(
-            FontFamily.Monospace,
-            Oe3Typography.styleStatic(Oe3TextRole.Body, baseFamily = FontFamily.Monospace).fontFamily,
+            OeFonts.JetBrainsMono,
+            Oe3Typography.styleStatic(Oe3TextRole.Body, baseFamily = OeFonts.JetBrainsMono).fontFamily,
         )
         assertEquals(
-            FontFamily.Monospace,
-            Oe3Typography.styleStatic(Oe3TextRole.Mono, baseFamily = FontFamily.Monospace).fontFamily,
+            OeFonts.JetBrainsMono,
+            Oe3Typography.styleStatic(Oe3TextRole.Mono, baseFamily = OeFonts.JetBrainsMono).fontFamily,
         )
         assertEquals(
             FontFamily.Default,

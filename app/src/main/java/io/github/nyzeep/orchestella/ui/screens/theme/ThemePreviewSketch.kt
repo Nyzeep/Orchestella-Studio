@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeFonts
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
@@ -70,7 +71,7 @@ fun ThemePreviewSketch(kind: ThemePreviewKind, modifier: Modifier = Modifier) {
 @Composable
 private fun FontThumb(choice: FontChoice, modifier: Modifier) {
     val colors = Oe3ThemeValues.colors
-    val family = if (choice == FontChoice.Mono) FontFamily.Monospace else FontFamily.Default
+    val family = if (choice == FontChoice.Mono) OeFonts.JetBrainsMono else FontFamily.Default
     Box(
         modifier = modifier.background(Color(colors.surfaceHigh)),
         contentAlignment = Alignment.Center,

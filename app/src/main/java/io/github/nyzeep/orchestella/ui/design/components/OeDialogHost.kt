@@ -48,9 +48,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeFonts
 import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3DialogSpringEnterMotion
@@ -325,7 +325,7 @@ private fun OeDialogOverlay(spec: OeDialogSpec, onDismiss: () -> Unit) {
                             .padding(horizontal = Oe3Spacing.lg, vertical = Oe3Spacing.md),
                         textStyle = Oe3Typography.style(Oe3TextRole.Body).copy(
                             color = colors.onSurface.oe3Color(),
-                            fontFamily = if (inputSpec.monospace) FontFamily.Monospace else null,
+                            fontFamily = if (inputSpec.monospace) OeFonts.JetBrainsMono else null,
                         ),
                         cursorBrush = SolidColor(colors.primary.oe3Color()),
                         maxLines = if (inputSpec.multiline) 6 else 1,

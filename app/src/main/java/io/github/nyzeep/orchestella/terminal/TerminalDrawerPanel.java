@@ -14,6 +14,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import io.github.nyzeep.orchestella.ui.design.components.OeDialogs;
+import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle;
 import io.github.nyzeep.orchestella.ui.theme.AppTheme;
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity;
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors;
@@ -86,7 +87,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
         tvHeader = new TextView(context);
         tvHeader.setText(context.getString(io.github.nyzeep.orchestella.R.string.terminal_drawer_title));
         tvHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        tvHeader.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        tvHeader.setTypeface(OeLegacyViewStyle.monoTypeface(context, Typeface.BOLD));
         tvHeader.setTextColor(theme.getText());
         LinearLayout.LayoutParams headerLp = new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
@@ -107,7 +108,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
         btnNewTerminal = new Button(context, null, android.R.attr.buttonStyleSmall);
         btnNewTerminal.setText(context.getString(io.github.nyzeep.orchestella.R.string.terminal_drawer_new));
         btnNewTerminal.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        btnNewTerminal.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        btnNewTerminal.setTypeface(OeLegacyViewStyle.monoTypeface(context, Typeface.BOLD));
         btnNewTerminal.setTextColor(ThemeColors.INSTANCE.onColor(theme.getPrimary()));
         btnNewTerminal.setBackground(createPillBackground(theme.getPrimary(), theme.getPrimary(), 10f));
         btnNewTerminal.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
@@ -129,7 +130,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
         btnDesktopMode.setContentDescription(context.getString(
                 io.github.nyzeep.orchestella.R.string.terminal_drawer_desktop_content_desc));
         btnDesktopMode.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        btnDesktopMode.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        btnDesktopMode.setTypeface(OeLegacyViewStyle.monoTypeface(context, Typeface.BOLD));
         btnDesktopMode.setTextColor(ThemeColors.INSTANCE.onColor(theme.getPrimary()));
         btnDesktopMode.setBackground(createPillBackground(
                 alphaDerive(theme.getPrimary(), 0x22000000), theme.getPrimary(), 10f));
@@ -175,7 +176,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
         btnCollapse = new Button(context, null, android.R.attr.buttonStyleSmall);
         btnCollapse.setText("收起 ❯");
         btnCollapse.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        btnCollapse.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
+        btnCollapse.setTypeface(OeLegacyViewStyle.monoTypeface(context));
         btnCollapse.setTextColor(theme.getAccent());
         btnCollapse.setBackground(createPillBackground(
                 alphaDerive(theme.getAccent(), 0x22000000), alphaDerive(theme.getAccent(), 0x44000000), 8f));
@@ -315,7 +316,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
             // Title
             tvTitle = new TextView(context);
             tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-            tvTitle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            tvTitle.setTypeface(OeLegacyViewStyle.monoTypeface(context, Typeface.BOLD));
             LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1.0f);
             row.addView(tvTitle, titleLp);
 
@@ -323,7 +324,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
             tvActiveBadge = new TextView(context);
             tvActiveBadge.setText("当前");
             tvActiveBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
-            tvActiveBadge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            tvActiveBadge.setTypeface(OeLegacyViewStyle.monoTypeface(context, Typeface.BOLD));
             tvActiveBadge.setTextColor(theme.getPrimary());
             tvActiveBadge.setBackground(createPillBackground(
                     alphaDerive(theme.getPrimary(), 0x33000000), theme.getPrimary(), 4f));
@@ -337,7 +338,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
             btnClose = new Button(context, null, android.R.attr.buttonStyleSmall);
             btnClose.setText("✕");
             btnClose.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-            btnClose.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            btnClose.setTypeface(OeLegacyViewStyle.monoTypeface(context, Typeface.BOLD));
             btnClose.setTextColor(DANGER_RED);
             btnClose.setBackground(createPillBackground(
                     alphaDerive(DANGER_RED, 0x22000000), alphaDerive(DANGER_RED, 0x44000000), 6f));

@@ -33,6 +33,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import io.github.nyzeep.orchestella.terminal.TerminalScreenModel;
+import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle;
 
 /** Selectable, bounded VT screen with a single input path for IME, hardware and extra keys. */
 public class ModernTerminalView extends ScrollView {
@@ -248,8 +249,9 @@ public class ModernTerminalView extends ScrollView {
         // The parent owns the IME connection; the selectable transcript may still take focus for selection.
         setDescendantFocusability(FOCUS_BEFORE_DESCENDANTS);
         transcriptView = new TranscriptView(context);
-        transcriptView.setTypeface(Typeface.MONOSPACE);
-        transcriptView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        // W1-06: JetBrains Mono NL; no size here — applyTheme() sets the
+        // ThemeStore size once, avoiding a second updateTerminalSize on attach.
+        transcriptView.setTypeface(OeLegacyViewStyle.monoTypeface(context));
         transcriptView.setTextColor(DraculaPalette.themedForeground());
         transcriptView.setBackgroundColor(DraculaPalette.themedBackground());
         transcriptView.setIncludeFontPadding(false);

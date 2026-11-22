@@ -48,12 +48,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.R
+import io.github.nyzeep.orchestella.ui.design.tokens.OeFonts
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
@@ -98,7 +98,7 @@ object InstancesSpec {
 
 /** 实例 id / IP 行；票面要求 mono 12，不在八级 token 内，属于页面局部样式。 */
 private val MonoCaptionStyle = TextStyle(
-    fontFamily = FontFamily.Monospace,
+    fontFamily = OeFonts.JetBrainsMono,
     fontSize = 12.sp,
     lineHeight = 16.sp,
 )

@@ -51,7 +51,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.withStyle
@@ -59,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.nyzeep.orchestella.ModernTerminalView
+import io.github.nyzeep.orchestella.ui.design.tokens.OeFonts
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.terminal.TerminalScreenModel
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
@@ -210,7 +210,7 @@ fun TerminalPreview(
         Spacer(Modifier.height(4.dp))
         Text(
             text = stringResource(R.string.ui3_theme_terminal_commands),
-            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 13.sp),
+            style = TextStyle(fontFamily = OeFonts.JetBrainsMono, fontSize = 10.sp, lineHeight = 13.sp),
             color = Color(Oe3ThemeValues.colors.onSurfaceVariant),
         )
     }
@@ -320,7 +320,7 @@ private fun TerminalInputRow(
     ) {
         Text(
             text = "$",
-            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 18.sp),
+            style = TextStyle(fontFamily = OeFonts.JetBrainsMono, fontSize = 13.sp, lineHeight = 18.sp),
             color = Color(colors.primary),
             fontWeight = FontWeight.SemiBold,
         )
@@ -351,7 +351,7 @@ private fun TerminalInputRow(
                 },
             singleLine = true,
             textStyle = TextStyle(
-                fontFamily = FontFamily.Monospace,
+                fontFamily = OeFonts.JetBrainsMono,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
                 color = Color(colors.onSurface),
@@ -370,7 +370,7 @@ private fun TerminalInputRow(
                         Text(
                             text = stringResource(R.string.ui3_theme_terminal_input_hint),
                             style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
+                                fontFamily = OeFonts.JetBrainsMono,
                                 fontSize = 13.sp,
                                 lineHeight = 18.sp,
                             ),
@@ -410,12 +410,12 @@ fun TerminalPaletteSketch(theme: AppTheme, modifier: Modifier = Modifier) {
                 withStyle(SpanStyle(color = Color(palette.ansi[4]))) { append("~") }
                 withStyle(SpanStyle(color = Color(palette.foreground))) { append("$ theme") }
             },
-            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, lineHeight = 12.sp),
+            style = TextStyle(fontFamily = OeFonts.JetBrainsMono, fontSize = 9.sp, lineHeight = 12.sp),
         )
         Text(
             text = theme.displayName,
             style = TextStyle(
-                fontFamily = FontFamily.Monospace,
+                fontFamily = OeFonts.JetBrainsMono,
                 fontSize = 10.sp,
                 lineHeight = 13.sp,
                 fontWeight = FontWeight.Bold,
@@ -427,7 +427,7 @@ fun TerminalPaletteSketch(theme: AppTheme, modifier: Modifier = Modifier) {
                 withStyle(SpanStyle(color = Color(palette.ansi[2]))) { append("✓ ") }
                 withStyle(SpanStyle(color = Color(palette.foreground))) { append("80×24 · local fake shell") }
             },
-            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 8.sp, lineHeight = 11.sp),
+            style = TextStyle(fontFamily = OeFonts.JetBrainsMono, fontSize = 8.sp, lineHeight = 11.sp),
         )
         Text(
             text = buildAnnotatedString {
@@ -435,13 +435,13 @@ fun TerminalPaletteSketch(theme: AppTheme, modifier: Modifier = Modifier) {
                 withStyle(SpanStyle(color = Color(palette.foreground))) { append(":~$ ") }
                 withStyle(SpanStyle(color = Color(palette.ansi[6]))) { append("ls") }
             },
-            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 8.sp, lineHeight = 11.sp),
+            style = TextStyle(fontFamily = OeFonts.JetBrainsMono, fontSize = 8.sp, lineHeight = 11.sp),
         )
         Text(
             text = buildAnnotatedString {
                 withStyle(SpanStyle(color = Color(palette.ansi[4]))) { append("Desktop  Documents  Downloads  Projects") }
             },
-            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 8.sp, lineHeight = 11.sp),
+            style = TextStyle(fontFamily = OeFonts.JetBrainsMono, fontSize = 8.sp, lineHeight = 11.sp),
         )
         Spacer(Modifier.weight(1f))
         palette.ansi.chunked(8).forEach { row ->
@@ -460,7 +460,7 @@ fun TerminalPaletteSketch(theme: AppTheme, modifier: Modifier = Modifier) {
         }
         Text(
             text = stringResource(R.string.ui3_theme_terminal_sketch_caption),
-            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 8.sp, lineHeight = 10.sp),
+            style = TextStyle(fontFamily = OeFonts.JetBrainsMono, fontSize = 8.sp, lineHeight = 10.sp),
             color = Color(palette.foreground).copy(alpha = 0.72f),
         )
     }
@@ -489,7 +489,7 @@ fun AnsiPaletteStrip(theme: AppTheme, modifier: Modifier = Modifier) {
                         Text(
                             text = "$index",
                             style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
+                                fontFamily = OeFonts.JetBrainsMono,
                                 fontSize = 8.sp,
                                 lineHeight = 10.sp,
                             ),
@@ -535,7 +535,7 @@ private fun TerminalBaseSwatch(label: String, argb: Int, modifier: Modifier = Mo
         Spacer(Modifier.height(2.dp))
         Text(
             text = "$label  #${String.format("%06X", argb and 0x00FFFFFF)}",
-            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 13.sp),
+            style = TextStyle(fontFamily = OeFonts.JetBrainsMono, fontSize = 10.sp, lineHeight = 13.sp),
             color = Color(Oe3ThemeValues.colors.onSurfaceVariant),
         )
     }

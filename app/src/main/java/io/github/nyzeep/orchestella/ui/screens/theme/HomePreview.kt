@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeFonts
 import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Ring
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3Motion
@@ -252,7 +253,7 @@ private fun PreviewHero(colors: HomePreviewColors, cardRadius: androidx.compose.
             ) {
                 Text(
                     text = "U",
-                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 7.sp, lineHeight = 8.sp),
+                    style = TextStyle(fontFamily = OeFonts.JetBrainsMono, fontSize = 7.sp, lineHeight = 8.sp),
                     color = Color(colors.primary),
                     fontWeight = FontWeight.Bold,
                 )

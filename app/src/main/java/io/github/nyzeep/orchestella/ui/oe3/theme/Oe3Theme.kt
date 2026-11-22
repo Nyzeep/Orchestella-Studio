@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeFonts
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3BaseFontFamily
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3ColorTokens
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors
@@ -210,7 +211,7 @@ fun Oe3Theme(
     // tree-wide; the Mono role keeps its own monospace either way. Default off
     // keeps every documented style byte-identical.
     val baseFamily = remember(monoBody) {
-        if (monoBody) FontFamily.Monospace else null
+        if (monoBody) OeFonts.JetBrainsMono else null
     }
     val typography = remember(baseFamily) { Oe3ThemeScheme.typography(baseFamily) }
 
