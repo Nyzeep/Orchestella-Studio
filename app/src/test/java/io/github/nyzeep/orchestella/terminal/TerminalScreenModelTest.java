@@ -772,4 +772,57 @@ public final class TerminalScreenModelTest {
         model.append("\u001b[?1049l");
         assertEquals(shell, model.snapshot().text());
     }
+
+    /**
+     * W2-01: 未知 OSC（0/7/52）闭合时不得再预构造全量快照——marker 只接收延迟句柄。
+     * 计数探针证明噪声序列期间外层 snapshot() 与 pane.snapshot() 零调用；
+     * 133;A 首次启用仍精确消费一次归档快照，后续 133;B/C/D 流程不受影响。
+     */
+    @Test public void ignoredOscSequencesNeverBuildSnapshots() {
+        TerminalScreenModel model = new TerminalScreenModel(40, 8);
+        prompt(model);
+        long outerBaseline = model.snapshotBuildProbe();
+        long paneBaseline = model.paneSnapshotBuildProbe();
+        assertTrue(outerBaseline >= 1);
+        assertTrue(paneBaseline >= 1);
+        StringBuilder noise = new StringBuilder();
+        for (int i = 0; i < 500; i++) {
+            noise.append("\u001b]0;title ").append(i).append("\u0007");
+            noise.append("\u001b]7;file:///host/cwd").append(i).append("\u0007");
+            noise.append("\u001b]52;c;aGVsbG8=").append(i).append("\u0007");
+        }
+        model.append(noise.toString());
+        assertEquals(outerBaseline, model.snapshotBuildProbe());
+        assertEquals(paneBaseline, model.paneSnapshotBuildProbe());
+        model.append("echo ok\r\n" + commandMarker("echo ok") + "ok\r\n" + marker("D;0"));
+        assertTrue(model.displaySnapshot().text().contains("❯ echo ok\n\nok"));
+    }
+
+    /** W2-01: snapshotVersion 单调内容版本——append/reset/clear/resize 递增，no-op 不动。 */
+    @Test public void snapshotVersionTracksContentMutationsMonotonically() {
+        TerminalScreenModel model = new TerminalScreenModel(40, 8);
+        long before = model.snapshotVersion();
+        model.append("abc");
+        assertTrue(model.snapshotVersion() > before);
+        long afterAppend = model.snapshotVersion();
+        model.append("");
+        assertEquals(afterAppend, model.snapshotVersion());
+        model.append("\u001b]0;title\u0007");
+        assertTrue(model.snapshotVersion() > afterAppend);
+        long afterOsc = model.snapshotVersion();
+        model.reset();
+        assertTrue(model.snapshotVersion() > afterOsc);
+        long afterReset = model.snapshotVersion();
+        model.resize(30, 8);
+        assertTrue(model.snapshotVersion() > afterReset);
+        long afterResize = model.snapshotVersion();
+        model.resize(30, 8);
+        assertEquals(afterResize, model.snapshotVersion());
+        assertTrue(model.clearVisibleHistory());
+        assertTrue(model.snapshotVersion() > afterResize);
+        model.append("\u001b[?1049h");
+        long onAlternate = model.snapshotVersion();
+        assertFalse(model.clearVisibleHistory());
+        assertEquals(onAlternate, model.snapshotVersion());
+    }
 }

@@ -46,8 +46,28 @@ public final class TerminalScreenModel {
     private final StringBuilder osc = new StringBuilder();
     private boolean shellPromptObserved;
     private long displayEpoch;
+    private long snapshotVersion;
+    private long snapshotProbe;
 
     public synchronized long displayEpoch() { return displayEpoch; }
+
+    /**
+     * Monotonic input version: advances on every text-modifying input path (append,
+     * reset, clearVisibleHistory, resize), including ordinary output. Conservative
+     * by construction — a call may advance the version without changing the rendered
+     * grid (e.g. an ignored OSC title), but it never misses a real change, so upper
+     * layers can use it to skip redraws cheaply. Unlike {@link #displayEpoch()}
+     * clear-screen and full resets advance both counters.
+     */
+    public synchronized long snapshotVersion() { return snapshotVersion; }
+
+    /** Test probe: number of {@link #snapshot()} builds (package-private observability). */
+    synchronized long snapshotBuildProbe() { return snapshotProbe; }
+
+    /** Test probe: snapshot() builds inside the integrated display pane (-1 when shell integration is off). */
+    synchronized long paneSnapshotBuildProbe() {
+        return commandTranscript == null ? -1 : commandTranscript.paneSnapshotBuildProbe();
+    }
 
     /** True after this stream's first complete integrated prompt. */
     public synchronized boolean hasObservedShellPrompt() { return shellPromptObserved; }
@@ -58,6 +78,7 @@ public final class TerminalScreenModel {
         history.clear(); historyCells = 0; evictedHistoryRows = 0;
         if (commandTranscript != null) commandTranscript.clearVisibleHistory(true, false);
         displayEpoch++;
+        snapshotVersion++;
         return true;
     }
 
@@ -89,16 +110,31 @@ public final class TerminalScreenModel {
     }
 
     public static final class Snapshot {
+        /** Half-open display-line range [startLine, endLineExclusive) carrying a semantic command head. */
+        public record CommandRange(int startLine, int endLineExclusive) {}
+
         public final List<TerminalSpan> spans;
         public final int cursorOffset;
         public final int historyRows;
         public final long evictedHistoryRows;
+        private final List<CommandRange> commandLineRanges;
         Snapshot(List<TerminalSpan> spans, int cursorOffset, int historyRows, long evictedHistoryRows) {
+            this(spans, cursorOffset, historyRows, evictedHistoryRows, List.of());
+        }
+        Snapshot(List<TerminalSpan> spans, int cursorOffset, int historyRows, long evictedHistoryRows,
+                List<CommandRange> commandLineRanges) {
             this.spans = spans;
             this.cursorOffset = cursorOffset;
             this.historyRows = historyRows;
             this.evictedHistoryRows = evictedHistoryRows;
+            this.commandLineRanges = List.copyOf(commandLineRanges);
         }
+        /**
+         * Read-only display-line ranges of archived command heads (prompt plus
+         * submitted command), for renderers that draw left-side emphasis without
+         * touching the text buffer. Indexes address {@link #text()} split by '\n'.
+         */
+        public List<CommandRange> commandLineRanges() { return commandLineRanges; }
         public String text() {
             StringBuilder value = new StringBuilder();
             for (TerminalSpan span : spans) value.append(span.getText());
@@ -130,6 +166,7 @@ public final class TerminalScreenModel {
 
     public synchronized void reset() {
         displayEpoch++;
+        snapshotVersion++;
         primary = new Screen(columns, rows);
         alternate = new Screen(columns, rows);
         screen = primary;
@@ -149,6 +186,7 @@ public final class TerminalScreenModel {
 
     public synchronized void append(String text) {
         if (text == null) return;
+        if (!text.isEmpty()) snapshotVersion++;
         for (int i = 0; i < text.length(); i++) {
             char ch = text.charAt(i);
             if (pendingHighSurrogate != 0) {
@@ -177,7 +215,9 @@ public final class TerminalScreenModel {
                     else { commandTranscript.accept(27); commandTranscript.accept('\\'); }
                 }
                 if (oscString && !oscOverflow && commandTranscript != null && screen == primary) {
-                    shellPromptObserved |= commandTranscript.marker(osc.toString(), snapshot());
+                    // Deferred: the transcript decides whether it needs the archived
+                    // snapshot at all, so ignored OSC 0/7/52 sequences never rebuild one.
+                    shellPromptObserved |= commandTranscript.marker(osc.toString(), this::snapshot);
                 }
                 state = 0; osc.setLength(0); oscString = oscOverflow = false;
             } else if (codePoint == 27) state = 4;
@@ -521,6 +561,7 @@ public final class TerminalScreenModel {
         newColumns = clamp(newColumns, 2, 512);
         newRows = clamp(newRows, 2, 256);
         if (newColumns == columns && newRows == rows) return;
+        snapshotVersion++;
         resizeScreen(primary, newColumns, newRows, true);
         resizeScreen(alternate, newColumns, newRows, false);
         columns = newColumns; rows = newRows;
@@ -552,6 +593,7 @@ public final class TerminalScreenModel {
     }
 
     public synchronized Snapshot snapshot() {
+        snapshotProbe++;
         List<Cell[]> lines = new ArrayList<>();
         if (screen == primary) lines.addAll(history);
         int historyRows = lines.size();
