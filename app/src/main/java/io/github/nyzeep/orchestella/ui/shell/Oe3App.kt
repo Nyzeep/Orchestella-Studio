@@ -1,6 +1,7 @@
 package io.github.nyzeep.orchestella.ui.shell
 
 import android.content.res.Configuration
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -8,9 +9,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
@@ -99,6 +110,21 @@ fun Oe3App(
         // 背景层之上、坞之下——背景不随栈转场缩放，坞持续采样玻璃源。
         val stack = backStack ?: rememberOeBackStack()
         val backgroundMode = OeAppBackgroundSpec.resolve(backgroundUri, Oe3ThemeValues.info.pureBlack)
+        var reselectCounts by rememberSaveable { mutableStateOf(LongArray(Oe3Tab.entries.size)) }
+        val wrappedPages = remember(pages) {
+            pages?.let { raw ->
+                val sequenceFor: (Oe3Tab) -> Long = { tab ->
+                    reselectCounts.getOrElse(tab.ordinal) { 0L }
+                }
+                Oe3Pages(
+                    workstation = wrapReselectSlot(Oe3Tab.Workstation, raw.workstation, sequenceFor),
+                    instances = wrapReselectSlot(Oe3Tab.Instances, raw.instances, sequenceFor),
+                    hardware = wrapReselectSlot(Oe3Tab.Hardware, raw.hardware, sequenceFor),
+                    distros = wrapReselectSlot(Oe3Tab.Distros, raw.distros, sequenceFor),
+                    config = wrapReselectSlot(Oe3Tab.Config, raw.config, sequenceFor),
+                )
+            }
+        }
         CompositionLocalProvider(
             LocalOe3GlassChrome provides glassChrome,
             LocalOe3GlassEnabled provides glassEnabled,
@@ -129,7 +155,7 @@ fun Oe3App(
                             selected = selectedTab,
                             modifier = Modifier.fillMaxSize(),
                             navStyle = navStyle,
-                            pages = pages,
+                            pages = wrappedPages,
                         )
                     }
                 }
@@ -146,10 +172,99 @@ fun Oe3App(
                     // 只是共享源的次级消费者（见 Oe3Backdrop.kt），不再降档底栏——
                     // 滚动 1px 就把底栏从 L1/L2 打回 96% 回退面的 R-02 缺陷链就此切断。
                     glassState = glassState,
+                    onTabReselected = { tab ->
+                        val next = LongArray(maxOf(reselectCounts.size, Oe3Tab.entries.size)) { i ->
+                            reselectCounts.getOrElse(i) { 0L }
+                        }
+                        next[tab.ordinal] += 1L
+                        reselectCounts = next
+                    },
                 )
             }
         }
     }
+}
+
+private fun wrapReselectSlot(
+    tab: Oe3Tab,
+    slot: (@Composable () -> Unit)?,
+    sequenceFor: (Oe3Tab) -> Long,
+): (@Composable () -> Unit)? = slot?.let { content ->
+    {
+        CompositionLocalProvider(LocalOe3TabReselectSequence provides sequenceFor(tab)) {
+            content()
+        }
+    }
+}
+
+/**
+ * 当前页签槽位收到的单调复点序号（W2-06 / Cashew 模式净室转译）：
+ * 由宿主在 [Oe3Pages] 槽位边界按页签独立注入，页面无需知晓自身所在页签或路由根。
+ */
+internal val LocalOe3TabReselectSequence = compositionLocalOf { 0L }
+
+/**
+ * 监听当前页签槽位最新一次复点序号并执行 [onReselect]。
+ * 通过 `rememberSaveable` 持久记录已消费的最大序号，保证切离其他页签再切回时不误触发，
+ * 且二级页清栈回到本页时能够消费当次复点。
+ */
+@Composable
+internal fun Oe3TabReselectEffect(
+    onReselect: suspend () -> Unit,
+) {
+    val sequence = LocalOe3TabReselectSequence.current
+    val currentOnReselect by rememberUpdatedState(onReselect)
+    var lastHandledSeq by rememberSaveable { mutableLongStateOf(0L) }
+    LaunchedEffect(sequence) {
+        if (sequence > lastHandledSeq) {
+            lastHandledSeq = sequence
+            currentOnReselect()
+        }
+    }
+}
+
+@Composable
+private fun Oe3ScrollToTopOnTabReselect(
+    needsScroll: () -> Boolean,
+    snapToTop: suspend () -> Unit,
+    animateToTop: suspend () -> Unit,
+) {
+    val reducedMotion by rememberUpdatedState(Oe3ThemeValues.info.reducedMotion)
+    Oe3TabReselectEffect {
+        if (needsScroll()) {
+            if (reducedMotion) snapToTop() else animateToTop()
+        }
+    }
+}
+
+/** 为使用 [LazyListState] 的主壳页面接线复点回顶（标准档平滑回顶，减动效直跳顶部）。 */
+@Composable
+internal fun Oe3ScrollToTopOnTabReselect(listState: LazyListState) {
+    Oe3ScrollToTopOnTabReselect(
+        needsScroll = { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 },
+        snapToTop = { listState.scrollToItem(0) },
+        animateToTop = { listState.animateScrollToItem(0) },
+    )
+}
+
+/** 为使用 [LazyGridState] 的主壳页面接线复点回顶（标准档平滑回顶，减动效直跳顶部）。 */
+@Composable
+internal fun Oe3ScrollToTopOnTabReselect(gridState: LazyGridState) {
+    Oe3ScrollToTopOnTabReselect(
+        needsScroll = { gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0 },
+        snapToTop = { gridState.scrollToItem(0) },
+        animateToTop = { gridState.animateScrollToItem(0) },
+    )
+}
+
+/** 为使用 [ScrollState] 的主壳页面接线复点回顶（标准档平滑回顶，减动效直跳顶部）。 */
+@Composable
+internal fun Oe3ScrollToTopOnTabReselect(scrollState: ScrollState) {
+    Oe3ScrollToTopOnTabReselect(
+        needsScroll = { scrollState.value > 0 },
+        snapToTop = { scrollState.scrollTo(0) },
+        animateToTop = { scrollState.animateScrollTo(0) },
+    )
 }
 
 @Preview(

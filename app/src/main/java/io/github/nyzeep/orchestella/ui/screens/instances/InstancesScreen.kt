@@ -68,12 +68,14 @@ import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3IconTint
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
 import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3CardEnterMotion
+import io.github.nyzeep.orchestella.ui.oe3.motion.oe3AnimateListItem
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+import io.github.nyzeep.orchestella.ui.shell.Oe3ScrollToTopOnTabReselect
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 import io.github.nyzeep.orchestella.ui.shell.oeCardShape
 import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
@@ -126,6 +128,7 @@ fun InstancesScreen(
             .firstOrNull { it.id == id }
     }
     val listState = rememberLazyListState()
+    Oe3ScrollToTopOnTabReselect(listState)
 
     OeScaffold(
         title = stringResource(R.string.ui3_instances_title),
@@ -175,8 +178,7 @@ fun InstancesScreen(
                         ) { item ->
                             Oe3CardEnterMotion(
                                 entered = cardsEntered,
-                                modifier = Modifier
-                                    .animateItem()
+                                modifier = oe3AnimateListItem()
                                     .padding(bottom = Oe3Spacing.xs),
                             ) {
                                 InstanceCard(

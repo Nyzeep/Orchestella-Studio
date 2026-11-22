@@ -59,6 +59,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+import io.github.nyzeep.orchestella.ui.shell.Oe3ScrollToTopOnTabReselect
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 import io.github.nyzeep.orchestella.ui.shell.oeCardShape
 import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
@@ -98,6 +99,7 @@ fun HardwareScreen(
     val colors = Oe3ThemeValues.colors
     var showDetails by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
+    Oe3ScrollToTopOnTabReselect(scrollState)
 
     OeScaffold(
         title = stringResource(R.string.ui3_hardware_title),

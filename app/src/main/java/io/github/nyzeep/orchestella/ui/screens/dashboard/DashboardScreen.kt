@@ -80,6 +80,7 @@ import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3IconTint
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
 import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3CardEnterMotion
+import io.github.nyzeep.orchestella.ui.oe3.motion.oe3AnimateListItem
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3ThemeInfo
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
@@ -91,6 +92,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.screens.common.formatGigabytes
+import io.github.nyzeep.orchestella.ui.shell.Oe3ScrollToTopOnTabReselect
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 import io.github.nyzeep.orchestella.ui.shell.OeScaffoldAction
 import io.github.nyzeep.orchestella.ui.shell.oeCardShape
@@ -257,6 +259,7 @@ fun DashboardScreen(
     edit: DashboardEditState = rememberDashboardEditState(),
 ) {
     val listState = rememberLazyListState()
+    Oe3ScrollToTopOnTabReselect(listState)
     OeScaffold(
         title = stringResource(
             if (edit.isEditing) R.string.ui3_dashboard_edit_title else R.string.ui3_dashboard_title,
@@ -287,7 +290,6 @@ private fun DashboardCardList(
 ) {
     val drag = remember { DashboardDragState() }
     val scope = rememberCoroutineScope()
-    val reducedMotion = Oe3ThemeValues.info.reducedMotion
     // 卡片入场只播一次（spec §1.5 cardEnter；tab 切换回来不重播）。
     var cardsEntered by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { cardsEntered = true }
@@ -320,20 +322,7 @@ private fun DashboardCardList(
         items(edit.visible, key = { it.itemKey() }) { cardId ->
             Oe3CardEnterMotion(
                 entered = cardsEntered,
-                modifier = Modifier.animateItem(
-                    fadeInSpec = tween(
-                        if (reducedMotion) 0 else OeMotion.EDIT_APPEAR_MS,
-                        easing = OeMotion.easeOutCubicEasing,
-                    ),
-                    placementSpec = tween(
-                        if (reducedMotion) 0 else OeMotion.EDIT_REORDER_SETTLE_MS,
-                        easing = OeMotion.standardEasing,
-                    ),
-                    fadeOutSpec = tween(
-                        if (reducedMotion) 0 else OeMotion.EDIT_APPEAR_MS,
-                        easing = OeMotion.easeOutCubicEasing,
-                    ),
-                ),
+                modifier = oe3AnimateListItem(),
             ) {
                 DashboardCardSlot(
                     cardId = cardId,

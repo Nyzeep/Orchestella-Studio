@@ -7,9 +7,14 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imeNestedScroll
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.design.components.OeSlider
@@ -43,12 +49,24 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import kotlin.math.roundToInt
 
 /**
+ * 终端设置页 IME 避让底边距规则（W2-06 / A4-P4 M5）：
+ * 键盘未弹起时完整保留底栏留白 [pageBottom]；键盘弹起高度为 [imeBottom] 时，
+ * 由外层 `imePadding()` 承担软键盘避让，此处仅补足差值部分，避免键盘与底栏
+ * 留白叠加形成双倍底部空白。
+ */
+internal object ThemeTerminalImeSpec {
+    fun residualBottomPadding(pageBottom: Dp, imeBottom: Dp): Dp =
+        (pageBottom - imeBottom).coerceAtLeast(0.dp)
+}
+
+/**
  * 终端个性化页（spec §2.2）：ANSI 调色板、终端底色、字号/字距/行距、遮罩、
  * 终端背景图、光标闪烁与实时预览。
  *
  * 预览的接线原样保留（[TerminalPreview] 的渲染契约不改）；页面只负责布局。
  * 所有滑块均用 UI-05 的 [OeSlider]，不另造控件。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ThemeTerminalScreen(
     state: ThemeStudioState,
@@ -61,6 +79,11 @@ fun ThemeTerminalScreen(
     val colors = Oe3ThemeValues.colors
     val radius = LocalOe3CornerRadius.current ?: Oe3Shapes.xl
     val scrollState = rememberScrollState()
+    val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    val bottomPadding = ThemeTerminalImeSpec.residualBottomPadding(
+        pageBottom = LocalOe3PageBottomPadding.current,
+        imeBottom = imeBottom,
+    )
     OeScaffold(
         title = stringResource(R.string.ui3_theme_page_terminal),
         modifier = modifier.testTag("theme-terminal:screen"),
@@ -70,9 +93,11 @@ fun ThemeTerminalScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .imePadding()
+                .imeNestedScroll()
                 .verticalScroll(scrollState)
                 .padding(horizontal = Oe3Spacing.pageInset)
-                .padding(top = LocalOe3PageTopPadding.current + Oe3Spacing.xs, bottom = LocalOe3PageBottomPadding.current),
+                .padding(top = LocalOe3PageTopPadding.current + Oe3Spacing.xs, bottom = bottomPadding),
         ) {
             ThemeSectionHeader(
                 key = "terminal-palette",
@@ -194,7 +219,6 @@ fun ThemeTerminalScreen(
                         color = colors.onSurfaceVariant.oe3Color(),
                     )
                     Spacer(Modifier.height(Oe3Spacing.xs))
-                    @OptIn(ExperimentalLayoutApi::class)
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
                         verticalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
@@ -250,7 +274,7 @@ fun ThemeTerminalScreen(
                     ),
                 ),
             )
-            Spacer(Modifier.height(1.dp).testTag("theme-terminal:end"))
+            Spacer(Modifier.fillMaxWidth().height(1.dp).testTag("theme-terminal:end"))
         }
     }
 }

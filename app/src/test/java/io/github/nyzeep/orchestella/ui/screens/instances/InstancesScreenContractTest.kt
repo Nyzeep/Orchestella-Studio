@@ -77,7 +77,7 @@ class InstancesScreenContractTest {
             "PullToRefreshBox(",
             "InstanceActionsSheet(",
             "InstancesListKeys.item(",
-            ".animateItem()",
+            "oe3AnimateListItem(",
         ).forEach { token ->
             assertTrue("InstancesScreen must use $token", screen.contains(token))
         }
