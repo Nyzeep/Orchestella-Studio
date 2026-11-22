@@ -60,9 +60,9 @@ public final class WorkerPoolDistccDispatcherTest {
     /** Per-step harness budget: thread start and fake admission on a loaded worker. */
     private static final long STEP_BUDGET_MS = 30_000L;
     /**
-     * Queue-settle budget for the four-connections-two-slots case. It must
-     * stay above the dispatcher's explicit acquire bound below; the pool's
-     * own 30s default is deliberately not the harness's deadline.
+     * Queue-settle budget for the four-connections-two-slots case. It stays
+     * below the explicit acquire bound so a test failure can show the pool
+     * state before queued workers time out.
      */
     private static final long QUEUE_SETTLE_MS = 90_000L;
     /**
@@ -244,12 +244,13 @@ public final class WorkerPoolDistccDispatcherTest {
             // CI runners stall under load; the dispatcher holds an explicit
             // 120s acquire bound, so this 90s settle window always wins and a
             // slow worker is not mistaken for a broken queue.
+            boolean admittedAfterRelease = allOpened.await(QUEUE_SETTLE_MS, TimeUnit.MILLISECONDS);
             assertTrue("queued workers were not admitted after two releases in "
                             + QUEUE_SETTLE_MS + "ms; failures=" + failures.get()
                             + ", firstFailure=" + firstFailure.get()
                             + ", channels=" + channels.size()
                             + ", health=" + pool.health(),
-                    allOpened.await(QUEUE_SETTLE_MS, TimeUnit.MILLISECONDS));
+                    admittedAfterRelease);
             assertEquals(0, failures.get());
             assertEquals(2, api.startCount);
             assertEquals(2, pool.health().leasedSlots());
@@ -338,7 +339,7 @@ public final class WorkerPoolDistccDispatcherTest {
         final List<Integer> ports = new ArrayList<>();
 
         @Override
-        public FastLaneChannel open(Lease lease) {
+        public synchronized FastLaneChannel open(Lease lease) {
             leases.add(lease);
             instances.add(lease.session().instanceId());
             ports.add(lease.session().spec().distccPort());
@@ -447,7 +448,7 @@ public final class WorkerPoolDistccDispatcherTest {
         }
 
         @Override
-        public FastLaneHandle start(FastLaneLaunchSpec spec) {
+        public synchronized FastLaneHandle start(FastLaneLaunchSpec spec) {
             startCount++;
             FakeHandle handle = new FakeHandle(spec.instanceId());
             handles.add(handle);
@@ -455,7 +456,7 @@ public final class WorkerPoolDistccDispatcherTest {
         }
 
         @Override
-        public FastLaneChannel connect(FastLaneHandle handle, int port) throws FastLaneException {
+        public synchronized FastLaneChannel connect(FastLaneHandle handle, int port) throws FastLaneException {
             connectedPorts.add(port);
             if (failPorts.contains(port)) {
                 throw new FastLaneException(FastLaneException.VSOCK_FAILED, "fake vsock refused");

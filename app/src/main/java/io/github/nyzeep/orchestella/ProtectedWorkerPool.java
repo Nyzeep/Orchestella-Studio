@@ -402,10 +402,9 @@ public final class ProtectedWorkerPool implements WorkerPool {
         }
 
         try {
-            while (true) {
-                claim = Claim.failed(ClaimFailure.NONE);
-                lock.lock();
-                try {
+            lock.lock();
+            try {
+                while (true) {
                     requireOpen();
                     requireNotCancelled(entry);
                     if (queue.peekFirst() == entry) {
@@ -413,30 +412,19 @@ public final class ProtectedWorkerPool implements WorkerPool {
                         claim = claimSlotLocked();
                         if (claim.slot() != null) {
                             removeAndRecordDispatchLocked(entry);
+                            break;
+                        }
+                        if (claim.failure() == ClaimFailure.ALL_SUSPENDED) {
+                            throw new WorkerPool.WorkerPoolException(
+                                    WorkerPool.Code.REBUILD_GIVE_UP,
+                                    "every slot is suspended by rebuild failures or unconfirmed stops");
+                        }
+                        if (claim.failure() == ClaimFailure.ALL_BACKOFF) {
+                            throw new WorkerPool.WorkerPoolException(
+                                    WorkerPool.Code.REBUILD_BACKOFF,
+                                    "every free slot is inside the rebuild backoff window");
                         }
                     }
-                } finally {
-                    lock.unlock();
-                }
-
-                if (claim.slot() != null) {
-                    return completeAcquire(claim.slot(), job);
-                }
-                if (claim.failure() == ClaimFailure.ALL_SUSPENDED) {
-                    throw new WorkerPool.WorkerPoolException(
-                            WorkerPool.Code.REBUILD_GIVE_UP,
-                            "every slot is suspended by rebuild failures or unconfirmed stops");
-                }
-                if (claim.failure() == ClaimFailure.ALL_BACKOFF) {
-                    throw new WorkerPool.WorkerPoolException(
-                            WorkerPool.Code.REBUILD_BACKOFF,
-                            "every free slot is inside the rebuild backoff window");
-                }
-
-                lock.lock();
-                try {
-                    requireOpen();
-                    requireNotCancelled(entry);
                     long remaining = deadlineNanos - System.nanoTime();
                     if (remaining <= 0L) {
                         timedOutTotal++;
@@ -444,16 +432,19 @@ public final class ProtectedWorkerPool implements WorkerPool {
                                 WorkerPool.Code.JOB_TIMEOUT, "job wait deadline elapsed");
                     }
                     try {
+                        // Keep the predicate check and wait under the same lock.
+                        // A slot release between them could otherwise lose its signal.
                         activity.awaitNanos(remaining);
                     } catch (InterruptedException interrupted) {
                         Thread.currentThread().interrupt();
                         throw new WorkerPool.WorkerPoolException(
                                 WorkerPool.Code.CLOSED, "interrupted while waiting for a dispatch");
                     }
-                } finally {
-                    lock.unlock();
                 }
+            } finally {
+                lock.unlock();
             }
+            return completeAcquire(claim.slot(), job);
         } finally {
             dropEntry(entry);
         }
@@ -507,7 +498,9 @@ public final class ProtectedWorkerPool implements WorkerPool {
         }
         lock.lock();
         try {
-            queue.remove(entry);
+            if (queue.remove(entry)) {
+                activity.signalAll();
+            }
         } finally {
             lock.unlock();
         }
@@ -515,6 +508,7 @@ public final class ProtectedWorkerPool implements WorkerPool {
 
     private void removeAndRecordDispatchLocked(QueueEntry entry) {
         queue.remove(entry);
+        activity.signalAll();
         long waited = Math.max(0L, clock.millis() - entry.enqueuedAtMillis);
         queueWaitMillisTotal += waited;
         queueWaitMillisMax = Math.max(queueWaitMillisMax, waited);
