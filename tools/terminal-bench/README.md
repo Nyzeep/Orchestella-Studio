@@ -4,6 +4,8 @@
 
 当前状态：**PENDING-DEVICE**。仓库内的 `baseline.json` 是空桶占位（`status: pending-device`），没有任何真机数字；在抓到第一份基线之前，本工具只报告、不判定。离线自测已接入 GitHub Actions（`.github/workflows/terminal-bench.yml`），设备基线仍需人工抓取。
 
+Wave 0 调试基线（bench-a/35，2026-11-17 实测 flood_seq p95=312.4ms、flood_color p95=720.7ms，指标 FrameMetrics.TOTAL_DURATION）记录在规格仓 polish-round-20261120 的 ROUND-PLAN 与 A1 专项笔记里，**未写入本仓 `baseline.json`**；因此 `--require-baseline` 的真实发布闸门维持 PENDING-DEVICE 不变，上述数字不构成本仓可判定的基线。
+
 ## 1. 边界
 
 - 只跑 debug 构建里的 `app/src/debug/.../bench/TerminalBenchActivity`，不碰 release 包。

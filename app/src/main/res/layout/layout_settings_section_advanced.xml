@@ -137,6 +137,86 @@
                     android:checked="false" />
             </LinearLayout>
 
+            <!-- W2-02：终端设置两开关（屏幕常亮 + Canvas 渲染器实验开关），
+                 行结构复用上方 stage_trace 行（标题/描述 + MaterialSwitch），无新样式。 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/terminal_setting_keep_screen_on_title"
+                        android:textAppearance="@style/TextAppearance.Orchestella.Section"
+                        android:textStyle="bold"
+                        android:textColor="?attr/colorOnSurface" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/oe_space_xs"
+                        android:text="@string/terminal_setting_keep_screen_on_desc"
+                        android:textAppearance="@style/TextAppearance.Orchestella.Caption"
+                        android:textColor="?attr/colorOutline" />
+                </LinearLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_settings_terminal_keep_screen_on"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/terminal_setting_keep_screen_on_title"
+                    android:checked="false" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/terminal_setting_canvas_renderer_title"
+                        android:textAppearance="@style/TextAppearance.Orchestella.Section"
+                        android:textStyle="bold"
+                        android:textColor="?attr/colorOnSurface" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/oe_space_xs"
+                        android:text="@string/terminal_setting_canvas_renderer_desc"
+                        android:textAppearance="@style/TextAppearance.Orchestella.Caption"
+                        android:textColor="?attr/colorOutline" />
+                </LinearLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_settings_terminal_canvas_renderer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/terminal_setting_canvas_renderer_title"
+                    android:checked="false" />
+            </LinearLayout>
+
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 

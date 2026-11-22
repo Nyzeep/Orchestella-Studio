@@ -424,6 +424,12 @@
     <!-- T2 (2026-11-08): ModernTerminalView.copySelection success feedback. -->
     <string name="terminal_copy_done">已复制</string>
 
+    <!-- W2-02: Canvas 渲染选区浮动菜单与 TalkBack 逐行虚拟节点。 -->
+    <string name="terminal_action_copy">复制</string>
+    <string name="terminal_action_paste">粘贴</string>
+    <string name="terminal_action_select_all">全选</string>
+    <string name="terminal_a11y_blank_row">空行</string>
+
     <!-- UML 引擎条与编译面（2026-11-14 正式化轮）：编译路由 E2E 已于 2026-11-14
          真机 3 次全通，措辞按真实通道状态分流——wired 构建宣「运行中」，
          unwired 构建如实明示「编译通道未接线」，绝不在不可路由形态冒充已接。
@@ -497,6 +503,12 @@
     <string name="terminal_drawer_close_title">关闭终端</string>
     <string name="terminal_drawer_desktop">桌面模式</string>
     <string name="terminal_drawer_desktop_content_desc">切换到桌面模式（可用性由 DesktopEntryPolicy 单源判定）</string>
+
+    <!-- W2-02：终端设置两开关（高级设置页「诊断与开发者选项」卡内追加）。 -->
+    <string name="terminal_setting_keep_screen_on_title">终端屏幕常亮（默认关）</string>
+    <string name="terminal_setting_keep_screen_on_desc">开启后，终端页面保持屏幕常亮，防止长时间任务运行中熄屏；关闭时跟随系统自动熄屏</string>
+    <string name="terminal_setting_canvas_renderer_title">终端 Canvas 渲染器（实验）</string>
+    <string name="terminal_setting_canvas_renderer_desc">逐格锚定可见行渲染，替代默认的文本视图回退路径；出现显示异常时可关闭回退</string>
 
     <!-- ZD-W2 Toast 全文化（gap 12 + wave4 P3 漂移）：MainActivity 硬编码中文
          Toast 全部进资源。拼异常串的失败提示改为中性文案（现象 + 下一步，

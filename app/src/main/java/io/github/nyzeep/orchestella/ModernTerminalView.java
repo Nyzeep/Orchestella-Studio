@@ -33,7 +33,10 @@ import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import io.github.nyzeep.orchestella.terminal.TerminalCanvasAccessibilityHelper;
+import io.github.nyzeep.orchestella.terminal.TerminalCanvasRenderer;
 import io.github.nyzeep.orchestella.terminal.TerminalScreenModel;
+import io.github.nyzeep.orchestella.terminal.TerminalSelectionGeometry;
 import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle;
 
 /** Selectable, bounded VT screen with a single input path for IME, hardware and extra keys. */
@@ -84,6 +87,33 @@ public class ModernTerminalView extends ScrollView {
     // Terminal-only background image (below the transcript, above the solid color).
     private boolean hasBackgroundImage;
     private int scrimColor;
+    // W2-02: runtime-switchable visible-row Canvas renderer. The selectable TextView
+    // stays attached as the instant fallback path; the switch only toggles visibility
+    // and which render path renderScreen() feeds, so any selection/IME regression can
+    // flip back to the TextView in one setting change.
+    private final TerminalCanvasRenderer canvasRenderer =
+            new TerminalCanvasRenderer();
+    private TerminalCanvasView canvasView;
+    private TerminalCanvasAccessibilityHelper canvasAccessibility;
+    private boolean canvasRenderingEnabled;
+    private TerminalCanvasRenderer.LineModel canvasModel;
+    private java.util.List<TerminalScreenModel.Snapshot.CommandRange> lastCommandRanges = java.util.List.of();
+    private int canvasSelectionStart;
+    private int canvasSelectionEnd;
+    private boolean canvasSelectionActive;
+    private boolean canvasSelectionDragged;
+    private float canvasTouchX;
+    private float canvasTouchY;
+    private boolean canvasLongPressArmed;
+    private final Runnable canvasLongPressTask = this::fireCanvasLongPress;
+    // W2-02: first-draw presentation probe closing the W1-05 chain (input submit →
+    // write completed → pump appended → presented). Null in production by default;
+    // armed once per content render and a single field check inside onDraw, so an
+    // absent probe costs nothing.
+    private java.util.function.LongConsumer presentProbe;
+    private boolean presentPending;
+    /** Optional paste gate (multi-line paste confirmation hook); false defers the paste. */
+    private java.util.function.Predicate<String> pasteInterceptor;
 
     public interface SizeListener { void onTerminalSizeChanged(int columns, int rows); }
 
@@ -116,6 +146,7 @@ public class ModernTerminalView extends ScrollView {
         sessionScreen = model != null;
         screen = model != null ? model : new TerminalScreenModel(screen.columns(), screen.rows());
         resetInputConnection();
+        if (canvasSelectionActive) clearCanvasSelection();
         scrollState.follow();
         lastDisplayEpoch = screen.displayEpoch();
         lastEvictedHistoryRows = screen.displaySnapshot().evictedHistoryRows;
@@ -157,6 +188,88 @@ public class ModernTerminalView extends ScrollView {
             InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
             if (imm != null) imm.hideSoftInputFromWindow(getWindowToken(), 0);
         }
+    }
+
+    // ── W2-02: Canvas renderer runtime switch, presentation probe, paste hook ──
+
+    /**
+     * Toggles between the visible-row Canvas child and the selectable TextView
+     * fallback. A ScrollView hosts exactly one direct child, so the switch swaps
+     * which view is attached; the detached view keeps its state untouched, which is
+     * what keeps the fallback instantly available.
+     */
+    public void setCanvasRenderingEnabled(boolean enabled) {
+        if (canvasRenderingEnabled == enabled) return;
+        canvasRenderingEnabled = enabled;
+        if (canvasView == null) return;
+        if (enabled) {
+            if (selectionActionMode != null) selectionActionMode.finish();
+            removeView(transcriptView);
+            if (canvasView.getParent() == null) {
+                addView(canvasView, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+            }
+        } else {
+            if (canvasSelectionActive) clearCanvasSelection();
+            removeView(canvasView);
+            addView(transcriptView, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        }
+        // Both paths rebuild from the same model, so content and scroll semantics stay identical.
+        renderScreen();
+    }
+
+    /** Presentation probe fired once per content render's first draw (elapsedRealtimeNanos). */
+    public void setPresentProbe(java.util.function.LongConsumer probe) {
+        presentProbe = probe;
+    }
+
+    /** Multi-line paste confirmation hook; returning false defers the current paste. */
+    public void setPasteInterceptor(java.util.function.Predicate<String> interceptor) {
+        pasteInterceptor = interceptor;
+    }
+
+    private void maybeFirePresentProbe() {
+        if (presentPending && presentProbe != null) {
+            presentPending = false;
+            presentProbe.accept(android.os.SystemClock.elapsedRealtimeNanos());
+        }
+    }
+
+    private View activeContentView() {
+        return canvasRenderingEnabled ? canvasView : transcriptView;
+    }
+
+    private int activeLineHeight() {
+        return canvasRenderingEnabled ? canvasRenderer.rowHeightPx()
+                : Math.max(2, transcriptView.getLineHeight());
+    }
+
+    private void invalidateActiveView() {
+        (canvasRenderingEnabled ? canvasView : transcriptView).invalidate();
+    }
+
+    /** Test/inspection access to the active Canvas projection (package-private). */
+    TerminalCanvasRenderer.LineModel getCanvasModel() {
+        return canvasModel;
+    }
+
+    /** The Canvas child once attached (package-private); null before the first enable. */
+    View canvasChild() { return canvasView; }
+
+    /** Whether a canvas selection is being drawn (package-private for tests). */
+    boolean isCanvasSelectionActive() { return canvasSelectionActive; }
+
+    /** Exclusive end of the canvas selection (package-private for tests). */
+    int canvasSelectionEnd() { return canvasSelectionEnd; }
+
+    /** Test/inspection access to the Canvas renderer metrics and draw probe. */
+    TerminalCanvasRenderer getCanvasRenderer() {
+        return canvasRenderer;
+    }
+
+    /** Theme-independent selection wash: foreground blended over the background. */
+    private int canvasSelectionColor() {
+        return androidx.core.graphics.ColorUtils.blendARGB(
+                DraculaPalette.themedBackground(), DraculaPalette.themedForeground(), 0.35f);
     }
 
     @Override public boolean onCheckIsTextEditor() { return inputEnabled; }
@@ -218,19 +331,34 @@ public class ModernTerminalView extends ScrollView {
         if (clip == null || clip.getItemCount() == 0) return false;
         CharSequence text = clip.getItemAt(0).coerceToText(getContext());
         if (text == null) return false;
+        // W2-02 hook: a multi-line paste confirmation can veto here and replay the
+        // paste later via sendTerminalText; null (default) pastes immediately.
+        if (pasteInterceptor != null && !pasteInterceptor.test(text.toString())) return false;
         boolean sent = connection.pasteText(text);
         if (sent) scrollToBottom();
         return sent;
     }
 
     public boolean copySelection() {
-        int start = transcriptView.getSelectionStart();
-        int end = transcriptView.getSelectionEnd();
-        if (start < 0 || end < 0 || start == end) return false;
+        CharSequence selected;
+        if (canvasRenderingEnabled) {
+            if (!canvasSelectionActive || canvasSelectionStart == canvasSelectionEnd) return false;
+            if (canvasModel == null) return false;
+            // Pure cell text: the command rail is a paint-only decoration, so nothing
+            // extra can leak into the clipboard.
+            selected = canvasModel.text.substring(
+                    Math.min(canvasSelectionStart, canvasSelectionEnd),
+                    Math.max(canvasSelectionStart, canvasSelectionEnd));
+        } else {
+            int start = transcriptView.getSelectionStart();
+            int end = transcriptView.getSelectionEnd();
+            if (start < 0 || end < 0 || start == end) return false;
+            selected = transcriptView.getText()
+                    .subSequence(Math.min(start, end), Math.max(start, end));
+        }
         ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
         if (clipboard == null) return false;
-        clipboard.setPrimaryClip(ClipData.newPlainText("终端", transcriptView.getText()
-                .subSequence(Math.min(start, end), Math.max(start, end))));
+        clipboard.setPrimaryClip(ClipData.newPlainText("终端", selected));
         // T2 (2026-11-08): user-perceivable feedback on the success path only —
         // the failure paths above stay silent on purpose.
         Toast.makeText(getContext(), R.string.terminal_copy_done, Toast.LENGTH_SHORT).show();
@@ -240,7 +368,13 @@ public class ModernTerminalView extends ScrollView {
     private boolean performTerminalContextAction(int id) {
         if (id == android.R.id.paste || id == android.R.id.pasteAsPlainText) return pasteFromClipboard();
         if (id == android.R.id.copy) return copySelection();
-        if (id == android.R.id.selectAll) return transcriptView.onTextContextMenuItem(id);
+        if (id == android.R.id.selectAll) {
+            if (canvasRenderingEnabled) {
+                selectAllTerminalText();
+                return true;
+            }
+            return transcriptView.onTextContextMenuItem(id);
+        }
         return false;
     }
 
@@ -292,6 +426,68 @@ public class ModernTerminalView extends ScrollView {
                 post(() -> { renderScreen(); requestFocus(); });
             }
         });
+        // W2-02: the Canvas child is built here but attached only when the runtime
+        // switch flips (a ScrollView hosts one direct child). Geometry defaults below
+        // cover draws before applyTheme().
+        canvasView = new TerminalCanvasView(context);
+        int canvasPadding = dpToPx(context, 10);
+        canvasView.setPadding(canvasPadding, canvasPadding, canvasPadding, canvasPadding);
+        canvasRenderer.setOrigin(canvasPadding, canvasPadding);
+        canvasRenderer.setRailGeometry(dpToPx(context, 6), dpToPx(context, 2));
+        canvasRenderer.configure(OeLegacyViewStyle.monoTypeface(context),
+                TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14f, context.getResources().getDisplayMetrics()),
+                0f, 0f, canvasSelectionColor(), DraculaPalette.themedForeground(), DraculaPalette.GLOW_PURPLE);
+        canvasView.setOnTouchListener((view, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    canvasTouchX = event.getX();
+                    canvasTouchY = event.getY();
+                    touchDownTime = event.getEventTime();
+                    canvasSelectionDragged = false;
+                    canvasLongPressArmed = true;
+                    mainHandler.postDelayed(canvasLongPressTask, ViewConfiguration.getLongPressTimeout());
+                    // Claim the DOWN so MOVE/UP/CANCEL keep flowing into this listener;
+                    // the ScrollView still intercepts beyond the touch slop and then
+                    // delivers ACTION_CANCEL, which the branch below handles.
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (canvasSelectionActive) {
+                        extendCanvasSelection(event.getX(), event.getY());
+                        return true;
+                    }
+                    if (canvasLongPressArmed && Math.hypot(event.getX() - canvasTouchX, event.getY() - canvasTouchY)
+                            > ViewConfiguration.get(context).getScaledTouchSlop()) {
+                        cancelCanvasLongPress();
+                    }
+                    return false;
+                case MotionEvent.ACTION_UP:
+                    cancelCanvasLongPress();
+                    if (canvasSelectionActive) {
+                        // A tap without drag dismisses the selection; a drag keeps it
+                        // so the floating action mode stays reachable.
+                        if (!canvasSelectionDragged) clearCanvasSelection();
+                        if (canvasView.getParent() != null) {
+                            canvasView.getParent().requestDisallowInterceptTouchEvent(false);
+                        }
+                        return true;
+                    }
+                    if (event.getEventTime() - touchDownTime < ViewConfiguration.getLongPressTimeout()
+                            && Math.hypot(event.getX() - canvasTouchX, event.getY() - canvasTouchY)
+                            < ViewConfiguration.get(context).getScaledTouchSlop()) {
+                        post(this::requestTerminalFocus);
+                    }
+                    return false;
+                case MotionEvent.ACTION_CANCEL:
+                    cancelCanvasLongPress();
+                    if (canvasSelectionActive) clearCanvasSelection();
+                    if (canvasView.getParent() != null) {
+                        canvasView.getParent().requestDisallowInterceptTouchEvent(false);
+                    }
+                    return false;
+                default:
+                    return false;
+            }
+        });
         screen.setResponseSink(response -> {
             if (!suppressResponses && inputEnabled && inputSink != null) inputSink.sendText(response);
         });
@@ -308,7 +504,7 @@ public class ModernTerminalView extends ScrollView {
         }
         boolean handled = super.dispatchTouchEvent(event);
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            scrollState.endTouch(getScrollY(), maximumScrollY(), Math.max(2, transcriptView.getLineHeight()));
+            scrollState.endTouch(getScrollY(), maximumScrollY(), activeLineHeight());
             userScrollAnimation = true;
             mainHandler.postDelayed(finishUserScrollTask, 100L);
         }
@@ -317,8 +513,9 @@ public class ModernTerminalView extends ScrollView {
 
     @Override protected void onScrollChanged(int x, int y, int oldX, int oldY) {
         super.onScrollChanged(x, y, oldX, oldY);
+        if (canvasAccessibility != null) canvasAccessibility.invalidateRoot();
         if (!restoringViewport && !viewportRestorePending && (scrollState.isTouching() || userScrollAnimation)) {
-            scrollState.userScrolled(y, maximumScrollY(), Math.max(2, transcriptView.getLineHeight()));
+            scrollState.userScrolled(y, maximumScrollY(), activeLineHeight());
             if (userScrollAnimation) {
                 mainHandler.removeCallbacks(finishUserScrollTask);
                 mainHandler.postDelayed(finishUserScrollTask, 100L);
@@ -343,11 +540,11 @@ public class ModernTerminalView extends ScrollView {
 
     private int maximumScrollY() {
         int viewport = getHeight() - getPaddingTop() - getPaddingBottom();
-        return Math.max(0, transcriptView.getHeight() - viewport);
+        return Math.max(0, activeContentView().getHeight() - viewport);
     }
 
     private void restoreViewport() {
-        if (transcriptView.isLayoutRequested()) return;
+        if (activeContentView().isLayoutRequested()) return;
         viewportRestorePending = false;
         int target = scrollState.targetY(maximumScrollY(), screen.isAlternateScreen());
         if (target < 0 || userScrollAnimation) return;
@@ -372,16 +569,22 @@ public class ModernTerminalView extends ScrollView {
 
     private void updateTerminalSize() {
         if (transcriptView == null || getWidth() <= 0 || getHeight() <= 0) return;
-        // Measure the additional mono cell with the TextView's active paint.
-        // Differencing cancels edge spacing and includes inter-cell tracking once.
+        // Measure the additional mono cell with the active paint. Differencing cancels
+        // edge spacing and includes inter-cell tracking once (W1-06 P2-2). Canvas mode
+        // reuses the renderer's identical metrics so both modes agree on the grid.
         TextPaint paint = transcriptView.getPaint();
         float cellWidth = Layout.getDesiredWidth("MM", paint) - Layout.getDesiredWidth("M", paint);
+        int lineHeight = transcriptView.getLineHeight();
+        if (canvasRenderingEnabled) {
+            cellWidth = canvasRenderer.cellStepPx();
+            lineHeight = canvasRenderer.rowHeightPx();
+        }
         int width = getWidth() - getPaddingLeft() - getPaddingRight()
                 - transcriptView.getPaddingLeft() - transcriptView.getPaddingRight();
         int height = getHeight() - getPaddingTop() - getPaddingBottom()
                 - transcriptView.getPaddingTop() - transcriptView.getPaddingBottom();
         int columns = Math.max(2, Math.min(512, (int) (width / Math.max(1f, cellWidth))));
-        int rows = Math.max(2, Math.min(256, height / Math.max(1, transcriptView.getLineHeight())));
+        int rows = Math.max(2, Math.min(256, height / Math.max(1, lineHeight)));
         if (columns != screen.columns() || rows != screen.rows()) {
             screen.resize(columns, rows);
             renderScreen();
@@ -454,18 +657,32 @@ public class ModernTerminalView extends ScrollView {
             lastDisplayEpoch = epoch;
             lastEvictedHistoryRows = snapshot.evictedHistoryRows;
         }
-        SpannableStringBuilder display = new SpannableStringBuilder();
-        for (TerminalSpan span : snapshot.spans) appendStyled(display, span);
         cursorOffset = snapshot.cursorOffset;
         long trimmedRows = Math.max(0, snapshot.evictedHistoryRows - lastEvictedHistoryRows);
-        scrollState.rowsEvicted(trimmedRows, transcriptView.getLineHeight());
+        scrollState.rowsEvicted(trimmedRows, activeLineHeight());
         lastEvictedHistoryRows = snapshot.evictedHistoryRows;
         viewportRestorePending = true;
-        transcriptView.setText(display, TextView.BufferType.SPANNABLE);
+        if (canvasRenderingEnabled && canvasView != null) {
+            canvasModel = TerminalCanvasRenderer.LineModel.from(snapshot);
+            lastCommandRanges = snapshot.commandLineRanges();
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) canvasView.getLayoutParams();
+            int contentHeight = canvasRenderer.contentHeightPx(canvasModel.lineCount);
+            if (params.height != contentHeight) {
+                params.height = contentHeight;
+                canvasView.setLayoutParams(params);
+            }
+            canvasView.invalidate();
+            if (canvasAccessibility != null) canvasAccessibility.invalidateRoot();
+        } else {
+            SpannableStringBuilder display = new SpannableStringBuilder();
+            for (TerminalSpan span : snapshot.spans) appendStyled(display, span);
+            transcriptView.setText(display, TextView.BufferType.SPANNABLE);
+        }
         // The layout was rebuilt, so the previously tracked cursor damage rect is meaningless;
-        // setText already invalidated the whole view for this frame.
+        // the rebuilt view already invalidated itself for this frame.
         lastCursorRect.setEmpty();
         cursorVisible = true;
+        presentPending = true;
         mainHandler.removeCallbacks(restoreViewportTask);
         mainHandler.post(restoreViewportTask);
     }
@@ -540,6 +757,22 @@ public class ModernTerminalView extends ScrollView {
      * cannot be computed yet, which is rare (layout not created or terminal not cursor-visible).
      */
     private void invalidateCursorDamage() {
+        if (canvasRenderingEnabled) {
+            boolean hasCurrent = computeCanvasCursorRect(cursorScratchRect);
+            if (!hasCurrent && lastCursorRect.isEmpty()) {
+                canvasView.invalidate();
+                return;
+            }
+            if (hasCurrent) {
+                if (!lastCursorRect.isEmpty()) cursorScratchRect.union(lastCursorRect);
+                canvasView.invalidate(cursorScratchRect);
+                lastCursorRect.set(cursorScratchRect);
+            } else {
+                canvasView.invalidate(lastCursorRect);
+                lastCursorRect.setEmpty();
+            }
+            return;
+        }
         boolean hasCurrent = computeCursorRect(cursorScratchRect);
         if (!hasCurrent && lastCursorRect.isEmpty()) {
             transcriptView.invalidate();
@@ -553,6 +786,19 @@ public class ModernTerminalView extends ScrollView {
             transcriptView.invalidate(lastCursorRect);
             lastCursorRect.setEmpty();
         }
+    }
+
+    /** Cursor damage rect in canvas-view coordinates; false when nothing to draw. */
+    private boolean computeCanvasCursorRect(Rect out) {
+        TerminalCanvasRenderer.LineModel model = canvasModel;
+        if (model == null || !cursorEnabled || !cursorVisible || !screen.isCursorVisible() || selecting) {
+            return false;
+        }
+        int offset = Math.max(0, Math.min(cursorOffset, model.text.length()));
+        int row = model.lineOfOffset(offset);
+        int top = canvasRenderer.originYPx() + row * canvasRenderer.rowHeightPx();
+        out.set(0, top, Math.max(1, canvasView.getWidth()), top + canvasRenderer.rowHeightPx());
+        return true;
     }
 
     /** Computes the cursor bar bounds in transcript-view coordinates; false when there is nothing to draw. */
@@ -578,19 +824,21 @@ public class ModernTerminalView extends ScrollView {
     public void startCursorBlink() {
         mainHandler.removeCallbacks(cursorBlinkTask);
         cursorVisible = true;
-        transcriptView.invalidate();
+        invalidateActiveView();
         if (cursorEnabled && cursorBlinkEnabled && isAttachedToWindow()) mainHandler.postDelayed(cursorBlinkTask, 500L);
     }
     public void stopCursorBlink() {
         mainHandler.removeCallbacks(cursorBlinkTask);
         cursorVisible = false;
-        transcriptView.invalidate();
+        invalidateActiveView();
     }
     @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); startCursorBlink(); }
     @Override protected void onDetachedFromWindow() {
         mainHandler.removeCallbacks(cursorBlinkTask);
         mainHandler.removeCallbacks(restoreViewportTask);
         mainHandler.removeCallbacks(finishUserScrollTask);
+        cancelCanvasLongPress();
+        if (canvasSelectionActive) clearCanvasSelection();
         resetInputConnection();
         super.onDetachedFromWindow();
     }
@@ -609,6 +857,12 @@ public class ModernTerminalView extends ScrollView {
         transcriptView.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSizeSp);
         transcriptView.setLetterSpacing(letterSpacingEm);
         transcriptView.setLineSpacing(lineSpacingExtraPx, 1f);
+        // W2-02: keep the Canvas grid in lockstep with the TextView metrics — same
+        // typeface, size, single letterSpacing term and row spacing.
+        canvasRenderer.configure(OeLegacyViewStyle.monoTypeface(getContext()),
+                TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, fontSizeSp, getResources().getDisplayMetrics()),
+                letterSpacingEm, lineSpacingExtraPx,
+                canvasSelectionColor(), DraculaPalette.themedForeground(), theme.getAccent());
         updateTerminalSize();
         renderScreen();
     }
@@ -648,6 +902,206 @@ public class ModernTerminalView extends ScrollView {
         }
     }
 
+    /** W2-02: visible-row Canvas child; the selectable TextView above stays as the fallback. */
+    private final class TerminalCanvasView extends android.view.View {
+        TerminalCanvasView(Context context) {
+            super(context);
+            setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            setClickable(true);
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
+            canvasAccessibility = new TerminalCanvasAccessibilityHelper(
+                    this,
+                    () -> canvasModel,
+                    () -> canvasRenderer,
+                    ModernTerminalView.this::getScrollY,
+                    () -> ModernTerminalView.this.getHeight()
+                            - ModernTerminalView.this.getPaddingTop()
+                            - ModernTerminalView.this.getPaddingBottom(),
+                    () -> canvasSelectionActive && canvasSelectionEnd > canvasSelectionStart,
+                    ModernTerminalView.this::copySelection);
+            androidx.core.view.ViewCompat.setAccessibilityDelegate(this, canvasAccessibility);
+        }
+
+        @Override public boolean performClick() {
+            // Touch claiming needs a clickable view; accessibility click stays a no-op
+            // here (focus and selection live on the host/OnTouchListener path).
+            return super.performClick();
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            maybeFirePresentProbe();
+            TerminalCanvasRenderer.LineModel model = canvasModel;
+            if (model == null) return;
+            canvasRenderer.draw(canvas, model, cursorOffset,
+                    cursorEnabled && cursorVisible && screen.isCursorVisible() && !selecting,
+                    canvasSelectionActive,
+                    Math.min(canvasSelectionStart, canvasSelectionEnd),
+                    Math.max(canvasSelectionStart, canvasSelectionEnd),
+                    lastCommandRanges);
+        }
+    }
+
+    // ── W2-02: canvas selection (long-press → drag → floating ActionMode) ──
+
+    private void fireCanvasLongPress() {
+        if (!canvasLongPressArmed || canvasModel == null || !canvasRenderingEnabled) return;
+        canvasLongPressArmed = false;
+        beginCanvasSelection();
+    }
+
+    private void cancelCanvasLongPress() {
+        canvasLongPressArmed = false;
+        mainHandler.removeCallbacks(canvasLongPressTask);
+    }
+
+    /** Maps a point in canvas-view coordinates to a cell-start char offset. */
+    private int canvasOffsetAt(float x, float y) {
+        TerminalCanvasRenderer.LineModel model = canvasModel;
+        if (model == null || model.lineCount == 0) return 0;
+        int row = Math.max(0, Math.min(model.lineCount - 1,
+                (int) ((y - canvasRenderer.originYPx()) / Math.max(1, canvasRenderer.rowHeightPx()))));
+        int column = Math.max(0,
+                (int) ((x - canvasRenderer.originXPx()) / Math.max(1f, canvasRenderer.cellStepPx())));
+        return TerminalSelectionGeometry.offsetAtColumn(
+                model.text, model.lineStart(row), model.lineEnd(row), column);
+    }
+
+    private void beginCanvasSelection() {
+        TerminalCanvasRenderer.LineModel model = canvasModel;
+        if (model == null || model.lineCount == 0) return;
+        int offset = canvasOffsetAt(canvasTouchX, canvasTouchY);
+        canvasSelectionStart = offset;
+        canvasSelectionEnd = offset;
+        canvasSelectionActive = true;
+        canvasSelectionDragged = false;
+        selecting = true;
+        scrollState.selectionChanged(true, getScrollY());
+        canvasView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+        requestFocus();
+        if (canvasView.getParent() != null) canvasView.getParent().requestDisallowInterceptTouchEvent(true);
+        startCanvasSelectionActionMode();
+        canvasView.invalidate();
+    }
+
+    private void extendCanvasSelection(float x, float y) {
+        int offset = canvasOffsetAt(x, y);
+        if (offset == canvasSelectionEnd) return;
+        canvasSelectionEnd = offset;
+        canvasSelectionDragged = true;
+        canvasView.invalidate();
+        if (selectionActionMode != null) {
+            // invalidate() re-runs onPrepareActionMode (copy appears once the
+            // selection is non-empty); invalidateContentRect() repositions the bar.
+            selectionActionMode.invalidate();
+            selectionActionMode.invalidateContentRect();
+        }
+    }
+
+    /** Clears the Canvas selection (package-private so tests can drive the mode). */
+    void clearCanvasSelection() {
+        canvasSelectionActive = false;
+        canvasSelectionDragged = false;
+        canvasSelectionStart = 0;
+        canvasSelectionEnd = 0;
+        if (selecting) {
+            selecting = false;
+            scrollState.selectionChanged(false, getScrollY());
+        }
+        if (selectionActionMode != null) {
+            ActionMode mode = selectionActionMode;
+            selectionActionMode = null;
+            mode.finish();
+        }
+        if (canvasView != null) canvasView.invalidate();
+    }
+
+    /** Selects the whole display text in Canvas mode (package-private for tests). */
+    void selectAllTerminalText() {
+        TerminalCanvasRenderer.LineModel model = canvasModel;
+        if (model == null) return;
+        if (!canvasSelectionActive) {
+            canvasSelectionActive = true;
+            selecting = true;
+            scrollState.selectionChanged(true, getScrollY());
+        }
+        canvasSelectionStart = 0;
+        canvasSelectionEnd = model.text.length();
+        canvasView.invalidate();
+        if (selectionActionMode != null) {
+            selectionActionMode.invalidate();
+            selectionActionMode.invalidateContentRect();
+        }
+    }
+
+    private void startCanvasSelectionActionMode() {
+        android.view.ActionMode.Callback2 callback = new android.view.ActionMode.Callback2() {
+            @Override public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+                menu.add(0, android.R.id.copy, 0, R.string.terminal_action_copy)
+                        .setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_ALWAYS
+                                | android.view.MenuItem.SHOW_AS_ACTION_WITH_TEXT);
+                menu.add(0, android.R.id.selectAll, 0, R.string.terminal_action_select_all)
+                        .setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_NEVER);
+                menu.add(0, android.R.id.paste, 0, R.string.terminal_action_paste)
+                        .setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_NEVER);
+                return true;
+            }
+
+            @Override public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+                MenuItem copy = menu.findItem(android.R.id.copy);
+                if (copy != null) copy.setVisible(canvasSelectionEnd > canvasSelectionStart);
+                return true;
+            }
+
+            @Override public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+                int id = item.getItemId();
+                if (id == android.R.id.copy) {
+                    boolean copied = copySelection();
+                    if (copied) mode.finish();
+                    return copied;
+                }
+                if (id == android.R.id.selectAll) {
+                    selectAllTerminalText();
+                    return true;
+                }
+                if (id == android.R.id.paste) {
+                    boolean pasted = pasteFromClipboard();
+                    if (pasted) mode.finish();
+                    return pasted;
+                }
+                return false;
+            }
+
+            @Override public void onDestroyActionMode(ActionMode mode) {
+                if (selectionActionMode == mode) selectionActionMode = null;
+                if (canvasSelectionActive) clearCanvasSelection();
+            }
+
+            @Override public void onGetContentRect(ActionMode mode, View view, Rect outRect) {
+                computeCanvasSelectionRect(outRect);
+            }
+        };
+        selectionActionMode = canvasView.startActionMode(callback, ActionMode.TYPE_FLOATING);
+    }
+
+    /** Selection bounding rect in canvas-view coordinates for the floating toolbar. */
+    private void computeCanvasSelectionRect(Rect outRect) {
+        TerminalCanvasRenderer.LineModel model = canvasModel;
+        if (model == null || model.lineCount == 0 || !canvasSelectionActive) {
+            int middle = Math.max(1, canvasView.getWidth() / 2);
+            outRect.set(middle, canvasRenderer.originYPx(), middle + 1,
+                    canvasRenderer.originYPx() + canvasRenderer.rowHeightPx());
+            return;
+        }
+        int first = Math.min(canvasSelectionStart, canvasSelectionEnd);
+        int last = Math.max(canvasSelectionStart, canvasSelectionEnd);
+        int firstRow = model.lineOfOffset(first);
+        int lastRow = model.lineOfOffset(Math.max(first, last - 1));
+        int top = canvasRenderer.originYPx() + firstRow * canvasRenderer.rowHeightPx();
+        int bottom = canvasRenderer.originYPx() + (lastRow + 1) * canvasRenderer.rowHeightPx();
+        outRect.set(0, top, Math.max(1, canvasView.getWidth()), bottom);
+    }
+
     private final class TranscriptView extends androidx.appcompat.widget.AppCompatTextView {
         private final Paint cursorPaint = new Paint();
         TranscriptView(Context context) { super(context); }
@@ -657,6 +1111,7 @@ public class ModernTerminalView extends ScrollView {
         }
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
+            maybeFirePresentProbe();
             Layout layout = getLayout();
             if (layout == null || !cursorEnabled || !cursorVisible || !screen.isCursorVisible() || selecting) return;
             int offset = Math.max(0, Math.min(cursorOffset, getText().length()));

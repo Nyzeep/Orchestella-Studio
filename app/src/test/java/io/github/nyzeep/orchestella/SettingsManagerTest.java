@@ -109,6 +109,39 @@ public final class SettingsManagerTest {
     }
 
     @Test
+    public void terminalKeepScreenOnDefaultsToOffAndPersists() {
+        // W2-02: keep-screen-on is opt-in — a clean install must follow the
+        // system's auto screen-off, never keep the display awake by default.
+        assertFalse("terminal keep-screen-on must be off by default", settings.isTerminalKeepScreenOn());
+
+        settings.setTerminalKeepScreenOn(true);
+        assertTrue(settings.isTerminalKeepScreenOn());
+
+        settings.setTerminalKeepScreenOn(false);
+        assertFalse(settings.isTerminalKeepScreenOn());
+    }
+
+    @Test
+    public void terminalCanvasRendererDefaultsToOffAndPersistsUnderSharedKey() {
+        // W2-02: the canvas renderer is a controlled switch — the default path
+        // stays the TextView fallback until the on-device gate is captured.
+        assertFalse("terminal canvas renderer must be off by default", settings.isTerminalCanvasRendererEnabled());
+
+        settings.setTerminalCanvasRendererEnabled(true);
+        assertTrue(settings.isTerminalCanvasRendererEnabled());
+
+        FakeSharedPreferences backing = new FakeSharedPreferences();
+        SettingsManager uiMirror = new SettingsManager(backing);
+        uiMirror.setTerminalCanvasRendererEnabled(true);
+        assertTrue("UI write must land on the shared canvas renderer key",
+                backing.getBoolean(SettingsManager.KEY_TERMINAL_CANVAS_RENDERER, false));
+        assertTrue(new SettingsManager(backing).isTerminalCanvasRendererEnabled());
+
+        settings.setTerminalCanvasRendererEnabled(false);
+        assertFalse("turning the switch off must persist off", settings.isTerminalCanvasRendererEnabled());
+    }
+
+    @Test
     public void trackingLastActiveInstanceIdPersists() {
         settings.setLastActiveInstanceId("inst-alpine-123");
         assertEquals("inst-alpine-123", settings.getLastActiveInstanceId());

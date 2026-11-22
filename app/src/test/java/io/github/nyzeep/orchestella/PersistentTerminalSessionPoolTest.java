@@ -792,6 +792,36 @@ public final class PersistentTerminalSessionPoolTest {
         }
     }
 
+    /** W2-02: the view's first-draw timestamp closes the chain via {@code reportPresent}. */
+    @Test
+    public void presentProbeForwardsToTheIoProbeAndStaysFreeWithoutOne() throws Exception {
+        PersistentTerminalSessionPool.SessionHolder holder = new PersistentTerminalSessionPool.SessionHolder(
+                "present-vm", new FakeExecutionSession(
+                        new PipedInputStream(new PipedOutputStream()), new ByteArrayOutputStream()), 64);
+        try {
+            // Without a probe the forward is a no-op single volatile read.
+            holder.reportPresent(42L);
+
+            final long[] presented = {0L};
+            holder.setIoProbe(new PersistentTerminalSessionPool.IoProbe() {
+                @Override public void onWriteSubmitted(long monotonicNanos, int bytes, int queueDepth) { }
+                @Override public void onWriteCompleted(long monotonicNanos, int bytes, long writeDurationNanos) { }
+                @Override public void onWriteDropped(long monotonicNanos, int bytes, int queueDepth) { }
+                @Override public void onPumpChunkAppended(long monotonicNanos, int chars) { }
+                @Override public void onPresented(long monotonicNanos) { presented[0] = monotonicNanos; }
+            }, System::nanoTime);
+            holder.reportPresent(99L);
+            assertEquals("first-draw timestamp must reach the IoProbe", 99L, presented[0]);
+
+            holder.setIoProbe(null);
+            holder.reportPresent(123L);
+            assertEquals("clearing the probe must stop the forwarding", 99L, presented[0]);
+        } finally {
+            holder.setIoProbe(null);
+            holder.close();
+        }
+    }
+
     @Test(timeout = 10_000)
     public void screenModelAnswersEachDeviceStatusQueryExactlyOnce() throws Exception {
         PipedOutputStream pipeOut = new PipedOutputStream();

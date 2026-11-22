@@ -63,6 +63,14 @@ public final class PersistentTerminalSessionPool {
 
         /** The pump thread appended a decoded chunk to the canonical screen model. */
         void onPumpChunkAppended(long monotonicNanos, int chars);
+
+        /**
+         * W2-02: the terminal view painted its first frame after the model advanced.
+         * Completes the end-to-end chain (input submit → write completed → pump
+         * appended → presented) so device windows can sample input-to-photon latency.
+         * Optional: probes written before W2-02 simply never see this call.
+         */
+        default void onPresented(long monotonicNanos) {}
     }
 
     private record IoObservation(IoProbe probe, LongSupplier clock) {
@@ -399,6 +407,16 @@ public final class PersistentTerminalSessionPool {
 
         void setIoProbe(IoProbe probe, LongSupplier clock) {
             this.ioObservation = probe == null ? null : new IoObservation(probe, clock);
+        }
+
+        /**
+         * W2-02: forwards the terminal view's first-draw timestamp to the probe.
+         * With no probe set this is a single volatile read and nothing else, so the
+         * production render path never allocates for diagnostics.
+         */
+        public void reportPresent(long monotonicNanos) {
+            IoObservation observation = ioObservation;
+            if (observation != null) observation.probe.onPresented(monotonicNanos);
         }
 
         /**

@@ -509,6 +509,7 @@ class SettingsSubActivity : AppCompatActivity() {
         layoutInflater.inflate(R.layout.layout_settings_section_advanced, container, true)
         setupAcceleratorSection()
         setupDiagnosticsSection()
+        setupTerminalSection()
     }
 
     /**
@@ -665,6 +666,29 @@ class SettingsSubActivity : AppCompatActivity() {
         switch.isChecked = settingsManager.isStageTraceDiagnosticsEnabled
         switch.setOnCheckedChangeListener { _, isChecked ->
             settingsManager.isStageTraceDiagnosticsEnabled = isChecked
+        }
+    }
+
+    /**
+     * W2-02：终端两开关（屏幕常亮 + Canvas 渲染器实验开关）。UI 只读写同一
+     * SettingsManager key；TerminalActivity 的 appearanceListener 会在任意
+     * 偏好变化时重放 applyAppearance，设置页无需跨 Activity 通知。
+     */
+    private fun setupTerminalSection() {
+        val keepScreenOn = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(
+            R.id.switch_settings_terminal_keep_screen_on
+        ) ?: return
+        val canvasRenderer = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(
+            R.id.switch_settings_terminal_canvas_renderer
+        ) ?: return
+        // Assign state before the listener so a re-run never re-persists.
+        keepScreenOn.isChecked = settingsManager.isTerminalKeepScreenOn
+        keepScreenOn.setOnCheckedChangeListener { _, isChecked ->
+            settingsManager.isTerminalKeepScreenOn = isChecked
+        }
+        canvasRenderer.isChecked = settingsManager.isTerminalCanvasRendererEnabled
+        canvasRenderer.setOnCheckedChangeListener { _, isChecked ->
+            settingsManager.isTerminalCanvasRendererEnabled = isChecked
         }
     }
 }

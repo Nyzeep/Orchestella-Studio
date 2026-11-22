@@ -25,6 +25,10 @@ public final class SettingsManager {
     public static final String KEY_LAST_ACTIVE_INSTANCE_ID = "last_active_instance_id";
     public static final String KEY_ONBOARDING_COMPLETED = "onboarding_completed";
     public static final String KEY_TERMINAL_CURSOR_BLINK = "terminal_cursor_blink";
+    /** W2-02：终端页屏幕常亮开关；默认关闭，避免长任务期间熄屏可被用户显式打开。 */
+    public static final String KEY_TERMINAL_KEEP_SCREEN_ON = "terminal_keep_screen_on";
+    /** W2-02：终端 Canvas 渲染器受控开关；默认关闭走 TextView 回退路径。 */
+    public static final String KEY_TERMINAL_CANVAS_RENDERER = "terminal_canvas_renderer";
     public static final String KEY_ACCELERATOR_LANE = "accelerator_lane_enabled";
     /** Opt-in launch stage diagnostics (ticket 27); strictly off by default. */
     public static final String KEY_STAGE_TRACE_DIAGNOSTICS = "stage_trace_diagnostics_enabled";
@@ -145,6 +149,27 @@ public final class SettingsManager {
 
     public void setTerminalCursorBlinkEnabled(boolean enabled) {
         preferences.edit().putBoolean(KEY_TERMINAL_CURSOR_BLINK, enabled).apply();
+    }
+
+    /** 终端页屏幕常亮：长任务运行期间防止熄屏，默认关闭（W2-02）。 */
+    public boolean isTerminalKeepScreenOn() {
+        return preferences.getBoolean(KEY_TERMINAL_KEEP_SCREEN_ON, false);
+    }
+
+    public void setTerminalKeepScreenOn(boolean enabled) {
+        preferences.edit().putBoolean(KEY_TERMINAL_KEEP_SCREEN_ON, enabled).apply();
+    }
+
+    /**
+     * 终端 Canvas 渲染器开关（W2-02 受控开关）：默认走 TextView 回退路径，
+     * 真机全夹具验收稳定后再评估翻转默认值。
+     */
+    public boolean isTerminalCanvasRendererEnabled() {
+        return preferences.getBoolean(KEY_TERMINAL_CANVAS_RENDERER, false);
+    }
+
+    public void setTerminalCanvasRendererEnabled(boolean enabled) {
+        preferences.edit().putBoolean(KEY_TERMINAL_CANVAS_RENDERER, enabled).apply();
     }
 
     /**

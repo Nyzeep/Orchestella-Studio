@@ -185,6 +185,16 @@ public class TerminalActivity extends ComponentActivity {
         terminalView.setStickyStateMachine(stickyStateMachine);
         terminalView.setSizeListener((columns, rows) -> scheduleTerminalResize());
         terminalView.setTerminalInputEnabled(false);
+        // W2-02 端到端链路（输入提交→写完成→pump→首帧呈现）：每次 renderScreen
+        // 重建后的首帧经探针转给当前活跃会话；holder 侧 IoProbe 未设置时
+        // reportPresent 零开销转发，不进采样。lambda 只隐式捕获 this，
+        // holder 每次经字段 attachedHolder 现读，会话切换无需重接探针。
+        terminalView.setPresentProbe(nanos -> {
+            PersistentTerminalSessionPool.SessionHolder holder = attachedHolder;
+            if (holder != null) {
+                holder.reportPresent(nanos);
+            }
+        });
         contentArea.addView(terminalView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
@@ -465,6 +475,19 @@ public class TerminalActivity extends ComponentActivity {
         showTerminalPlaceholder("正在解析实例", "正在读取本地实例列表…");
     }
 
+    /**
+     * W2-02: idempotent {@link android.view.WindowManager.LayoutParams#FLAG_KEEP_SCREEN_ON}
+     * application; the preference change listener replays {@code applyAppearance()},
+     * so both mount and removal run through this one static entry point.
+     */
+    static void applyTerminalKeepScreenOn(android.view.Window window, boolean enabled) {
+        if (enabled) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+    }
+
     private void applyAppearance() {
         try {
             ThemeStore store = themeStore != null ? themeStore : new ThemeStore(this);
@@ -477,12 +500,18 @@ public class TerminalActivity extends ComponentActivity {
                     ansi, theme.getTerminalForeground(), theme.getTerminalBackground());
             rootLayout.setBackgroundColor(theme.getTerminalBackground());
             io.github.nyzeep.orchestella.ui.theme.ThemeApplier.bind(this);
+            // W2-02：屏幕常亮为幂等窗口 flag（重复 add/clear 不产生副作用），
+            // 偏好变化经 appearanceListener 重放 applyAppearance，无需独立监听器。
+            applyTerminalKeepScreenOn(getWindow(),
+                    settingsManager != null && settingsManager.isTerminalKeepScreenOn());
             if (terminalView != null) {
                 terminalView.applyTheme(theme,
                         store.terminalFontSizeSp(),
                         store.terminalLetterSpacingEm(),
                         store.terminalLineSpacingPx());
                 terminalView.setCursorBlinkEnabled(settingsManager == null || settingsManager.isTerminalCursorBlinkEnabled());
+                // W2-02：Canvas 渲染器受控开关，默认关闭走 TextView 回退路径。
+                terminalView.setCanvasRenderingEnabled(settingsManager != null && settingsManager.isTerminalCanvasRendererEnabled());
                 applyTerminalBackground(store, theme);
             }
             applyChromeColors(theme);
