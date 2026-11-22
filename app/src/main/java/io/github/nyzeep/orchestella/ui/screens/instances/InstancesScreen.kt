@@ -68,7 +68,6 @@ import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3IconTint
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
 import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3CardEnterMotion
-import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3DialogEnterMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
@@ -612,78 +611,76 @@ fun InstanceActionsSheet(
             )
         },
     ) {
-        // 底部表同属对话框事件面：sheet 滑入保持 Material3 原生，token 在
-        // 内容层按 250ms easeOutCubic 播放，减少动态时首帧即终态。
-        Oe3DialogEnterMotion {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Oe3Spacing.pageInset)
-                    .padding(bottom = Oe3Spacing.xl),
+        // 底部表入场只属于 Material3 Sheet 容器（W2-04）：ModalBottomSheet
+        // 自带滑入动画，内容层不再叠 Oe3DialogEnterMotion 形成双重入场。
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Oe3Spacing.pageInset)
+                .padding(bottom = Oe3Spacing.xl),
+        ) {
+            Text(
+                text = item.name,
+                style = Oe3Typography.style(Oe3TextRole.Section),
+                color = colors.onSurface.oe3Color(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = stringResource(
+                    R.string.ui3_instances_sheet_subtitle,
+                    statusLabel,
+                    item.shortId,
+                ),
+                style = Oe3Typography.style(Oe3TextRole.Caption),
+                color = colors.onSurfaceVariant.oe3Color(),
+            )
+            Spacer(Modifier.height(Oe3Spacing.sm))
+            SheetAction(
+                icon = Oe3Icons.Power,
+                label = stringResource(R.string.ui3_instances_sheet_power),
+                enabled = item.canPowerOff,
+                modifier = Modifier.testTag("instances-sheet-power"),
             ) {
-                Text(
-                    text = item.name,
-                    style = Oe3Typography.style(Oe3TextRole.Section),
-                    color = colors.onSurface.oe3Color(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = stringResource(
-                        R.string.ui3_instances_sheet_subtitle,
-                        statusLabel,
-                        item.shortId,
-                    ),
-                    style = Oe3Typography.style(Oe3TextRole.Caption),
-                    color = colors.onSurfaceVariant.oe3Color(),
-                )
-                Spacer(Modifier.height(Oe3Spacing.sm))
-                SheetAction(
-                    icon = Oe3Icons.Power,
-                    label = stringResource(R.string.ui3_instances_sheet_power),
-                    enabled = item.canPowerOff,
-                    modifier = Modifier.testTag("instances-sheet-power"),
-                ) {
-                    actions.powerOff(item.id)
-                    onDismiss()
-                }
-                SheetAction(
-                    icon = Oe3Icons.Workstation,
-                    label = stringResource(R.string.ui3_instances_sheet_desktop),
-                    enabled = item.canLaunchDesktop,
-                    modifier = Modifier.testTag("instances-sheet-desktop"),
-                ) {
-                    actions.openDesktop(item.id)
-                    onDismiss()
-                }
-                SheetAction(
-                    icon = Oe3Icons.Terminal,
-                    label = stringResource(R.string.ui3_instances_sheet_logs),
-                    enabled = item.canShowLogs,
-                    modifier = Modifier.testTag("instances-sheet-logs"),
-                ) {
-                    actions.openLogs(item.id)
-                    onDismiss()
-                }
-                SheetAction(
-                    icon = Oe3Icons.Import,
-                    label = stringResource(R.string.ui3_instances_sheet_export),
-                    enabled = item.canExport,
-                    modifier = Modifier.testTag("instances-sheet-export"),
-                ) {
-                    actions.exportInstance(item.id)
-                    onDismiss()
-                }
-                SheetAction(
-                    icon = null,
-                    label = stringResource(R.string.ui3_instances_sheet_delete),
-                    enabled = item.canDelete,
-                    danger = true,
-                    modifier = Modifier.testTag("instances-sheet-delete"),
-                ) {
-                    actions.deleteInstance(item.id)
-                    onDismiss()
-                }
+                actions.powerOff(item.id)
+                onDismiss()
+            }
+            SheetAction(
+                icon = Oe3Icons.Workstation,
+                label = stringResource(R.string.ui3_instances_sheet_desktop),
+                enabled = item.canLaunchDesktop,
+                modifier = Modifier.testTag("instances-sheet-desktop"),
+            ) {
+                actions.openDesktop(item.id)
+                onDismiss()
+            }
+            SheetAction(
+                icon = Oe3Icons.Terminal,
+                label = stringResource(R.string.ui3_instances_sheet_logs),
+                enabled = item.canShowLogs,
+                modifier = Modifier.testTag("instances-sheet-logs"),
+            ) {
+                actions.openLogs(item.id)
+                onDismiss()
+            }
+            SheetAction(
+                icon = Oe3Icons.Import,
+                label = stringResource(R.string.ui3_instances_sheet_export),
+                enabled = item.canExport,
+                modifier = Modifier.testTag("instances-sheet-export"),
+            ) {
+                actions.exportInstance(item.id)
+                onDismiss()
+            }
+            SheetAction(
+                icon = null,
+                label = stringResource(R.string.ui3_instances_sheet_delete),
+                enabled = item.canDelete,
+                danger = true,
+                modifier = Modifier.testTag("instances-sheet-delete"),
+            ) {
+                actions.deleteInstance(item.id)
+                onDismiss()
             }
         }
     }

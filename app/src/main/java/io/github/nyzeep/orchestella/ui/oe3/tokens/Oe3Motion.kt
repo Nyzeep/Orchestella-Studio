@@ -87,10 +87,9 @@ object Oe3Motion {
         ),
         cardEnterScaleFrom = OeMotion.CARD_ENTER_SCALE_FROM,
         editWiggle = Oe3MotionSpec(OeMotion.EDIT_WIGGLE_PERIOD_MS, LinearEasing),
-        navSelectionSpring = SpringSpec(
-            dampingRatio = OeMotion.SPRING_DAMPING,
-            stiffness = OeMotion.NAV_SELECTION_STIFFNESS,
-        ),
+        // The pill settle spring is the M1 OeSpring.Pill token itself (W2-04):
+        // one construction, no equivalent rebuild beside it.
+        navSelectionSpring = OeSpring.Pill,
         pagePushSpring = OeSpring.push().spec,
     )
 

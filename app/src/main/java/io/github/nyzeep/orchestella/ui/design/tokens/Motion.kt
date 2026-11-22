@@ -37,19 +37,51 @@ object OeMotion {
     const val SPRING_DAMPING = 0.85f
     const val NAV_SELECTION_STIFFNESS = Spring.StiffnessMediumLow
 
-    // --- Card press timing (UI-04; reference press_surface 150/200/250/200) ---
+    // --- Motion v2 duration ladder (W1-02 / A4-M1) ---
+    // The named semantic durations above stay the wired truth for the surfaces
+    // that already consume them; this ladder is the authoritative scale for new
+    // work (A4 Wave 2+) and for the ambient loops that have no semantic token.
+    // Declared ahead of the card-press block so the retuned CARD_PRESS_* tokens
+    // can reference the ladder directly (const cannot forward-reference).
 
-    /** Reveal delay: the wash waits this long before the tint starts fading in. */
-    const val CARD_PRESS_REVEAL_DELAY_MS = 150
+    const val DURATION_MICRO_MS = 120
+    const val DURATION_SHORT_MS = 200
+    const val DURATION_MEDIUM_MS = 320
+    const val DURATION_LONG_MS = 480
+
+    /** Ambient loop cycle (OeSlider glow sweep); the one above-ladder duration. */
+    const val GLOW_CYCLE_MS = 4000
+
+    // --- Card press timing (UI-04; W2-04 retune: instant first-frame feedback) ---
+    // A4 §3.1 M3: the wash must be clearly visible on the first frame of a
+    // press (<= 32ms). The 150ms reveal delay is gone, the tint completes over
+    // the Micro tick, release settles over the Short tick and the interrupted
+    // wash keeps its 200ms fade — every duration is a token reference, none is
+    // a local literal.
+
+    /** Reveal delay: 0 — the wash starts on the very first pressed frame. */
+    const val CARD_PRESS_REVEAL_DELAY_MS = 0
 
     /** Tint fade-in once the reveal delay has elapsed. */
-    const val CARD_PRESS_TINT_FADE_IN_MS = 200
+    const val CARD_PRESS_TINT_FADE_IN_MS = DURATION_MICRO_MS
 
     /** Release settle: a wash that reached full ink retreats to rest over this. */
-    const val CARD_PRESS_RELEASE_MS = 250
+    const val CARD_PRESS_RELEASE_MS = DURATION_SHORT_MS
 
     /** Ink fade-out: a wash interrupted before it settled fades out over this. */
-    const val CARD_PRESS_INK_FADE_MS = 200
+    const val CARD_PRESS_INK_FADE_MS = DURATION_SHORT_MS
+
+    /**
+     * Wash fraction shown on the first pressed frame (W2-04): the animation
+     * snaps here before ramping to full, so a press reads instantly even when
+     * the tween has not ticked yet (compose test frames can lag the gesture
+     * by a frame). 0.85 of the 10%-ink pressed fill ≈ the 8–10% ink response
+     * the spec asks for on the first frame.
+     */
+    const val CARD_PRESS_FIRST_FRAME_WASH = 0.85f
+
+    /** Oe3Card pressed scale (W2-04): a light depth cue riding the wash ramp. */
+    const val CARD_PRESS_SCALE = 0.985f
 
     const val CARD_ENTER_SCALE_FROM = 0.96f
     const val REDUCED_CARD_ENTER_SCALE_FROM = 1f
@@ -157,19 +189,6 @@ object OeMotion {
     const val EMPHASIZED_ACCELERATE_X2 = 0.8f
     const val EMPHASIZED_ACCELERATE_Y2 = 0.15f
 
-    // --- Motion v2 duration ladder (W1-02 / A4-M1) ---
-    // The named semantic durations above stay the wired truth for the surfaces
-    // that already consume them; this ladder is the authoritative scale for new
-    // work (A4 Wave 2+) and for the ambient loops that have no semantic token.
-
-    const val DURATION_MICRO_MS = 120
-    const val DURATION_SHORT_MS = 200
-    const val DURATION_MEDIUM_MS = 320
-    const val DURATION_LONG_MS = 480
-
-    /** Ambient loop cycle (OeSlider glow sweep); the one above-ladder duration. */
-    const val GLOW_CYCLE_MS = 4000
-
     // --- Motion v2 spring parameters (W1-02 / A4-M1) ---
     // Spatial springs (press/pill) keep the 0.85 controlled rebound; Effects
     // springs settle at damping 1.0 with no overshoot (A4 §3.1 M1).
@@ -197,6 +216,20 @@ object OeMotion {
 
     /** OeSlider thumb pressed scale (glow geometry 8-dot / 90dp untouched). */
     const val SLIDER_PRESS_SCALE = 0.92f
+
+    // --- Nav pill travel stretch (W2-04 / A4 §3.1 M3, ReFra-patterned) ---
+    // While the pill slides across cells (drag scrub or selection jump) it
+    // stretches horizontally in proportion to the travelled fraction of one
+    // cell pitch, and springs back to 1.0 as the travel settles to zero.
+
+    /** Max horizontal stretch on top of 1.0 (scaleX <= 1.04). */
+    const val NAV_PILL_STRETCH_MAX = 0.04f
+
+    /**
+     * Safety bound for the pointer release velocity (px/s) handed to the pill
+     * settle spring; the tracker can spike far beyond any human fling.
+     */
+    const val NAV_PILL_SETTLE_MAX_VELOCITY_PX_PER_SEC = 8000f
 
     val standardEasing: Easing =
         CubicBezierEasing(STANDARD_X1, STANDARD_Y1, STANDARD_X2, STANDARD_Y2)

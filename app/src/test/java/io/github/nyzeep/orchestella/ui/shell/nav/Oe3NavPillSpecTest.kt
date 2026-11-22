@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella.ui.shell.nav
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Motion
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import org.junit.Assert.assertEquals
@@ -77,5 +78,57 @@ class Oe3NavPillSpecTest {
     fun thePressScaleIsASubtleDipFromFullScale() {
         assertEquals(0.96f, Oe3NavPillSpec.PRESS_SCALE, 0.0001f)
         assertEquals(1f, Oe3NavPillSpec.REST_SCALE, 0.0001f)
+    }
+
+    @Test
+    fun theTravelStretchPeaksAtOneCellAndRelaxesAtRest() {
+        val motion = Oe3Motion.standard()
+        val cellWidthPx = cellWidth.value
+        // Rest: no travel, no stretch.
+        assertEquals(1f, Oe3NavPillSpec.stretchFor(0f, cellWidthPx, motion), 0.0001f)
+        // Half a cell of travel stretches half of the max.
+        assertEquals(
+            1f + 0.02f,
+            Oe3NavPillSpec.stretchFor(cellWidthPx / 2f, cellWidthPx, motion),
+            0.0001f,
+        )
+        // One cell — and beyond — holds the spec ceiling of scaleX 1.04.
+        assertEquals(
+            1.04f,
+            Oe3NavPillSpec.stretchFor(cellWidthPx, cellWidthPx, motion),
+            0.0001f,
+        )
+        assertEquals(
+            1.04f,
+            Oe3NavPillSpec.stretchFor(cellWidthPx * 3f, cellWidthPx, motion),
+            0.0001f,
+        )
+        assertEquals(0.04f, OeMotion.NAV_PILL_STRETCH_MAX, 0.0001f)
+    }
+
+    @Test
+    fun reducedMotionAndDegenerateCellsNeverStretch() {
+        assertEquals(
+            1f,
+            Oe3NavPillSpec.stretchFor(100f, cellWidth.value, Oe3Motion.reduced()),
+            0.0001f,
+        )
+        // A zero-width cell cannot normalise travel; stretch stays neutral.
+        assertEquals(
+            1f,
+            Oe3NavPillSpec.stretchFor(100f, 0f, Oe3Motion.standard()),
+            0.0001f,
+        )
+    }
+
+    @Test
+    fun theSettleVelocityIsClampedToALegalBound() {
+        val bound = OeMotion.NAV_PILL_SETTLE_MAX_VELOCITY_PX_PER_SEC
+        assertEquals(bound, Oe3NavPillSpec.clampSettleVelocity(50_000f), 0.0001f)
+        assertEquals(-bound, Oe3NavPillSpec.clampSettleVelocity(-50_000f), 0.0001f)
+        assertEquals(bound, Oe3NavPillSpec.clampSettleVelocity(bound), 0.0001f)
+        // A human-speed release passes through untouched.
+        assertEquals(1234f, Oe3NavPillSpec.clampSettleVelocity(1234f), 0.0001f)
+        assertEquals(0f, Oe3NavPillSpec.clampSettleVelocity(0f), 0.0001f)
     }
 }

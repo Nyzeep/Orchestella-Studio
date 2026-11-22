@@ -1,11 +1,8 @@
 package io.github.nyzeep.orchestella.ui.design.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -13,6 +10,8 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +39,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import kotlin.math.roundToInt
 
@@ -76,23 +78,42 @@ fun OeSlider(
 
     var widthPx by remember { mutableFloatStateOf(0f) }
     var pressed by remember { mutableStateOf(false) }
+    var laidOut by remember { mutableStateOf(false) }
+
+    // W2-04: the ambient glow burns frames only while the slider can actually
+    // show it — motion allowed, host lifecycle RESUMED, interactive (enabled
+    // and not mid-drag) and laid out on screen. Any failed condition stops
+    // every frame callback: the phase freezes where it is (it only starts on
+    // the deterministic band when never run), so an off-screen or backgrounded
+    // slider costs nothing and the band never jumps on a gate toggle.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var resumed by remember { mutableStateOf(false) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, _ ->
+            resumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        }
+        resumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val glowRunning = !themeInfo.reducedMotion && resumed && enabled && !pressed && laidOut
 
     // Keep the phase as State and read it inside the draw lambda: the glow
-    // animates without recomposing this composable on every frame.
-    val phase = if (themeInfo.reducedMotion) {
-        // Deterministic mid-travel band: screenshots never chase the animation.
-        remember { mutableFloatStateOf(0.35f) }
-    } else {
-        val transition = rememberInfiniteTransition(label = "oe-slider-glow")
-        transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(OeSliderSpec.GlowPeriodMillis, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart,
-            ),
-            label = "oe-slider-glow-phase",
-        )
+    // animates without recomposing this composable on every frame. Restarting
+    // a gated-off sweep resumes the remainder of the current cycle, so the
+    // band never jumps; the 8-dot / 90dp geometry it drives is untouched.
+    val phase = remember { Animatable(0.35f) }
+    LaunchedEffect(glowRunning) {
+        if (!glowRunning) return@LaunchedEffect
+        while (true) {
+            phase.animateTo(
+                1f,
+                // First segment covers the remainder of the cycle from the
+                // resting band; full sweeps follow at the spec period.
+                tween((OeSliderSpec.GlowPeriodMillis * (1f - phase.value)).toInt(), easing = LinearEasing),
+            )
+            phase.snapTo(0f)
+        }
     }
 
     val pressedScale by animateFloatAsState(
@@ -162,6 +183,7 @@ fun OeSlider(
             .height(48.dp)
             .onSizeChanged {
                 widthPx = it.width.toFloat()
+                laidOut = it.width > 0 && it.height > 0
             }
             .semantics {
                 if (stateDescription != null) this.stateDescription = stateDescription

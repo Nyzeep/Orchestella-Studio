@@ -768,23 +768,14 @@ class TransitionGhostPixelTest {
     }
 
     /**
-     * 按压时序红线（解锁：Wave 2 M3）：Oe3Card 首帧反馈 ≤32ms、释放回退 ≤240ms。
+     * 按压时序红线（W2-04 已解锁）：Oe3Card 首帧反馈 ≤32ms、释放回退 ≤240ms。
      *
      * 渲染与取色口径沿用 OeCardPressTimingTest（黑底居中 200×120 卡、卡心取色、
-     * mainClock 冻结逐段推进）。当前实现（150ms 揭示延迟 + 250ms 释放回退）：
-     * - **32ms 检查是确定性红点**：仍在 150ms 揭示延迟内，洗色比例恰好为 0，
-     *   卡心像素等于静置卡面 → 断言必红；
-     * - **240ms 释放检查是规格边界钉**：250ms 回退在 240ms 处的残差（≈4% 洗色，
-     *   再经减速缓动压缩）低于 8-bit 像素量化步长，本检查对 250ms 与 ≤240ms 的
-     *   实现可能同样通过——它钉住「≤240ms 必须归零」的规格边界，真正的缺陷检出
-     *   由 32ms 检查承担。
-     *
-     * 解锁条件：Wave 2 M3 修正按压时序（首帧反馈 ≤32ms 且释放 ≤240ms）后移除
-     * @Ignore；解锁时同步钉回 [io.github.nyzeep.orchestella.ui.design.tokens.OeMotion]
-     * 的 CARD_PRESS_* 常量口径。
+     * mainClock 冻结逐段推进）。W2-04 实现口径：揭示延迟归零 + 首帧洗色
+     * snap（[OeMotion.CARD_PRESS_FIRST_FRAME_WASH]）保证 32ms 内必有可见墨洗，
+     * 释放回退收至 Short（200ms ≤ 240ms）——32ms 检查与 240ms 释放边界均须绿。
      */
     @Test
-    @Ignore("Wave 2 M3 fix target: 卡片按压首帧反馈 ≤32ms / 释放回退 ≤240ms（当前 150ms 揭示延迟 + 250ms 释放）。解锁：Wave 2 M3 按压时序修正后移除本注解。")
     fun cardPress_firstFrameFeedbackWithin32ms_andReleaseWithin240ms() {
         compose.mainClock.autoAdvance = false
         var surfaceArgb = 0

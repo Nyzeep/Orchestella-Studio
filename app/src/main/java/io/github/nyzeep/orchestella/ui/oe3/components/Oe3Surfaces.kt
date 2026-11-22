@@ -6,7 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -20,11 +20,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -33,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
+import io.github.nyzeep.orchestella.ui.design.tokens.OeDuration
 import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
@@ -59,11 +63,14 @@ object Oe3CardSpec {
  * The canonical Oe3 card: one tonal surface, 24dp corners, no outline and no
  * depth effect.
  *
- * Press feedback (v4/UI-04) is the 10% ink wash on the spec clock: a 150ms
- * reveal delay, a 200ms tint fade-in, a 250ms release settle and a 200ms fade
- * for a wash interrupted before it settled — every duration comes from
- * [OeMotion], reduced motion collapses all of them through the injected
- * `motion.press` token.
+ * Press feedback (v4/UI-04, retuned by W2-04) is the 10% ink wash plus a
+ * light press scale, instant on the first frame: the wash snaps to
+ * [OeMotion.CARD_PRESS_FIRST_FRAME_WASH] on the pressed frame and finishes
+ * over the Micro tick, a release settles over the Short tick, a wash
+ * interrupted before it settled fades over the Short tick, and a press
+ * cancelled by a scroll steal retreats over the Micro tick — every duration
+ * comes from [OeMotion], reduced motion collapses all of them through the
+ * injected `motion.press` token.
  *
  * [title] renders inside the card as the first row (v4: a card's title lives
  * in the card, never as an outside section label). It participates in
@@ -90,7 +97,26 @@ fun Oe3Card(
     val colors = Oe3ThemeValues.colors
     val press = Oe3ThemeValues.motion.press
     val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
+    // Press/Release/Cancel are collected by hand rather than through
+    // collectIsPressedAsState: a scroll that steals the pointer emits Cancel,
+    // and that press must retreat faster than a plain release (W2-04).
+    var pressed by remember { mutableStateOf(false) }
+    var pressCancelled by remember { mutableStateOf(false) }
+    LaunchedEffect(interaction) {
+        interaction.interactions.collect { change ->
+            when (change) {
+                is PressInteraction.Press -> {
+                    pressed = true
+                    pressCancelled = false
+                }
+                is PressInteraction.Release -> pressed = false
+                is PressInteraction.Cancel -> {
+                    pressed = false
+                    pressCancelled = true
+                }
+            }
+        }
+    }
     val pressFraction = remember { Animatable(0f) }
     LaunchedEffect(pressed) {
         val spec: TweenSpec<Float> = when {
@@ -99,6 +125,10 @@ fun Oe3Card(
             pressed -> tween(
                 durationMillis = OeMotion.CARD_PRESS_TINT_FADE_IN_MS,
                 delayMillis = OeMotion.CARD_PRESS_REVEAL_DELAY_MS,
+                easing = OeMotion.decelerateEasing,
+            )
+            pressCancelled -> tween(
+                durationMillis = OeDuration.Micro,
                 easing = OeMotion.decelerateEasing,
             )
             pressFraction.value >= 1f -> tween(
@@ -110,6 +140,13 @@ fun Oe3Card(
                 easing = OeMotion.decelerateEasing,
             )
         }
+        if (pressed) {
+            // First-frame wash (W2-04): the pressed frame already shows the
+            // ink instead of waiting for the tween's first tick — compose
+            // test frames can lag the gesture by one frame, and a press that
+            // re-lands mid-retreat must not dip below the instant response.
+            pressFraction.snapTo(pressFraction.value.coerceAtLeast(OeMotion.CARD_PRESS_FIRST_FRAME_WASH))
+        }
         pressFraction.animateTo(if (pressed) 1f else 0f, spec)
     }
     val fill = lerp(
@@ -120,6 +157,15 @@ fun Oe3Card(
 
     Column(
         modifier = modifier
+            // Press scale rides the same ramp as the wash; graphicsLayer only,
+            // so layout bounds and the merged a11y node stay untouched (the
+            // layer transform scales hit-testing during a press, but every
+            // gesture starts at scale 1.0 with the stream already captured).
+            .graphicsLayer {
+                val scale = 1f - (1f - OeMotion.CARD_PRESS_SCALE) * pressFraction.value
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(resolvedShape)
             .background(fill.copy(alpha = fill.alpha * LocalOeSurfaceAlpha.current))
             .then(

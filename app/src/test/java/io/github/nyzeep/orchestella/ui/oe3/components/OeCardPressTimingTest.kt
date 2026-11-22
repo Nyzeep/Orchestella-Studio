@@ -16,6 +16,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
+import io.github.nyzeep.orchestella.ui.design.tokens.OeDuration
 import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
@@ -35,15 +36,17 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 /**
- * UI-04 切片 5：卡片按压反馈走规格时序（150/200/250/200），全部取自
- * [OeMotion] token，组件与页面内不得出现硬编码时长。
+ * UI-04 切片 5（W2-04 收紧）：卡片按压反馈即时化——首帧即显墨洗、Micro 淡入
+ * 收尾、Short 释放回退、取消快速退回，全部取自 [OeMotion] token，组件与页面
+ * 内不得出现硬编码时长。
  *
  * 行为断言（mdpi，1dp = 1px，PNG 无损，端点色逐通道精确比较）：
- * - 按下后 100ms 仍处于 150ms 揭示延迟内 → 洗色比例必须还是 0（卡心像素
- *   等于静置卡面）。旧实现立即起弹簧，100ms 已明显上色——这是红绿分界。
- * - 380ms（≥150 延迟 + 200 淡入）→ 卡心像素等于 10% ink 的按压色。
- * - 抬起后 125ms 处于 250ms 释放回退中 → 介于两端点之间。
- * - 抬起后 300ms（≥250）→ 回到静置卡面。
+ * - 按下后 32ms（≤ 首帧红线）→ 洗色必须可见（首帧洗色 snap 保证，帧陈旧
+ *   也不会读回静置面）——这是 W2-04 的红绿分界（旧实现 150ms 揭示延迟内恒 0）。
+ * - 200ms（≥ 首帧洗色 + Micro 淡入）→ 卡心像素等于 10% ink 的按压色端点。
+ * - 抬起后 60ms 处于 Short 释放回退中 → 介于两端点之间。
+ * - 抬起后 240ms（W2-04 红线 ≤240ms）→ 回到静置卡面。
+ * - 滚动抢占（Cancel）→ 快速退回静置卡面，墨洗不得滞留。
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -83,35 +86,38 @@ class OeCardPressTimingTest {
 
     @Test
     fun pressTimingConstantsArePinnedInTheSingleSource() {
-        assertEquals(150, OeMotion.CARD_PRESS_REVEAL_DELAY_MS)
-        assertEquals(200, OeMotion.CARD_PRESS_TINT_FADE_IN_MS)
-        assertEquals(250, OeMotion.CARD_PRESS_RELEASE_MS)
-        assertEquals(200, OeMotion.CARD_PRESS_INK_FADE_MS)
+        assertEquals(0, OeMotion.CARD_PRESS_REVEAL_DELAY_MS)
+        // 120/200 是 v2 时长阶梯的 Micro/Short 档——钉住令牌接线而非裸数字。
+        assertEquals(OeDuration.Micro, OeMotion.CARD_PRESS_TINT_FADE_IN_MS)
+        assertEquals(OeDuration.Short, OeMotion.CARD_PRESS_RELEASE_MS)
+        assertEquals(OeDuration.Short, OeMotion.CARD_PRESS_INK_FADE_MS)
+        assertEquals(0.85f, OeMotion.CARD_PRESS_FIRST_FRAME_WASH, 0.0001f)
+        assertEquals(0.985f, OeMotion.CARD_PRESS_SCALE, 0.0001f)
     }
 
     @Test
-    fun pressInWaitsOutTheRevealDelayThenFadesToTheInkWash() {
+    fun pressShowsTheWashOnTheFirstFrameThenCompletesWithinTheMicroTick() {
         assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode)
         val colors = renderPressingCard()
 
         compose.onNodeWithTag("press-card").performTouchInput { down(center) }
-        compose.mainClock.advanceTimeBy(100)
-        assertEquals(
-            "100ms 仍在揭示延迟内，洗色必须为 0",
+        compose.mainClock.advanceTimeBy(32)
+        assertNotEquals(
+            "按压 32ms 必须已有首帧墨洗反馈（W2-04 红线，旧 150ms 揭示延迟恒 0）",
             colors.surfaceArgb,
             centerPixel(),
         )
 
-        compose.mainClock.advanceTimeBy(280)
+        compose.mainClock.advanceTimeBy(168)
         assertEquals(
-            "380ms ≥ 150 延迟 + 200 淡入，洗色到达 10% ink",
+            "200ms ≥ 首帧洗色 + Micro 淡入，洗色到达 10% ink 端点",
             colors.pressedArgb,
             centerPixel(),
         )
     }
 
     @Test
-    fun releaseSettlesBackOver250ms() {
+    fun releaseSettlesBackWithin240ms() {
         assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode)
         val colors = renderPressingCard()
 
@@ -119,14 +125,31 @@ class OeCardPressTimingTest {
         compose.mainClock.advanceTimeBy(400)
         compose.onNodeWithTag("press-card").performTouchInput { up() }
 
-        compose.mainClock.advanceTimeBy(125)
+        compose.mainClock.advanceTimeBy(60)
         val mid = centerPixel()
-        assertNotEquals("释放 125ms 时洗色尚未回到静置面", colors.surfaceArgb, mid)
-        assertNotEquals("释放 125ms 时洗色尚未贴住按压色", colors.pressedArgb, mid)
+        assertNotEquals("释放 60ms 时洗色尚未回到静置面", colors.surfaceArgb, mid)
+        assertNotEquals("释放 60ms 时洗色尚未贴住按压色", colors.pressedArgb, mid)
 
-        compose.mainClock.advanceTimeBy(175)
+        compose.mainClock.advanceTimeBy(180)
         assertEquals(
-            "释放 300ms ≥ 250 回退，洗色归零",
+            "释放 ≤240ms 必须回到静置卡面（W2-04 红线）",
+            colors.surfaceArgb,
+            centerPixel(),
+        )
+    }
+
+    @Test
+    fun scrollStealCancelRetreatsQuicklyToRest() {
+        assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode)
+        val colors = renderPressingCard()
+
+        compose.onNodeWithTag("press-card").performTouchInput { down(center) }
+        compose.mainClock.advanceTimeBy(400)
+        compose.onNodeWithTag("press-card").performTouchInput { cancel() }
+
+        compose.mainClock.advanceTimeBy(200)
+        assertEquals(
+            "滚动抢占（Cancel）后墨洗必须快速退回静置卡面",
             colors.surfaceArgb,
             centerPixel(),
         )

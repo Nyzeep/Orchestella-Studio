@@ -62,6 +62,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -121,6 +122,28 @@ object Oe3NavPillSpec {
 
     /** ≈250ms press/release spring — the M1 [OeSpring.Press] token (W1-02). */
     fun pressSpring(motion: Oe3MotionTokens): SpringSpec<Float> = OeSpring.Press
+
+    /**
+     * W2-04: horizontal stretch while the pill travels across cells. The
+     * travelled fraction of one cell pitch scales [OeMotion.NAV_PILL_STRETCH_MAX]
+     * (so `scaleX <= 1.04`), and a settled travel returns to 1.0. Reduced
+     * motion never stretches. Pure math so tests pin the bounds.
+     */
+    fun stretchFor(travelPx: Float, cellWidthPx: Float, motion: Oe3MotionTokens): Float {
+        if (motion.navSelectionSpring == null || cellWidthPx <= 0f) return 1f
+        val travelled = (abs(travelPx) / cellWidthPx).coerceIn(0f, 1f)
+        return 1f + OeMotion.NAV_PILL_STRETCH_MAX * travelled
+    }
+
+    /**
+     * W2-04: pointer release velocity fed to the settle spring, clamped to a
+     * legal bound — the tracker can spike far beyond any human fling and an
+     * unbounded launch would throw the pill across the bar.
+     */
+    fun clampSettleVelocity(velocityPxPerSec: Float): Float = velocityPxPerSec.coerceIn(
+        -OeMotion.NAV_PILL_SETTLE_MAX_VELOCITY_PX_PER_SEC,
+        OeMotion.NAV_PILL_SETTLE_MAX_VELOCITY_PX_PER_SEC,
+    )
 
     /**
      * Icon/label colour transition: the 300ms standard themeTween colour
@@ -208,6 +231,13 @@ private fun Modifier.navRim(shape: Shape, isDark: Boolean): Modifier = drawWithC
  * top corners, extending behind the system navigation bar. Both share the
  * same 62dp tab strip, pill and semantics — only the container geometry
  * differs, so the preference never changes what a tab is or does.
+ *
+ * W2-04 motion: a horizontal scrub releases with the pointer's velocity so
+ * the pill keeps its momentum into the settle spring (clamped, half-cell
+ * releases snap to the nearest cell), a cross-cell travel stretches the pill
+ * horizontally up to [OeMotion.NAV_PILL_STRETCH_MAX] and relaxes as the
+ * travel settles, and tapping the already-selected tab raises
+ * [onTabReselected] so pages can scroll back to their top (W2-06).
  */
 @Composable
 fun Oe3NavBar(
@@ -216,6 +246,7 @@ fun Oe3NavBar(
     modifier: Modifier = Modifier,
     style: Oe3NavStyle = Oe3NavStyle.Floating,
     glassState: HazeState? = null,
+    onTabReselected: ((Oe3Tab) -> Unit)? = null,
 ) {
     val colors = Oe3ThemeValues.colors
     val motion = Oe3ThemeValues.motion
@@ -289,28 +320,38 @@ fun Oe3NavBar(
         var dragOffsetPx by remember { mutableStateOf<Float?>(null) }
         var pendingReleaseTarget by remember { mutableStateOf<Oe3Tab?>(null) }
         var pendingReleaseOffsetPx by remember { mutableStateOf<Float?>(null) }
+        var pendingReleaseVelocityPx by remember { mutableStateOf(0f) }
 
-        suspend fun settlePillTravel(startPx: Float) {
+        suspend fun settlePillTravel(startPx: Float, initialVelocityPxPerSec: Float = 0f) {
             val spring = Oe3NavPillSpec.selectionSpring(motion)
             if (spring == null) {
                 pillTravel.snapTo(0f)
             } else {
                 pillTravel.snapTo(startPx)
-                pillTravel.animateTo(0f, spring)
+                // W2-04: the release velocity survives into the settle, so a
+                // flung pill keeps its momentum instead of a dead stop.
+                pillTravel.animateTo(
+                    0f,
+                    spring,
+                    initialVelocity = Oe3NavPillSpec.clampSettleVelocity(initialVelocityPxPerSec),
+                )
             }
         }
 
         LaunchedEffect(selectedIndex, cellWidth, motion) {
             val from = previousIndex.intValue
-            val releaseOffset = if (pendingReleaseTarget == selected) pendingReleaseOffsetPx else null
+            val releaseApplies = pendingReleaseTarget == selected
+            val releaseOffset = if (releaseApplies) pendingReleaseOffsetPx else null
+            val releaseVelocity = if (releaseApplies) pendingReleaseVelocityPx else 0f
             pendingReleaseTarget = null
             pendingReleaseOffsetPx = null
+            pendingReleaseVelocityPx = 0f
             if (from != selectedIndex) {
                 previousIndex.intValue = selectedIndex
                 val startPx = releaseOffset ?: with(density) {
                     Oe3NavPillSpec.travel(cellWidth, from, selectedIndex).toPx()
                 }
-                settlePillTravel(startPx)
+                settlePillTravel(startPx, releaseVelocity)
             }
         }
 
@@ -335,9 +376,13 @@ fun Oe3NavBar(
                         val down = awaitFirstDown(requireUnconsumed = false)
                         pendingReleaseTarget = null
                         pendingReleaseOffsetPx = null
+                        pendingReleaseVelocityPx = 0f
                         var dragging = false
                         var lastCenterPx = selectedCenterPx
                         val touchSlop = viewConfiguration.touchSlop
+                        // Fresh per gesture: the release velocity belongs to
+                        // this scrub only (W2-04).
+                        val velocityTracker = VelocityTracker()
                         try {
                             while (true) {
                                 val event = awaitPointerEvent()
@@ -348,6 +393,8 @@ fun Oe3NavBar(
                                     if (dragging) {
                                         val snapFrom = dragOffsetPx ?: 0f
                                         dragOffsetPx = null
+                                        // A steal cancels the gesture: settle
+                                        // calmly, without the pointer's speed.
                                         scope.launch { settlePillTravel(snapFrom) }
                                     }
                                     break
@@ -355,6 +402,7 @@ fun Oe3NavBar(
                                 if (!change.pressed) {
                                     if (dragging) {
                                         change.consume()
+                                        val releaseVelocity = velocityTracker.calculateVelocity().x
                                         val targetIndex = ((lastCenterPx - navPaddingPx) / cellWidthPx)
                                             .toInt()
                                             .coerceIn(0, tabs.lastIndex)
@@ -363,12 +411,13 @@ fun Oe3NavBar(
                                         if (targetTab != tabs[selectedIndex]) {
                                             pendingReleaseTarget = targetTab
                                             pendingReleaseOffsetPx = remainingDelta
+                                            pendingReleaseVelocityPx = releaseVelocity
                                             dragOffsetPx = null
                                             onSelect(targetTab)
                                         } else {
                                             val snapFrom = dragOffsetPx ?: 0f
                                             dragOffsetPx = null
-                                            scope.launch { settlePillTravel(snapFrom) }
+                                            scope.launch { settlePillTravel(snapFrom, releaseVelocity) }
                                         }
                                     }
                                     break
@@ -384,6 +433,7 @@ fun Oe3NavBar(
                                 }
                                 if (dragging) {
                                     change.consume()
+                                    velocityTracker.addPosition(change.uptimeMillis, change.position)
                                     lastCenterPx = change.position.x.coerceIn(minCenterPx, maxCenterPx)
                                     dragOffsetPx = lastCenterPx - selectedCenterPx
                                 }
@@ -430,14 +480,31 @@ fun Oe3NavBar(
                                 role = Role.Tab,
                                 interactionSource = interaction,
                                 indication = LocalIndication.current,
-                                onClick = { onSelect(tab) },
+                                // W2-04: tapping the already-selected tab keeps the
+                                // selection passthrough and additionally raises the
+                                // reselect hook (W2-06 wires pages' scroll-to-top).
+                                // Drag scrubs consume the release, so a reselect
+                                // only ever fires from a true tap.
+                                onClick = {
+                                    if (tab == selected) {
+                                        onTabReselected?.invoke(tab)
+                                    }
+                                    onSelect(tab)
+                                },
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (isSelected) {
                             Box(
                                 modifier = Modifier
-                                    .graphicsLayer { translationX = dragOffsetPx ?: pillTravel.value }
+                                    .graphicsLayer {
+                                        // W2-04: the pill stretches horizontally in
+                                        // proportion to its cross-cell travel and
+                                        // relaxes back to 1.0 as the travel settles.
+                                        val travelPx = dragOffsetPx ?: pillTravel.value
+                                        translationX = travelPx
+                                        scaleX = Oe3NavPillSpec.stretchFor(travelPx, cellWidthPx, motion)
+                                    }
                                     // requiredWidth: the cell constrains width to its
                                     // slot, so plain width() would clamp away the 8dp
                                     // overhang. The bar's capsule clip keeps the
