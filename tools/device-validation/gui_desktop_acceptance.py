@@ -78,7 +78,10 @@ UNITS = (
     "orchestella-display-relay.service",
     "orchestella-audio-relay.service",
 )
-GUEST_USER = "orchestella"
+GUEST_IDENTITY_PREAMBLE = (
+    'QA_USER=$(cat /etc/orchestella/instance-user 2>/dev/null); '
+    'U=$(id -u -- "$QA_USER" 2>/dev/null); export QA_USER U; '
+)
 CONSUMER_SOCKET = "droidlayer-audio"
 GOOD_STATES = ("awaiting-frame", "ready")
 BAD_STATES = ("failed", "cancelled")
@@ -109,7 +112,8 @@ STATUS_KEYS = (
     "audio_relay", "audio_relay_reason",
 )
 COMPOSITOR_EVIDENCE_KEYS = ("guest_uid", "wayland_display", "audio_relay_substate",
-                            "audio_relay_nrestarts", "pulseaudio_status")
+                            "audio_relay_nrestarts", "audio_relay_active",
+                            "audio_chardev", "pulseaudio_status")
 # The wayvnc RFB frame-diversity probe runs as a fixed python3 payload over the
 # guest console; it counts bytes served on the wayvnc socket (no pixels, no
 # quality judgment) and prints one bounded result line.
@@ -508,11 +512,12 @@ class TerminalProbe:
 def compose_compositor_probe():
     """Fixed guest checks: labwc process, wayland socket, wayvnc socket, units.
 
-    DW-03 manager split: the compositor and wayvnc are persistent user-manager
-    units (linger), probed with XDG_RUNTIME_DIR=/run/user/$U systemctl --user
-    (same environment shape as profilectl.user_systemctl); the display/audio
-    relays stay on the system manager, like their systemctl show evidence.
+    Run the compositor and wayvnc probes as the desktop user against its
+    persistent manager. The relays belong to the system manager.
     """
+    user_systemctl = ('runuser --user "$QA_USER" -- env '
+                      'XDG_RUNTIME_DIR="/run/user/$U" '
+                      'DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$U/bus" systemctl --user')
     checks = [
         ("labwc_running", "pgrep -x labwc >/dev/null"),
         ("labwc_identity", "test \"$(cat /proc/$(pgrep -n -x labwc)/comm 2>/dev/null)\" = labwc"),
@@ -521,13 +526,9 @@ def compose_compositor_probe():
                            "/run/user/$U/orchestella/desktop-clients.json); "
                            "test -n \"$d\" && test -S /run/user/$U/$d"),
         ("wayvnc_socket", "test -S /run/user/$U/orchestella/wayvnc.sock"),
-        ("unit_compositor",
-         "XDG_RUNTIME_DIR=/run/user/$U systemctl --user is-active --quiet " + UNITS[0]),
-        ("unit_wayvnc",
-         "XDG_RUNTIME_DIR=/run/user/$U systemctl --user is-active --quiet " + UNITS[1]),
+        ("unit_compositor", user_systemctl + " is-active --quiet " + UNITS[0]),
+        ("unit_wayvnc", user_systemctl + " is-active --quiet " + UNITS[1]),
         ("unit_display_relay", "systemctl is-active --quiet " + UNITS[2]),
-        ("unit_audio_relay_active", "systemctl is-active --quiet " + UNITS[3]),
-        ("audio_chardev", "test -e /dev/virtio-ports/orchestella.audio"),
         ("pulseaudio_installed",
          "dpkg-query -W -f='${Status}' pulseaudio 2>/dev/null | grep -qx 'install ok installed'"),
     ]
@@ -540,11 +541,15 @@ def compose_compositor_probe():
         + UNITS[3] + " 2>/dev/null)\"",
         "printf 'QA_EVIDENCE audio_relay_nrestarts=%s\\n' \"$(systemctl show -p NRestarts --value "
         + UNITS[3] + " 2>/dev/null)\"",
+        "if systemctl is-active --quiet " + UNITS[3] + " 2>/dev/null; then "
+        "printf 'QA_EVIDENCE audio_relay_active=yes\\n'; else printf 'QA_EVIDENCE audio_relay_active=no\\n'; fi",
+        "if test -e /dev/virtio-ports/orchestella.audio; then "
+        "printf 'QA_EVIDENCE audio_chardev=present\\n'; else printf 'QA_EVIDENCE audio_chardev=absent\\n'; fi",
         "printf 'QA_EVIDENCE pulseaudio_status=%s\\n' \"$(dpkg-query -W -f='${Status}' pulseaudio 2>/dev/null)\"",
     ]
     command, check_names = guest_probe_command(checks, evidences, "G08COMPOSITOR")
     # Fixed preamble: resolve the guest uid once, then run the probe body.
-    return "U=$(id -u " + GUEST_USER + " 2>/dev/null); " + command, check_names
+    return GUEST_IDENTITY_PREAMBLE + command, check_names
 
 
 def run_compositor_probe(probe, deadline):
@@ -561,7 +566,7 @@ def run_display_probe(probe, deadline, seconds=3.0):
                 + shell_quote(str(seconds)) + " 2>/dev/null); "
                 "printf 'QA_EVIDENCE %s\\n' \"$out\""]
     command, _ = guest_probe_command([], evidence, "G08DISPLAY")
-    command = "U=$(id -u " + GUEST_USER + " 2>/dev/null); " + command
+    command = GUEST_IDENTITY_PREAMBLE + command
     result = probe.run(command, "G08DISPLAY", deadline)
     bytes_seen = None
     for line in result["evidence"]:
@@ -1120,7 +1125,9 @@ def check(args):
                 sections["gpu"] = {"status": "blocked", "reason": str(error)}
                 note_missing("gpu-logcat", str(error),
                              "Rerun with the instance freshly launched so the buffer holds the line.")
-            if (args.gpu_benchmark and sections["gpu"]["status"] == "pass" and hello["drivable"]):
+            if args.gpu_benchmark and sections["gpu"]["reason"] == "GPU_EXPECTED_2D_FALLBACK":
+                sections["gpu"]["benchmark"] = {"status": "skipped", "reason": "GPU_EXPECTED_2D_FALLBACK"}
+            if args.gpu_benchmark and sections["gpu"]["reason"] == "GPU_ACTIVE" and hello["drivable"]:
                 probe = terminal_probe_for(adb, terminal_name, deadline, forwards)
                 if probe is not None:
                     try:

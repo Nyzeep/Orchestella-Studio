@@ -290,6 +290,16 @@ class Controller:
 
     def public(self, state=None):
         result = dict(state or self.state())
+        if self.profile == "desktop-labwc" and result["state"] in ("awaiting-frame", "ready"):
+            # Observe PulseAudio on demand. Its startup and retries are owned by
+            # systemd, and this passive check never waits for the endpoint.
+            if result["audio_relay_reason"] in ("none", "audio-endpoint-timeout"):
+                try:
+                    listening = self.listener_present("127.0.0.1", 9104)
+                except (Failure, OSError):
+                    listening = False
+                result["audio_relay"] = "verified" if listening else "unverified"
+                result["audio_relay_reason"] = "none" if listening else "audio-endpoint-unavailable"
         for key in ("pid", "process_identity", "operation", "config_sha256"):
             result.pop(key, None)
         verified = (result["state"] in ("awaiting-frame", "ready") and result.get("generation") == result.get("capture_generation") and result["capture"] == "verified" and result["protocols"] == "verified")
@@ -1073,22 +1083,6 @@ class Controller:
             time.sleep(0.1)
         raise Failure("display-socket-timeout")
 
-    def wait_audio_endpoint(self):
-        # DW-08: bounded, idempotent (re-entrant) observation of the PulseAudio
-        # simple-protocol TCP endpoint 127.0.0.1:9104, the audio-relay data plane.
-        # Passive /proc/net/tcp read, like the code-server relay probe: no
-        # connection is consumed from the fixed simple-protocol listener. This is
-        # audio-side status reporting only: it never raises for audio trouble and
-        # never gates awaiting-frame or ready.
-        deadline = time.monotonic() + (self.fixture.get("audio_endpoint_seconds", 2) if self.testing else 10)
-        while True:
-            self.check_cancel()
-            if self.listener_present("127.0.0.1", 9104):
-                return True
-            if time.monotonic() >= deadline:
-                return False
-            time.sleep(0.1)
-
     def display_transport(self):
         file = self.path("/proc/cmdline")
         words = file.read_text().split() if file.is_file() and file.stat().st_size < 4096 else []
@@ -1232,37 +1226,12 @@ class Controller:
             self.wait_socket("/run/user/%d/orchestella/wayvnc.sock" % uid, UNITS[self.profile][1])
             self.prepare_display_transport()
             self.unit_ctl(["start", UNITS[self.profile][2]], timeout=20, reason="display-relay-start-failed")
-            # G-05/DW-08: start the audio relay best-effort (unit Restart=always keeps
-            # probing the guest PulseAudio endpoint). required=False only exempts a
-            # non-zero exit, so the bounded start timeout is isolated here: audio
-            # trouble is recorded in the audio_relay/audio_relay_reason state fields
-            # and never interrupts start_profile or holds the readiness gate below
-            # (the audio relay is deliberately NOT in that gate). Cancellation still
-            # propagates; only the isolated audio failure is absorbed.
-            self.save(phase="audio-relay", audio_relay="unverified", audio_relay_reason="none")
-            audio_timeout = self.fixture.get("audio_start_seconds", 20) if self.testing else 20
-            audio_reason = "none"
-            started = False
-            try:
-                rc, _ = self.unit_ctl(["start", UNITS[self.profile][3]], timeout=audio_timeout, required=False,
-                                      reason="audio-relay-start-failed")
-                started = not rc
-            except Failure as error:
-                if error.reason == "cancelled":
-                    raise
-                audio_reason = error.reason
-            if started and self.wait_audio_endpoint():
-                self.save(audio_relay="verified", audio_relay_reason="none")
-            else:
-                if started and audio_reason == "none":
-                    audio_reason = "audio-endpoint-timeout"
-                elif not started and audio_reason == "none":
-                    audio_reason = "audio-relay-start-failed"
-                self.save(audio_relay="unverified", audio_relay_reason=audio_reason)
             for unit in UNITS[self.profile][:3]:
                 self.unit_ctl(["is-active", "--quiet", unit], reason="service-not-active")
             self.check_cancel()
-            self.save(state="awaiting-frame", phase="host-frame-confirmation", reason="awaiting-host-frame")
+            self.save(state="awaiting-frame", phase="host-frame-confirmation", reason="awaiting-host-frame",
+                      audio_relay="unverified", audio_relay_reason="none")
+            self.queue_audio_relay()
         elif self.profile == "code-server":
             self.start_code()
         elif self.profile == "podman":
@@ -1271,6 +1240,25 @@ class Controller:
             self.as_user(["docker", "--version"], reason="docker-cli-unavailable")
             # Do not start a root daemon; the distribution's CLI package may also contain one.
             self.save(state="installed", phase="cli-verified", reason="daemon-unverified", docker_cli="verified", docker_daemon="unverified")
+
+    def queue_audio_relay(self):
+        # Publish video readiness before submitting the optional audio job. The
+        # start generation remains the owner while queueing so STOP can cancel it.
+        reason = "none"
+        timeout = self.fixture.get("audio_start_seconds", 2) if self.testing else 2
+        try:
+            self.unit_ctl(["start", "--no-block", UNITS[self.profile][3]], timeout=timeout,
+                          reason="audio-relay-start-failed")
+        except Cancelled:
+            raise
+        except (Failure, OSError) as error:
+            reason = error.reason if isinstance(error, Failure) else "audio-relay-start-failed"
+        with self.mutex():
+            self.check_cancel()
+            state = self.state()
+            if reason != "none" and state["generation"] == self.job and state["state"] in ("awaiting-frame", "ready"):
+                state.update(audio_relay_reason=reason, updated_at=int(time.time()))
+                atomic_json(self.directory / (self.profile + ".json"), state)
 
     def start_podman(self):
         uid, gid = self.user()
@@ -1537,6 +1525,11 @@ class Controller:
                     self.path("/run/user/%d/orchestella/code-server-relay.json" % uid).unlink(missing_ok=True)
                     state = self.save(guest_relay=False, guest_relay_address="none", guest_relay_port=0,
                                       reason="guest-relay-unavailable" if state["state"] == "ready" else state["reason"])
+            if self.profile == "desktop-labwc":
+                # See the audio result and start-job owner from the same
+                # publication, even if the worker settled during video probes.
+                with self.mutex():
+                    return self.public(), 0
             return self.public(state), 0
         if action == "probe":
             metadata = self.distro()

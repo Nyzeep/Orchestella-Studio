@@ -50,7 +50,17 @@ if target in ("held-stdout-timeout", "held-stdout-cancel", "status-io"):
     elapsed = time.monotonic() - started
     pid = int((root / "stdout-descendant.pid").read_text())
     statfile = Path("/proc", str(pid), "stat")
-    alive = statfile.exists() and statfile.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+    # SIGKILL delivery and the transition visible in /proc are asynchronous.
+    # Keep the controller's own elapsed-time assertion separate.
+    deadline = time.monotonic() + 1
+    while True:
+        try:
+            alive = statfile.read_text().rsplit(")", 1)[1].split()[0] not in ("Z", "X")
+        except FileNotFoundError:
+            alive = False
+        if not alive or time.monotonic() >= deadline:
+            break
+        time.sleep(0.01)
     result = {"reason": reason, "elapsed": elapsed, "descendant_alive": alive,
               "thread_delta": len(threading.enumerate()) - before_threads}
     print(json.dumps(result))

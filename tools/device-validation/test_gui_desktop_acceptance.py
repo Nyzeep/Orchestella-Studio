@@ -7,7 +7,10 @@ protocol behavior and the no-device fail-fast path. No real adb, device or
 guest is involved.
 """
 import json
+import os
+from pathlib import Path
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -562,20 +565,47 @@ class CompositorProbeCompositionTest(unittest.TestCase):
         # the profilectl user_systemctl environment shape.
         self.assertIn("unit_compositor", names)
         self.assertIn("unit_wayvnc", names)
-        self.assertIn("XDG_RUNTIME_DIR=/run/user/$U systemctl --user is-active --quiet "
-                      + g08.UNITS[0], command)
-        self.assertIn("XDG_RUNTIME_DIR=/run/user/$U systemctl --user is-active --quiet "
-                      + g08.UNITS[1], command)
+        self.assertIn('runuser --user "$QA_USER" -- env XDG_RUNTIME_DIR="/run/user/$U"', command)
+        self.assertIn('DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$U/bus"', command)
+        self.assertIn("systemctl --user is-active --quiet " + g08.UNITS[0], command)
+        self.assertIn("systemctl --user is-active --quiet " + g08.UNITS[1], command)
         # The relays stay on the system manager: plain systemctl, no --user.
         self.assertIn("qc unit_display_relay 'systemctl is-active --quiet "
                       + g08.UNITS[2] + "'", command)
-        self.assertIn("qc unit_audio_relay_active 'systemctl is-active --quiet "
-                      + g08.UNITS[3] + "'", command)
+        self.assertIn("if systemctl is-active --quiet " + g08.UNITS[3], command)
         self.assertNotIn("systemctl --user is-active --quiet " + g08.UNITS[2], command)
         self.assertNotIn("systemctl --user is-active --quiet " + g08.UNITS[3], command)
         # The audio relay systemctl show evidence stays on the system manager too.
         self.assertIn("systemctl show -p SubState --value " + g08.UNITS[3], command)
         self.assertIn("systemctl show -p NRestarts --value " + g08.UNITS[3], command)
+
+    @unittest.skipUnless(os.name == "posix", "requires a POSIX guest shell fixture")
+    def test_guest_child_shell_inherits_uid_and_targets_the_user_bus(self):
+        command, _ = g08.compose_compositor_probe()
+        with tempfile.TemporaryDirectory() as directory:
+            for name, script in {
+                "cat": (
+                    'if [ "$1" = /etc/orchestella/instance-user ]; then echo testdesk; '
+                    'else /bin/cat "$@"; fi'
+                ),
+                "id": 'test "$3" = testdesk && echo 10123',
+                "runuser": (
+                    'test "$1 $2 $3 $4" = "--user testdesk -- env" && '
+                    'test "$5" = "XDG_RUNTIME_DIR=/run/user/10123" && '
+                    'test "$6" = "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/10123/bus" && '
+                    'test "$7 $8" = "systemctl --user"'
+                ),
+            }.items():
+                path = Path(directory) / name
+                path.write_text("#!/bin/sh\n" + script + "\n", encoding="utf-8")
+                path.chmod(0o700)
+            env = {**os.environ, "PATH": directory + os.pathsep + os.environ["PATH"]}
+            env.pop("U", None)
+            env.pop("QA_USER", None)
+            result = subprocess.run(["sh", "-c", command], capture_output=True,
+                                    text=True, timeout=10, env=env)
+        self.assertIn("QA_CHECK_unit_compositor=0", result.stdout)
+        self.assertIn("QA_CHECK_unit_wayvnc=0", result.stdout)
 
 
 class MissingChecklistTest(unittest.TestCase):
@@ -594,9 +624,9 @@ class MissingChecklistTest(unittest.TestCase):
         self.assertIn("pulseaudio_installed", names)
         self.assertIn("dpkg-query", command)
         self.assertIn("pulseaudio", command)
-        self.assertIn("unit_audio_relay_active", names)
         self.assertIn("wayland_socket", names)
-        self.assertIn("audio_chardev", names)
+        self.assertNotIn("unit_audio_relay_active", names)
+        self.assertNotIn("audio_chardev", names)
 
 
 class FailFastTest(unittest.TestCase):
@@ -679,8 +709,7 @@ class EndToEndDriveTest(unittest.TestCase):
         # package is a regular expectation failure (missing item), not a gap.
         compositor_checks = (
             "labwc_running", "labwc_identity", "display_marker", "wayland_socket",
-            "wayvnc_socket", "unit_compositor", "unit_wayvnc", "unit_display_relay",
-            "unit_audio_relay_active", "audio_chardev")
+            "wayvnc_socket", "unit_compositor", "unit_wayvnc", "unit_display_relay")
         compositor = (
             "\nQA_BEGIN_G08COMPOSITOR\n"
             + "".join("QA_CHECK_%s=0\n" % name for name in compositor_checks)
@@ -736,20 +765,22 @@ class EndToEndDriveTest(unittest.TestCase):
             self.assertIn("device_alias", raw)
         self.assertTrue(any(label.startswith("remove-forward") for label in self.adb.history))
 
-    def test_full_drive_run_with_pulseaudio_installed_passes(self):
+    def test_full_drive_run_passes_video_when_audio_runtime_is_inactive(self):
         # DW-04 regression: with pulseaudio installed the compositor probe is a
         # plain expectation and the whole drive can exit 0 (no missing items).
         compositor_checks = (
             "labwc_running", "labwc_identity", "display_marker", "wayland_socket",
             "wayvnc_socket", "unit_compositor", "unit_wayvnc", "unit_display_relay",
-            "unit_audio_relay_active", "audio_chardev", "pulseaudio_installed")
+            "pulseaudio_installed")
         compositor = (
             "\nQA_BEGIN_G08COMPOSITOR\n"
             + "".join("QA_CHECK_%s=0\n" % name for name in compositor_checks)
             + "QA_EVIDENCE guest_uid=10123\n"
             "QA_EVIDENCE wayland_display=wayland-0\n"
-            "QA_EVIDENCE audio_relay_substate=running\n"
+            "QA_EVIDENCE audio_relay_substate=dead\n"
             "QA_EVIDENCE audio_relay_nrestarts=0\n"
+            "QA_EVIDENCE audio_relay_active=no\n"
+            "QA_EVIDENCE audio_chardev=absent\n"
             "QA_EVIDENCE pulseaudio_status=install ok installed\n"
             "QA_END_G08COMPOSITOR=0\n")
         display = ("\nQA_BEGIN_G08DISPLAY\n"
@@ -774,9 +805,27 @@ class EndToEndDriveTest(unittest.TestCase):
             self.assertEqual("pass", document["sections"]["compositor"]["status"])
             self.assertEqual("COMPOSITOR_PROBE_OK", document["sections"]["compositor"]["reason"])
             self.assertEqual([], document["sections"]["compositor"]["failed_checks"])
+            self.assertEqual("no", document["sections"]["compositor"]["evidence"]["audio_relay_active"])
+            self.assertEqual("absent", document["sections"]["compositor"]["evidence"]["audio_chardev"])
             self.assertEqual([], [item for item in document["missing"]
                                   if item["id"].startswith("pulseaudio")])
             self.assertEqual([], document["missing"])
+
+    def test_expected_2d_fallback_skips_the_3d_benchmark(self):
+        self.add_control([])
+        self.adb.logcat_qemu = (
+            "I OrchestellaQemu: gpu-acceleration state=FALLBACK reason=QEMU_DEVICE_MODEL_UNSUPPORTED "
+            "code=0 device=virtio-gpu-device quotaMb=1024 robustness=false\n"
+        )
+        with tempfile.TemporaryDirectory() as root, mock.patch.object(g08, "run_guest_benchmark") as benchmark:
+            args = base_args(output_root=root, output="evidence/gpu.json", sections="gpu", gpu_benchmark=True)
+            self.assertEqual(0, g08.check(args))
+            document = json.loads(g08.output_path(root, "evidence/gpu.json").read_text(encoding="utf-8"))
+            gpu = document["sections"]["gpu"]
+            self.assertEqual("pass", gpu["status"])
+            self.assertEqual("GPU_EXPECTED_2D_FALLBACK", gpu["reason"])
+            self.assertEqual("skipped", gpu["benchmark"]["status"])
+            benchmark.assert_not_called()
 
     def test_occupied_channel_blocks_guest_sections(self):
         # A control socket that never answers models the app-owned chardev.

@@ -146,11 +146,11 @@ class ProfileContracts(unittest.TestCase):
         value.update(changes)
         path.write_text(json.dumps(value), encoding="utf-8")
 
-    def wait(self, profile, expected):
+    def wait(self, profile, expected, *, require_inactive=False):
         deadline = time.monotonic() + 45
         while time.monotonic() < deadline:
             rc, value = self.ctl("status", profile)
-            if value["state"] in expected:
+            if value["state"] in expected and (not require_inactive or not value["job_active"]):
                 return value
             time.sleep(0.04)
         self.fail("background job did not finish: " + repr(value))
@@ -642,7 +642,7 @@ class ProfileContracts(unittest.TestCase):
         self.wait("desktop-labwc", {"installed"})
         rc, value = self.ctl("start", "desktop-labwc")
         self.assertEqual(0, rc)
-        value = self.wait("desktop-labwc", {"awaiting-frame", "failed"})
+        value = self.wait("desktop-labwc", {"awaiting-frame", "failed"}, require_inactive=True)
         self.assertEqual("awaiting-frame", value["state"])
         self.assertEqual("verified", value["capture"])
         self.assertEqual("verified", value["protocols"])
@@ -655,16 +655,12 @@ class ProfileContracts(unittest.TestCase):
         self.assertEqual("none", value["audio_relay_reason"])
 
     def test_audio_relay_timeout_is_isolated_and_frame_confirm_only_needs_display_chain(self):
-        # DW-08: the audio relay start timeout (required=False never exempted the
-        # bounded run deadline) and a restart-looping relay whose 127.0.0.1:9104
-        # endpoint never appears are absorbed into the audio state fields; the
-        # desktop still reaches awaiting-frame and confirm-frame commits ready by
-        # probing only UNITS[:3]. stale-frame and the cancel-file refusal keep
-        # their semantics.
+        # Simulate a stuck submission to systemd. Verify that the video can
+        # confirm its frame while the audio submission is still in flight.
         self.ctl("install", "desktop-labwc")
         self.wait("desktop-labwc", {"installed"})
-        self.fixture(audio_start_seconds=1, audio_endpoint_seconds=1,
-                     delay_on="start orchestella-audio-relay.service", delay_seconds=4,
+        self.fixture(audio_start_seconds=8,
+                     delay_on="start --no-block orchestella-audio-relay.service", delay_seconds=12,
                      no_audio_endpoint=True)
         rc, value = self.ctl("start", "desktop-labwc")
         self.assertEqual(0, rc)
@@ -675,11 +671,7 @@ class ProfileContracts(unittest.TestCase):
         self.assertEqual("verified", value["capture"])
         self.assertEqual("verified", value["protocols"])
         self.assertEqual("unverified", value["audio_relay"])
-        self.assertEqual("command-timeout", value["audio_relay_reason"])
-        commands = [json.loads(line) for line in (self.root / "commands.jsonl").read_text().splitlines()]
-        audio_starts = [call for call in commands if call[0] == "systemctl" and call[1:2] == ["start"]
-                        and call[-1] == "orchestella-audio-relay.service"]
-        self.assertEqual(1, len(audio_starts))
+        self.assertEqual("audio-endpoint-unavailable", value["audio_relay_reason"])
         # Negative: a stale generation is still refused with stale-frame.
         rc, rejected = self.ctl("confirm-frame", "desktop-labwc", "0" * 32)
         self.assertNotEqual(0, rc)
@@ -687,8 +679,15 @@ class ProfileContracts(unittest.TestCase):
         # Confirm-frame probes only the display chain: the broken audio relay
         # cannot hold the commit hostage.
         rc, ready = self.ctl("confirm-frame", "desktop-labwc", generation)
-        self.assertEqual(0, rc)
+        self.assertEqual(0, rc, ready.get("reason"))
         self.assertEqual("ready", ready["state"])
+        self.assertTrue(ready["job_active"], "the frame must confirm before audio submission returns")
+        self.assertEqual("audio-endpoint-unavailable", ready["audio_relay_reason"])
+        settled = self.wait("desktop-labwc", {"ready", "failed"}, require_inactive=True)
+        self.assertEqual("ready", settled["state"])
+        self.assertEqual("command-timeout", settled["audio_relay_reason"])
+        commands = [json.loads(line) for line in (self.root / "commands.jsonl").read_text().splitlines()]
+        self.assertEqual(1, commands.count(["systemctl", "start", "--no-block", "orchestella-audio-relay.service"]))
         # Negative: a cancel file against the published job owner still refuses
         # the commit while the on-disk state stays untouched.
         features = self.root / "var/lib/orchestella/features"
