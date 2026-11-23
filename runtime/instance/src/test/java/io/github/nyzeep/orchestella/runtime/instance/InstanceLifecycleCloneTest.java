@@ -1,6 +1,8 @@
 package io.github.nyzeep.orchestella.runtime.instance;
 
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.orchestella.runtime.contract.StorageContract;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -31,6 +33,7 @@ public final class InstanceLifecycleCloneTest {
         rejectsCloningOfProvisioningInstance(testDirectory);
         clonesWithCustomTargetRootVolume(testDirectory);
         clonedInstanceHasNewCredentialsAndRetainsHardwareConfig(testDirectory);
+        clonedInstanceRetainsExecutionIdentity(testDirectory);
 
         System.out.println("INSTANCE_LIFECYCLE_CLONE_TEST_OK");
     }
@@ -177,6 +180,31 @@ public final class InstanceLifecycleCloneTest {
         assertEquals(6144, cloned.hardwareConfig().ramMegabytes(), "ramMegabytes");
         assertEquals(32L * 1024 * 1024 * 1024, cloned.hardwareConfig().diskCapacityBytes(), "diskCapacityBytes");
         assertFalse(cloned.hardwareConfig().gpuAccelerationEnabled(), "gpuAccelerationEnabled");
+    }
+
+    private static void clonedInstanceRetainsExecutionIdentity(Path testDirectory) throws Exception {
+        Path storeDir = testDirectory.resolve("clone-exec-identity-store");
+        Files.createDirectories(storeDir);
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(storeDir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, CLOCK);
+
+        Path rootVolume = testDirectory.resolve("source-uml.raw");
+        writeText(rootVolume, "uml-disk-content");
+
+        ExecutionPolicyContract.InstanceExecutionIdentity umlIdentity =
+                ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        StorageContract.RootVolumeFormat.RAW_SPARSE);
+        InstanceLifecycle.Instance source = controller.create(
+                new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
+                rootVolume,
+                VmHardwareConfig.defaultConfig(),
+                InstanceUserConfig.defaultRoot(),
+                umlIdentity);
+
+        InstanceLifecycle.Instance cloned = controller.cloneInstance(source.id());
+        assertEquals(umlIdentity, cloned.executionIdentity(), "cloned instance retains execution identity");
+        assertEquals(umlIdentity, store.load(cloned.id()).executionIdentity(), "persisted clone retains execution identity");
     }
 
     private static void writeText(Path path, String text) throws IOException {

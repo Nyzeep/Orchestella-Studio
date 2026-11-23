@@ -257,6 +257,8 @@ android {
         // versionCode = MAJOR*10000 + MINOR*100 + PATCH (VERSIONING.md §2).
         versionCode = 603
         versionName = "0.6.3"
+        buildConfigField("String", "BUILD_CHANNEL", "\"$buildChannel\"")
+        buildConfigField("boolean", "IS_ISOLATED_QA_BUILD", (buildChannel == "qa").toString())
         buildConfigField("boolean", "DEVELOPMENT_PREVIEW", "true")
         buildConfigField("boolean", "ACCELERATOR_LANE_ENABLED", acceleratorLaneEnabled.toString())
         // UML payload routes (ACR passed 2026-11-12; gradle defaults stay off,

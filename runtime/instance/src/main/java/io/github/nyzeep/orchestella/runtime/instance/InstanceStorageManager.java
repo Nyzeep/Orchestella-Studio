@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.runtime.instance;
 
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.contract.StorageContract;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
@@ -86,7 +87,8 @@ public final class InstanceStorageManager {
                 instance.defaultUser(),
                 instance.hasSudo(),
                 instance.hardwareConfig(),
-                exportEvidence);
+                exportEvidence,
+                instance.executionIdentity());
     }
 
     /**
@@ -119,6 +121,13 @@ public final class InstanceStorageManager {
         Path volumePath = instance.rootVolume();
         if (!Files.isRegularFile(volumePath)) {
             throw new IOException("root volume file does not exist: " + volumePath);
+        }
+        ExecutionPolicyContract.PreflightVerdict formatConflict =
+                ExecutionPolicyContract.detectVolumeFormatConflict(
+                        volumePath, instance.executionIdentity().volumeFormat());
+        if (formatConflict != null) {
+            throw new IOException(
+                    "Refusing disk resize [" + formatConflict.code() + "]: " + formatConflict.detail());
         }
 
         long currentSizeBytes = Files.size(volumePath);
@@ -494,7 +503,16 @@ public final class InstanceStorageManager {
             }
 
             // Build and validate the full instance before touching the final path, so malformed
-            // metadata cannot leave a stray root volume behind.
+            // metadata or unrecognized/conflicting execution & volume formats cannot leave a stray
+            // root volume behind.
+            ExecutionPolicyContract.PreflightVerdict volumeConflict =
+                    ExecutionPolicyContract.detectVolumeFormatConflict(
+                            tempVolume, metadata.executionIdentity().volumeFormat());
+            if (volumeConflict != null) {
+                throw new IOException(
+                        "Archive root volume format conflict [" + volumeConflict.code() + "]: "
+                                + volumeConflict.detail());
+            }
             InstanceLifecycle.Instance instance =
                     restoredInstance(instanceId, targetRootVolume, metadata, clock);
 
@@ -680,6 +698,22 @@ public final class InstanceStorageManager {
                     unknownRuntime);
         }
 
+        ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity = metadata.executionIdentity();
+        if (executionIdentity.hasUnknownStrategy()) {
+            throw new IOException(
+                    "Unsupported execution strategy in archive metadata ["
+                            + ExecutionPolicyContract.PreflightCode.UNKNOWN_EXECUTION_STRATEGY
+                            + "]: "
+                            + executionIdentity.strategy().rawValue());
+        }
+        if (executionIdentity.hasUnrecognizedVolumeFormat()) {
+            throw new IOException(
+                    "Unrecognized root volume format in archive metadata ["
+                            + ExecutionPolicyContract.PreflightCode.UNRECOGNIZED_VOLUME_FORMAT
+                            + "]: "
+                            + executionIdentity.volumeFormat().rawValue());
+        }
+
         try {
             InstanceLifecycle.ProvisioningEvidence provisioningEvidence = null;
             StorageContract.ProvisioningEvidenceMetadata importedEvidence = metadata.provisioningEvidence();
@@ -702,6 +736,7 @@ public final class InstanceStorageManager {
                     metadata.defaultUser(),
                     metadata.hasSudo(),
                     provisioningEvidence,
+                    executionIdentity,
                     clock);
         } catch (IllegalArgumentException invalidMetadata) {
             throw new IOException(

@@ -1,0 +1,23 @@
+{
+  "instanceId": "00000000-0000-4000-8000-000000000011",
+  "distroId": "alpine",
+  "distroVersion": "3.24.1",
+  "runtimeClass": "FULL_LINUX",
+  "state": "STOPPED",
+  "diskSizeBytes": 1048576,
+  "sha256RootVolume": "0000000000000000000000000000000000000000000000000000000000000000",
+  "createdAtMillis": 1700000000000,
+  "updatedAtMillis": 1700000001000,
+  "exportedAtMillis": 1700000002000,
+  "hostname": "legacy-v1-host",
+  "defaultUser": "legacyuser",
+  "hasSudo": false,
+  "hardwareCpuCores": 2,
+  "hardwareRamMegabytes": 2048,
+  "hardwareDiskCapacityBytes": 2147483648,
+  "hardwareGpuAccelerationEnabled": false,
+  "hardwareExtraKernelArguments": null,
+  "provisioningMarkerVersion": 1,
+  "provisioningRootfsSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "provisioningRecordedAtMillis": 1700000001500
+}

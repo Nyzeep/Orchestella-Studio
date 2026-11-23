@@ -15,6 +15,7 @@ public final class CapabilityProjectionTest {
         projectionRefusesSoftwareHardwareAcceleration();
         badgesNameTheRealTransport();
         tableDrivenLauncherShapes();
+        userModeKernelProjectsVerifiedProfileIntersection();
         System.out.println("CAPABILITY_PROJECTION_TEST_OK qemu=1 avf=1 rfb=1 alias=1 absent=1 table=1");
     }
 
@@ -194,6 +195,43 @@ public final class CapabilityProjectionTest {
                         .build());
         assertTrue(avf.graphicsBadge().contains("RFB"), "AVF badge names RFB");
         assertFalse(avf.graphicsBadge().contains("Wayland"), "AVF badge never says Wayland");
+    }
+
+    private static void userModeKernelProjectsVerifiedProfileIntersection() {
+        SessionCapabilities descriptor = SessionCapabilities.builder(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL)
+                .ownership(SessionCapabilities.Ownership.RUNTIME_OWNED)
+                .terminal(true)
+                .bridge(true)
+                .display(SessionCapabilities.DisplayTransport.RFB)
+                .sharedDirectory(true)
+                .build();
+
+        FullLinuxContract.CapabilityMatrix defaultProjection =
+                FullLinuxContract.CapabilityMatrix.from(descriptor);
+        assertEquals(FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                defaultProjection.executionStrategy(), "default UML projection strategy");
+        assertTrue(defaultProjection.capabilities().isEmpty(),
+                "unverified UML capabilities stay disabled by default");
+
+        SessionCapabilities partialDescriptor = SessionCapabilities.builder(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL)
+                .terminal(true)
+                .bridge(false)
+                .display(SessionCapabilities.DisplayTransport.RFB)
+                .build();
+        FullLinuxContract.CapabilityMatrix intersected = FullLinuxContract.CapabilityMatrix.from(
+                partialDescriptor,
+                java.util.EnumSet.of(
+                        FullLinuxContract.Capability.TERMINAL,
+                        FullLinuxContract.Capability.BRIDGE_HANDSHAKE,
+                        FullLinuxContract.Capability.GRAPHICS_RFB));
+        assertTrue(intersected.supports(FullLinuxContract.Capability.TERMINAL),
+                "verified and assembled terminal is exposed");
+        assertFalse(intersected.supports(FullLinuxContract.Capability.BRIDGE_HANDSHAKE),
+                "unassembled bridge stays off even if verified");
+        assertFalse(intersected.supports(FullLinuxContract.Capability.GRAPHICS_RFB),
+                "disallowed UML graphics never enters capability matrix");
     }
 
     private static void assertTrue(boolean condition, String description) {

@@ -1,11 +1,14 @@
 package io.github.nyzeep.orchestella
 
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorFactProvider
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.CompileBackend
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.PvmCompilerManifest
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneClock
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneEventSink
-import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorFactProvider
-import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.PvmCompilerManifest
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -45,7 +48,7 @@ import java.util.function.Supplier
  * (watcher exit, watcher exception, launch failure). A gate-off dispatch
  * returns a null coordinator and never touches the face lane at all.
  */
-class InstanceLaunchCoordinator(
+class InstanceLaunchCoordinator @JvmOverloads constructor(
     private val store: InstanceLifecycle.FileStore,
     private val settings: LaunchSettings,
     private val foreground: ForegroundServiceHandle,
@@ -67,6 +70,9 @@ class InstanceLaunchCoordinator(
     private val clock: Clock,
     private val orphanReconciler: Runnable,
     private val umlFaceLane: UmlFaceLane,
+    private val isolatedQaEnabled: BooleanSupplier = BooleanSupplier { false },
+    private val standaloneUmlLaunch: InstanceStrategyLauncher.UserModeKernelLaunch? = null,
+    private val launchDiagnosticSink: LaunchDiagnosticSink = LaunchDiagnosticSink { },
 ) {
 
     /** Settings values the orchestration consumes (SettingsManager handle). */
@@ -185,6 +191,11 @@ class InstanceLaunchCoordinator(
         fun current(): String
     }
 
+    /** Per-launch ephemeral policy diagnostic observer; never persisted into instance metadata. */
+    fun interface LaunchDiagnosticSink {
+        fun onDiagnostic(diagnostic: ExecutionPolicyContract.LaunchDiagnostic)
+    }
+
     /** Fixed terminal states of one coordinated launch attempt. */
     sealed interface LaunchOutcome {
         /** A live session already owns the instance; the UI was pointed at it. */
@@ -194,10 +205,11 @@ class InstanceLaunchCoordinator(
         object Busy : LaunchOutcome
 
         /** Dispatch finished, watcher armed, success UI posted. */
-        data class Launched(
+        data class Launched @JvmOverloads constructor(
             val navigation: LaunchNavigation,
             val hardwareAccelerated: Boolean,
             val degradationReason: String?,
+            val capabilityMatrix: FullLinuxContract.CapabilityMatrix? = null,
         ) : LaunchOutcome
 
         /** Launch failed; cleanup, metadata and failure UI were handled. */
@@ -229,7 +241,36 @@ class InstanceLaunchCoordinator(
         var launchGeneration: String? = null
         var acceleratorCoordinator: DualLaneCoordinator? = null
         try {
-            DistroResourceRequirements.requireBootRam(instance.distro().id(), instance.hardwareConfig().ramMegabytes())
+            val availableStrategies = java.util.EnumSet.of(
+                FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
+                FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION,
+            ).apply {
+                if (isolatedQaEnabled.asBoolean && standaloneUmlLaunch != null) {
+                    add(FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL)
+                }
+            }
+            val preflight = ExecutionPolicyContract.evaluateLaunch(
+                instance.executionIdentity(),
+                instance.rootVolume(),
+                availableStrategies,
+                clock.millis(),
+            )
+            launchDiagnosticSink.onDiagnostic(preflight)
+            if (preflight.preflightVerdict().isRefused) {
+                throw ExecutionPolicyContract.ExecutionPolicyRefusalException(preflight)
+            }
+            if (preflight.resolvedStrategy() == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL
+                && DistroCatalogRegistry.getInstance().get(instance.distro().id()) == null
+            ) {
+                require(instance.hardwareConfig().ramMegabytes() >= 512) {
+                    "insufficient RAM for uncatalogued distro under USER_MODE_KERNEL: ${instance.hardwareConfig().ramMegabytes()}MB < 512MB"
+                }
+            } else {
+                DistroResourceRequirements.requireBootRam(
+                    instance.distro().id(),
+                    instance.hardwareConfig().ramMegabytes(),
+                )
+            }
             launchGeneration = InstanceLaunchGuard.begin(instance.id())
             if (launchGeneration == null) {
                 ui.runOnUi {
@@ -241,7 +282,11 @@ class InstanceLaunchCoordinator(
             InstanceLaunchSequence.beforeLaunch(controller, instance)
             running = true
             val distroTitle = instance.distro().id().replaceFirstChar { it.uppercase() } + " " + instance.distro().version()
-            val badge = performanceBadge.current()
+            val badge = if (preflight.resolvedStrategy() == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL) {
+                FullLinuxContract.CapabilityMatrix.userModeKernelBaseline().performanceBadge()
+            } else {
+                performanceBadge.current()
+            }
             settings.setLastActiveInstanceId(instance.id())
             foreground.start(instance.id(), distroTitle, badge, settings.batteryPolicy(), launchGeneration)
             val rootfsFileName = DistroCatalogRegistry.getInstance().get(instance.distro().id())?.rootfsFileName()
@@ -290,20 +335,12 @@ class InstanceLaunchCoordinator(
             // accelerator components never assembles the lane. The ride-along
             // UML face consumes this exact same double-gate value below.
             val laneGate = settings.isAcceleratorLaneEnabled() && BuildConfig.ACCELERATOR_LANE_ENABLED
-            val dispatchResult = AcceleratorLaunchDispatcher.dispatch(
+            val dispatchResult = dispatchByExecutionPolicy(
+                instance,
                 laneGate,
                 parameters,
-                { params -> qemuLaunch.launch(params) },
-                AcceleratorLaunchDispatcher.AccelBackends(
-                    customVm = { customVmBackend.create(instance.id()) },
-                    pvmPayload = { pvmPayloadBackend.create(instance.id()) },
-                ),
-                factsSource.create(),
-                { ExecutionSessionRegistry.get(instance.id()) },
-                AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE,
-                laneClock,
-                laneEventSink,
-            ) { strategyLauncher.launch(parameters, preferAvf.asBoolean) }
+                strategyLauncher,
+            )
             acceleratorCoordinator = dispatchResult.coordinator
             if (dispatchResult.coordinator != null) {
                 diagnostics.logAcceleratorSnapshot(
@@ -329,7 +366,17 @@ class InstanceLaunchCoordinator(
                 armRideAlongUmlFace(instance.id(), laneGate, dispatchResult)
             }
             val outcome = dispatchResult.outcome
+            if (outcome.degradationReason != null) {
+                launchDiagnosticSink.onDiagnostic(
+                    preflight.withFallback(
+                        outcome.strategy,
+                        outcome.fallbackReason(),
+                        outcome.degradationDetail,
+                    ),
+                )
+            }
             val session = outcome.session
+            val capabilityMatrix = session.capabilityMatrix()
             val sessionGeneration = ExecutionSessionRegistry.generation(instance.id(), session)
                 ?: throw IOException("运行会话已变化")
             Thread {
@@ -371,8 +418,12 @@ class InstanceLaunchCoordinator(
                     }
                 }
             }.apply { isDaemon = true }.start()
-            foreground.start(instance.id(), distroTitle,
-                if (outcome.hardwareAccelerated()) "AVF 硬件虚拟化" else "QEMU 软件虚拟化",
+            val sessionBadge = when (outcome.strategy) {
+                FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL -> capabilityMatrix.performanceBadge()
+                FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION -> "AVF 硬件虚拟化"
+                FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION -> "QEMU 软件虚拟化"
+            }
+            foreground.start(instance.id(), distroTitle, sessionBadge,
                 settings.batteryPolicy(), sessionGeneration)
             ui.runOnUi {
                 if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)
@@ -384,7 +435,12 @@ class InstanceLaunchCoordinator(
                 }
                 ui.showLaunchSuccess(launchNavigation(instance))
             }
-            return LaunchOutcome.Launched(launchNavigation(instance), outcome.hardwareAccelerated(), outcome.degradationReason)
+            return LaunchOutcome.Launched(
+                launchNavigation(instance),
+                outcome.hardwareAccelerated(),
+                outcome.degradationReason,
+                capabilityMatrix,
+            )
         } catch (failure: Throwable) {
             val failedGeneration = launchGeneration
             // A failed launch may have left a runtime whose stop was not
@@ -466,6 +522,80 @@ class InstanceLaunchCoordinator(
             )
         }
     }
+
+    private fun dispatchByExecutionPolicy(
+        instance: InstanceLifecycle.Instance,
+        laneGate: Boolean,
+        parameters: InstanceStrategyLauncher.LaunchParameters,
+        strategyLauncher: InstanceStrategyLauncher,
+    ): AcceleratorLaunchDispatcher.Dispatch {
+        val strategyDecl = instance.executionIdentity().strategy()
+        if (strategyDecl.isAbsent) {
+            return dispatchWithAcceleratorGate(laneGate, instance.id(), parameters) {
+                strategyLauncher.launch(parameters, preferAvf.asBoolean)
+            }
+        }
+        return when (strategyDecl.strategy()) {
+            FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION ->
+                dispatchWithAcceleratorGate(laneGate, instance.id(), parameters) {
+                    strategyLauncher.launch(parameters, false)
+                }
+            FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION -> {
+                val session = avfLaunch.launch(parameters)
+                AcceleratorLaunchDispatcher.Dispatch(
+                    InstanceStrategyLauncher.Outcome(
+                        FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION,
+                        session,
+                        null,
+                        null,
+                    ),
+                    null,
+                    "",
+                    CompileBackend.NONE,
+                )
+            }
+            FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL -> {
+                val umlLauncher = checkNotNull(standaloneUmlLaunch) {
+                    "standalone UML launcher missing after preflight"
+                }
+                val session = umlLauncher.launch(parameters)
+                AcceleratorLaunchDispatcher.Dispatch(
+                    InstanceStrategyLauncher.Outcome(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        session,
+                        null,
+                        null,
+                    ),
+                    null,
+                    "",
+                    CompileBackend.NONE,
+                )
+            }
+            null -> throw IllegalStateException("unexpected null execution strategy")
+        }
+    }
+
+    private fun dispatchWithAcceleratorGate(
+        laneGate: Boolean,
+        instanceId: String,
+        parameters: InstanceStrategyLauncher.LaunchParameters,
+        legacyStrategyLaunch: () -> InstanceStrategyLauncher.Outcome,
+    ): AcceleratorLaunchDispatcher.Dispatch =
+        AcceleratorLaunchDispatcher.dispatch(
+            laneGate,
+            parameters,
+            { params -> qemuLaunch.launch(params) },
+            AcceleratorLaunchDispatcher.AccelBackends(
+                customVm = { customVmBackend.create(instanceId) },
+                pvmPayload = { pvmPayloadBackend.create(instanceId) },
+            ),
+            factsSource.create(),
+            { ExecutionSessionRegistry.get(instanceId) },
+            AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE,
+            laneClock,
+            laneEventSink,
+            legacyStrategyLaunch,
+        )
 
     private fun launchNavigation(instance: InstanceLifecycle.Instance) = LaunchNavigation(
         bridgeToken = instance.bridgeToken(),

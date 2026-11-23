@@ -10,6 +10,7 @@ public final class SessionCapabilitiesTest {
         recordsOnlyTheAssembledParts();
         hardwareStrategyRequiresHardwareAcceleration();
         softwareStrategyRefusesHardwareAcceleration();
+        userModeKernelRefusesHardwareAcceleration();
         waylandIsAChoiceNotAnUpgradeFromRfb();
         sharedDirectoryIsAToggle();
         System.out.println("SESSION_CAPABILITIES_TEST_OK parts=1 hardware=2 rfb=1 share=1");
@@ -59,6 +60,25 @@ public final class SessionCapabilitiesTest {
                         .hardwareAcceleration(true)
                         .build(),
                 "software virtualization cannot claim hardware acceleration");
+    }
+
+    private static void userModeKernelRefusesHardwareAcceleration() {
+        SessionCapabilities cliOnly = SessionCapabilities.builder(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL)
+                .terminal(true)
+                .bridge(true)
+                .build();
+        assertEquals(FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL, cliOnly.executionStrategy(),
+                "UML descriptor keeps strategy");
+        assertFalse(cliOnly.hardwareAcceleration(), "UML has no hardware acceleration");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> SessionCapabilities.builder(
+                                FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL)
+                        .terminal(true)
+                        .hardwareAcceleration(true)
+                        .build(),
+                "user-mode kernel cannot claim hardware acceleration");
     }
 
     private static void waylandIsAChoiceNotAnUpgradeFromRfb() {

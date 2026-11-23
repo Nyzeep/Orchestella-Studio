@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.runtime.instance;
 
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import java.nio.file.Path;
@@ -24,6 +25,8 @@ final class InstanceMetadataCodec {
     /** Metadata schema. Absent means legacy metadata written before schemaVersion existed. */
     private static final String KEY_METADATA_SCHEMA_VERSION = "metadata.schemaVersion";
     private static final String KEY_HARDWARE_LEGACY_DEFAULTS = "hardware.legacyDefaults";
+    private static final String KEY_EXECUTION_STRATEGY = "execution.strategy";
+    private static final String KEY_ROOT_VOLUME_FORMAT = "storage.rootVolumeFormat";
     private static final int CURRENT_METADATA_SCHEMA_VERSION = 1;
     /**
      * Keys this codec understands. Everything else is preserved verbatim on
@@ -55,6 +58,8 @@ final class InstanceMetadataCodec {
             "hardware.gpuAccelerationEnabled",
             "hardware.extraKernelArguments",
             KEY_HARDWARE_LEGACY_DEFAULTS,
+            KEY_EXECUTION_STRATEGY,
+            KEY_ROOT_VOLUME_FORMAT,
             KEY_PROVISIONING_MARKER_VERSION,
             KEY_PROVISIONING_ROOTFS_SHA256,
             KEY_PROVISIONING_RECORDED_AT);
@@ -119,6 +124,13 @@ final class InstanceMetadataCodec {
             properties.setProperty(
                     KEY_PROVISIONING_RECORDED_AT,
                     Long.toString(provisioningEvidence.recordedAtMillis()));
+        }
+        ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity = instance.executionIdentity();
+        if (!executionIdentity.strategy().isAbsent()) {
+            properties.setProperty(KEY_EXECUTION_STRATEGY, executionIdentity.strategy().rawValue());
+        }
+        if (!executionIdentity.volumeFormat().isAbsent()) {
+            properties.setProperty(KEY_ROOT_VOLUME_FORMAT, executionIdentity.volumeFormat().rawValue());
         }
         for (Map.Entry<String, String> entry : instance.unknownMetadata().entrySet()) {
             if (!KNOWN_METADATA_KEYS.contains(entry.getKey())) {
@@ -222,6 +234,16 @@ final class InstanceMetadataCodec {
                             Long.parseLong(recordedAtText));
                 }
             }
+            ExecutionPolicyContract.StrategyDeclaration strategyDeclaration =
+                    ExecutionPolicyContract.StrategyDeclaration.parse(
+                            properties.getProperty(KEY_EXECUTION_STRATEGY));
+            ExecutionPolicyContract.VolumeFormatDeclaration volumeFormatDeclaration =
+                    ExecutionPolicyContract.VolumeFormatDeclaration.parse(
+                            properties.getProperty(KEY_ROOT_VOLUME_FORMAT));
+            ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity =
+                    ExecutionPolicyContract.InstanceExecutionIdentity.of(
+                            strategyDeclaration, volumeFormatDeclaration);
+
             Map<String, String> unknownMetadata = new TreeMap<>();
             for (String name : properties.stringPropertyNames()) {
                 if (!KNOWN_METADATA_KEYS.contains(name)) {
@@ -245,6 +267,7 @@ final class InstanceMetadataCodec {
                     defaultUser,
                     hasSudo,
                     provisioningEvidence,
+                    executionIdentity,
                     unknownMetadata);
         } catch (IllegalArgumentException malformed) {
             throw new InvalidMetadataException(malformed);

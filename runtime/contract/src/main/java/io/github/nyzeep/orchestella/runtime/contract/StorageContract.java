@@ -32,6 +32,11 @@ public final class StorageContract {
     public static final String METADATA_FILE_NAME = "instance-metadata.json";
     public static final String CHECKSUMS_FILE_NAME = "SHA256SUMS";
 
+    /** Supported persisted root-volume disk container formats (ADR-0007). */
+    public enum RootVolumeFormat {
+        RAW_SPARSE
+    }
+
     public static final long DEFAULT_ROOT_VOLUME_BYTES = 2L * 1024L * 1024L * 1024L; // 2 GiB
     public static final long MIN_ROOT_VOLUME_BYTES = 512L * 1024L * 1024L;          // 512 MiB
     public static final long MAX_ROOT_VOLUME_BYTES = 2L * 1024L * 1024L * 1024L * 1024L; // 2 TiB
@@ -262,6 +267,7 @@ public final class StorageContract {
         private final boolean hasSudo;
         private final VmHardwareConfig hardwareConfig;
         private final ProvisioningEvidenceMetadata provisioningEvidence;
+        private final ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity;
 
         /** Legacy ten-field constructor; extension fields receive safe defaults. */
         public InstanceExportMetadata(
@@ -277,7 +283,8 @@ public final class StorageContract {
                 long exportedAtMillis) {
             this(instanceId, distroId, distroVersion, runtimeClass, state, diskSizeBytes,
                     sha256RootVolume, createdAtMillis, updatedAtMillis, exportedAtMillis,
-                    DEFAULT_HOSTNAME, DEFAULT_USER, false, VmHardwareConfig.defaultConfig(), null);
+                    DEFAULT_HOSTNAME, DEFAULT_USER, false, VmHardwareConfig.defaultConfig(), null,
+                    ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent());
         }
 
         public InstanceExportMetadata(
@@ -296,6 +303,29 @@ public final class StorageContract {
                 boolean hasSudo,
                 VmHardwareConfig hardwareConfig,
                 ProvisioningEvidenceMetadata provisioningEvidence) {
+            this(instanceId, distroId, distroVersion, runtimeClass, state, diskSizeBytes,
+                    sha256RootVolume, createdAtMillis, updatedAtMillis, exportedAtMillis,
+                    hostname, defaultUser, hasSudo, hardwareConfig, provisioningEvidence,
+                    ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent());
+        }
+
+        public InstanceExportMetadata(
+                String instanceId,
+                String distroId,
+                String distroVersion,
+                String runtimeClass,
+                String state,
+                long diskSizeBytes,
+                String sha256RootVolume,
+                long createdAtMillis,
+                long updatedAtMillis,
+                long exportedAtMillis,
+                String hostname,
+                String defaultUser,
+                boolean hasSudo,
+                VmHardwareConfig hardwareConfig,
+                ProvisioningEvidenceMetadata provisioningEvidence,
+                ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity) {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.distroId = Objects.requireNonNull(distroId, "distroId");
             this.distroVersion = Objects.requireNonNull(distroVersion, "distroVersion");
@@ -319,6 +349,9 @@ public final class StorageContract {
             this.hasSudo = hasSudo;
             this.hardwareConfig = hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig();
             this.provisioningEvidence = provisioningEvidence;
+            this.executionIdentity = executionIdentity != null
+                    ? executionIdentity
+                    : ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent();
         }
 
         public String instanceId() {
@@ -382,40 +415,60 @@ public final class StorageContract {
             return provisioningEvidence;
         }
 
+        public ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity() {
+            return executionIdentity;
+        }
+
         public String toJson() {
             String extraArgs = hardwareConfig.extraKernelArguments();
             String evidenceRootfs = provisioningEvidence != null ? provisioningEvidence.rootfsSha256() : null;
-            return "{\n"
-                    + "  \"instanceId\": \"" + escapeJson(instanceId) + "\",\n"
-                    + "  \"distroId\": \"" + escapeJson(distroId) + "\",\n"
-                    + "  \"distroVersion\": \"" + escapeJson(distroVersion) + "\",\n"
-                    + "  \"runtimeClass\": \"" + escapeJson(runtimeClass) + "\",\n"
-                    + "  \"state\": \"" + escapeJson(state) + "\",\n"
-                    + "  \"diskSizeBytes\": " + diskSizeBytes + ",\n"
-                    + "  \"sha256RootVolume\": \"" + sha256RootVolume + "\",\n"
-                    + "  \"createdAtMillis\": " + createdAtMillis + ",\n"
-                    + "  \"updatedAtMillis\": " + updatedAtMillis + ",\n"
-                    + "  \"exportedAtMillis\": " + exportedAtMillis + ",\n"
-                    + "  \"hostname\": \"" + escapeJson(hostname) + "\",\n"
-                    + "  \"defaultUser\": \"" + escapeJson(defaultUser) + "\",\n"
-                    + "  \"hasSudo\": " + hasSudo + ",\n"
-                    + "  \"hardwareCpuCores\": " + hardwareConfig.cpuCores() + ",\n"
-                    + "  \"hardwareRamMegabytes\": " + hardwareConfig.ramMegabytes() + ",\n"
-                    + "  \"hardwareDiskCapacityBytes\": " + hardwareConfig.diskCapacityBytes() + ",\n"
-                    + "  \"hardwareGpuAccelerationEnabled\": " + hardwareConfig.gpuAccelerationEnabled() + ",\n"
-                    + "  \"hardwareExtraKernelArguments\": "
-                    + (extraArgs == null ? "null" : "\"" + escapeJson(extraArgs) + "\"") + ",\n"
-                    + "  \"provisioningMarkerVersion\": "
-                    + (provisioningEvidence != null ? provisioningEvidence.markerVersion() : 0) + ",\n"
-                    + "  \"provisioningRootfsSha256\": "
-                    + (evidenceRootfs == null ? "null" : "\"" + evidenceRootfs + "\"") + ",\n"
-                    + "  \"provisioningRecordedAtMillis\": "
-                    + (provisioningEvidence != null ? provisioningEvidence.recordedAtMillis() : 0) + "\n"
-                    + "}\n";
+            StringBuilder json = new StringBuilder();
+            json.append("{\n")
+                    .append("  \"instanceId\": \"").append(escapeJson(instanceId)).append("\",\n")
+                    .append("  \"distroId\": \"").append(escapeJson(distroId)).append("\",\n")
+                    .append("  \"distroVersion\": \"").append(escapeJson(distroVersion)).append("\",\n")
+                    .append("  \"runtimeClass\": \"").append(escapeJson(runtimeClass)).append("\",\n")
+                    .append("  \"state\": \"").append(escapeJson(state)).append("\",\n")
+                    .append("  \"diskSizeBytes\": ").append(diskSizeBytes).append(",\n")
+                    .append("  \"sha256RootVolume\": \"").append(sha256RootVolume).append("\",\n")
+                    .append("  \"createdAtMillis\": ").append(createdAtMillis).append(",\n")
+                    .append("  \"updatedAtMillis\": ").append(updatedAtMillis).append(",\n")
+                    .append("  \"exportedAtMillis\": ").append(exportedAtMillis).append(",\n")
+                    .append("  \"hostname\": \"").append(escapeJson(hostname)).append("\",\n")
+                    .append("  \"defaultUser\": \"").append(escapeJson(defaultUser)).append("\",\n")
+                    .append("  \"hasSudo\": ").append(hasSudo).append(",\n")
+                    .append("  \"hardwareCpuCores\": ").append(hardwareConfig.cpuCores()).append(",\n")
+                    .append("  \"hardwareRamMegabytes\": ").append(hardwareConfig.ramMegabytes()).append(",\n")
+                    .append("  \"hardwareDiskCapacityBytes\": ").append(hardwareConfig.diskCapacityBytes()).append(",\n")
+                    .append("  \"hardwareGpuAccelerationEnabled\": ").append(hardwareConfig.gpuAccelerationEnabled()).append(",\n")
+                    .append("  \"hardwareExtraKernelArguments\": ")
+                    .append(extraArgs == null ? "null" : "\"" + escapeJson(extraArgs) + "\"").append(",\n")
+                    .append("  \"provisioningMarkerVersion\": ")
+                    .append(provisioningEvidence != null ? provisioningEvidence.markerVersion() : 0).append(",\n")
+                    .append("  \"provisioningRootfsSha256\": ")
+                    .append(evidenceRootfs == null ? "null" : "\"" + evidenceRootfs + "\"").append(",\n")
+                    .append("  \"provisioningRecordedAtMillis\": ")
+                    .append(provisioningEvidence != null ? provisioningEvidence.recordedAtMillis() : 0);
+            if (!executionIdentity.strategy().isAbsent()) {
+                json.append(",\n  \"executionStrategy\": \"")
+                        .append(escapeJson(executionIdentity.strategy().rawValue()))
+                        .append("\"");
+            }
+            if (!executionIdentity.volumeFormat().isAbsent()) {
+                json.append(",\n  \"rootVolumeFormat\": \"")
+                        .append(escapeJson(executionIdentity.volumeFormat().rawValue()))
+                        .append("\"");
+            }
+            json.append("\n}\n");
+            return json.toString();
         }
 
         public static InstanceExportMetadata fromJson(String json) {
             Objects.requireNonNull(json, "json");
+            String trimmed = json.trim();
+            if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+                throw new IllegalArgumentException("Truncated or malformed instance metadata JSON");
+            }
             String instanceId = extractStringField(json, "instanceId");
             String distroId = extractStringField(json, "distroId");
             String distroVersion = extractStringField(json, "distroVersion");
@@ -438,6 +491,15 @@ public final class StorageContract {
             boolean hasSudo = extractOptionalBooleanField(json, "hasSudo", false);
             VmHardwareConfig hardwareConfig = extractHardwareConfig(json);
             ProvisioningEvidenceMetadata provisioningEvidence = extractProvisioningEvidence(json);
+            ExecutionPolicyContract.StrategyDeclaration strategyDeclaration =
+                    ExecutionPolicyContract.StrategyDeclaration.parse(
+                            extractOptionalStringFieldStrict(json, "executionStrategy"));
+            ExecutionPolicyContract.VolumeFormatDeclaration volumeFormatDeclaration =
+                    ExecutionPolicyContract.VolumeFormatDeclaration.parse(
+                            extractOptionalStringFieldStrict(json, "rootVolumeFormat"));
+            ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity =
+                    ExecutionPolicyContract.InstanceExecutionIdentity.of(
+                            strategyDeclaration, volumeFormatDeclaration);
 
             return new InstanceExportMetadata(
                     instanceId,
@@ -454,7 +516,8 @@ public final class StorageContract {
                     defaultUser,
                     hasSudo,
                     hardwareConfig,
-                    provisioningEvidence);
+                    provisioningEvidence,
+                    executionIdentity);
         }
 
         private static VmHardwareConfig extractHardwareConfig(String json) {
@@ -517,7 +580,22 @@ public final class StorageContract {
             return Long.parseLong(matcher.group(1));
         }
 
+        private static String extractOptionalStringFieldStrict(String json, String key) {
+            return extractOptionalStringField(json, key, true);
+        }
+
         private static String extractOptionalStringField(String json, String key) {
+            return extractOptionalStringField(json, key, false);
+        }
+
+        private static String extractOptionalStringField(
+                String json, String key, boolean rejectNonString) {
+            if (rejectNonString) {
+                Pattern keyPattern = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:");
+                if (!keyPattern.matcher(json).find()) {
+                    return null;
+                }
+            }
             Pattern nullPattern = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*null\\b");
             if (nullPattern.matcher(json).find()) {
                 return null;
@@ -526,6 +604,9 @@ public final class StorageContract {
                     "\"" + Pattern.quote(key) + "\"\\s*:\\s*\"([^\"\\\\]*(?:\\\\.[^\"\\\\]*)*)\"");
             Matcher matcher = pattern.matcher(json);
             if (!matcher.find()) {
+                if (rejectNonString) {
+                    throw new IllegalArgumentException("Invalid string field: " + key);
+                }
                 return null;
             }
             return matcher.group(1).replace("\\\"", "\"").replace("\\\\", "\\");
@@ -562,7 +643,8 @@ public final class StorageContract {
                     && Objects.equals(hostname, that.hostname)
                     && Objects.equals(defaultUser, that.defaultUser)
                     && Objects.equals(hardwareConfig, that.hardwareConfig)
-                    && Objects.equals(provisioningEvidence, that.provisioningEvidence);
+                    && Objects.equals(provisioningEvidence, that.provisioningEvidence)
+                    && Objects.equals(executionIdentity, that.executionIdentity);
         }
 
         @Override
@@ -582,7 +664,8 @@ public final class StorageContract {
                     defaultUser,
                     hasSudo,
                     hardwareConfig,
-                    provisioningEvidence);
+                    provisioningEvidence,
+                    executionIdentity);
         }
     }
 

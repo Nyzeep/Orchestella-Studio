@@ -1,7 +1,9 @@
 package io.github.nyzeep.orchestella.runtime.contract;
 
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -17,7 +19,8 @@ public final class FullLinuxContract {
     /** An internal execution choice; it is not a Runtime Class and is not a QEMU-specific type. */
     public enum ExecutionStrategy {
         SOFTWARE_VIRTUALIZATION,
-        HARDWARE_VIRTUALIZATION
+        HARDWARE_VIRTUALIZATION,
+        USER_MODE_KERNEL
     }
 
     /**
@@ -48,6 +51,61 @@ public final class FullLinuxContract {
         private static final Set<Capability> SOFTWARE_VIRTUALIZATION_BASELINE =
                 Collections.unmodifiableSet(
                         EnumSet.of(Capability.TERMINAL, Capability.BRIDGE_HANDSHAKE));
+        /** Capabilities structurally reachable by the standalone CLI user-mode kernel strategy. */
+        public static final Set<Capability> USER_MODE_KERNEL_ALLOWED_CAPABILITIES =
+                Collections.unmodifiableSet(
+                        EnumSet.of(Capability.TERMINAL, Capability.BRIDGE_HANDSHAKE));
+        /** Capabilities verified on device/contract for standalone UML; empty until Wave 3 slices verify them. */
+        public static final Set<Capability> USER_MODE_KERNEL_VERIFIED_PROFILE =
+                Collections.emptySet();
+        private static final Map<ExecutionStrategy, Set<Capability>> DEFAULT_VERIFIED_PROFILES =
+                defaultVerifiedProfiles();
+        private static final Map<ExecutionStrategy, BadgeLabels> BADGE_LABELS = badgeLabels();
+
+        private record BadgeLabels(
+                String performance,
+                String rfbGraphics,
+                String waylandGraphics,
+                String audio,
+                String clipboard) {}
+
+        private static Map<ExecutionStrategy, Set<Capability>> defaultVerifiedProfiles() {
+            EnumMap<ExecutionStrategy, Set<Capability>> profiles =
+                    new EnumMap<>(ExecutionStrategy.class);
+            profiles.put(ExecutionStrategy.SOFTWARE_VIRTUALIZATION, EnumSet.allOf(Capability.class));
+            profiles.put(ExecutionStrategy.HARDWARE_VIRTUALIZATION, EnumSet.allOf(Capability.class));
+            profiles.put(ExecutionStrategy.USER_MODE_KERNEL, USER_MODE_KERNEL_VERIFIED_PROFILE);
+            return Collections.unmodifiableMap(profiles);
+        }
+
+        private static Map<ExecutionStrategy, BadgeLabels> badgeLabels() {
+            EnumMap<ExecutionStrategy, BadgeLabels> labels = new EnumMap<>(ExecutionStrategy.class);
+            labels.put(
+                    ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
+                    new BadgeLabels(
+                            "完整 Linux · 软件模拟（较慢）",
+                            "RFB 显示（本地套接字）",
+                            "Wayland 原生通道（共享内存）",
+                            "低延迟 PCM 音频（本地套接字 48kHz）",
+                            "剪贴板双向同步（本地通道）"));
+            labels.put(
+                    ExecutionStrategy.HARDWARE_VIRTUALIZATION,
+                    new BadgeLabels(
+                            "完整 Linux · 硬件加速",
+                            "RFB 显示（vsock CPU 拷贝）",
+                            "Wayland 原生通道（vsock 硬件加速）",
+                            "低延迟 PCM 音频（vsock 硬件加速 48kHz）",
+                            "剪贴板双向同步（vsock 硬件通道）"));
+            labels.put(
+                    ExecutionStrategy.USER_MODE_KERNEL,
+                    new BadgeLabels(
+                            "完整 Linux · 用户态内核（实验）",
+                            "无图形通道",
+                            "无图形通道",
+                            "无音频输出",
+                            "无剪贴板同步"));
+            return Collections.unmodifiableMap(labels);
+        }
 
         private final ExecutionStrategy executionStrategy;
         private final Set<Capability> capabilities;
@@ -64,6 +122,15 @@ public final class FullLinuxContract {
                     && copy.contains(Capability.HARDWARE_ACCELERATION)) {
                 throw new IllegalArgumentException("software virtualization cannot claim hardware acceleration");
             }
+            if (executionStrategy == ExecutionStrategy.USER_MODE_KERNEL) {
+                if (copy.contains(Capability.HARDWARE_ACCELERATION)) {
+                    throw new IllegalArgumentException("user-mode kernel cannot claim hardware acceleration");
+                }
+                if (!USER_MODE_KERNEL_ALLOWED_CAPABILITIES.containsAll(copy)) {
+                    throw new IllegalArgumentException(
+                            "user-mode kernel cannot declare unverified or unsupported capabilities: " + copy);
+                }
+            }
             this.capabilities = Collections.unmodifiableSet(copy);
         }
 
@@ -72,9 +139,35 @@ public final class FullLinuxContract {
                     ExecutionStrategy.SOFTWARE_VIRTUALIZATION, SOFTWARE_VIRTUALIZATION_BASELINE);
         }
 
+        public static CapabilityMatrix userModeKernelBaseline() {
+            return new CapabilityMatrix(
+                    ExecutionStrategy.USER_MODE_KERNEL, USER_MODE_KERNEL_VERIFIED_PROFILE);
+        }
+
         /** The one projection from what a launch assembled to what callers may show. */
         public static CapabilityMatrix from(SessionCapabilities descriptor) {
             Objects.requireNonNull(descriptor, "descriptor");
+            return from(descriptor, DEFAULT_VERIFIED_PROFILES.get(descriptor.executionStrategy()));
+        }
+
+        /**
+         * Projects assembled capabilities intersected with the strategy's verified profile.
+         * Any capability outside the verified profile (or outside structural support for
+         * {@link ExecutionStrategy#USER_MODE_KERNEL}) remains disabled.
+         */
+        public static CapabilityMatrix from(
+                SessionCapabilities descriptor, Set<Capability> verifiedProfile) {
+            Objects.requireNonNull(descriptor, "descriptor");
+            Objects.requireNonNull(verifiedProfile, "verifiedProfile");
+            EnumSet<Capability> intersected = declaredCapabilities(descriptor);
+            intersected.retainAll(verifiedProfile);
+            if (descriptor.executionStrategy() == ExecutionStrategy.USER_MODE_KERNEL) {
+                intersected.retainAll(USER_MODE_KERNEL_ALLOWED_CAPABILITIES);
+            }
+            return new CapabilityMatrix(descriptor.executionStrategy(), intersected);
+        }
+
+        private static EnumSet<Capability> declaredCapabilities(SessionCapabilities descriptor) {
             EnumSet<Capability> declared = EnumSet.noneOf(Capability.class);
             if (descriptor.terminal()) {
                 declared.add(Capability.TERMINAL);
@@ -105,7 +198,7 @@ public final class FullLinuxContract {
             if (descriptor.gpuAcceleration()) {
                 declared.add(Capability.GPU_HARDWARE_ACCELERATION);
             }
-            return new CapabilityMatrix(descriptor.executionStrategy(), declared);
+            return declared;
         }
 
         /**
@@ -202,23 +295,18 @@ public final class FullLinuxContract {
         }
 
         public String performanceBadge() {
-            return executionStrategy == ExecutionStrategy.SOFTWARE_VIRTUALIZATION
-                    ? "完整 Linux · 软件模拟（较慢）"
-                    : "完整 Linux · 硬件加速";
+            return BADGE_LABELS.get(executionStrategy).performance();
         }
 
         public String graphicsBadge() {
+            BadgeLabels labels = BADGE_LABELS.get(executionStrategy);
             if (supports(Capability.GRAPHICS_RFB)) {
-                return executionStrategy == ExecutionStrategy.SOFTWARE_VIRTUALIZATION
-                        ? "RFB 显示（本地套接字）"
-                        : "RFB 显示（vsock CPU 拷贝）";
+                return labels.rfbGraphics();
             }
             if (!supports(Capability.GRAPHICS_WAYLAND)) {
                 return "无图形通道";
             }
-            return executionStrategy == ExecutionStrategy.SOFTWARE_VIRTUALIZATION
-                    ? "Wayland 原生通道（共享内存）"
-                    : "Wayland 原生通道（vsock 硬件加速）";
+            return labels.waylandGraphics();
         }
 
         public boolean supportsRfbDisplay() {
@@ -233,18 +321,14 @@ public final class FullLinuxContract {
             if (!supports(Capability.AUDIO_OUTPUT)) {
                 return "无音频输出";
             }
-            return executionStrategy == ExecutionStrategy.SOFTWARE_VIRTUALIZATION
-                    ? "低延迟 PCM 音频（本地套接字 48kHz）"
-                    : "低延迟 PCM 音频（vsock 硬件加速 48kHz）";
+            return BADGE_LABELS.get(executionStrategy).audio();
         }
 
         public String clipboardBadge() {
             if (!supports(Capability.CLIPBOARD_SYNC)) {
                 return "无剪贴板同步";
             }
-            return executionStrategy == ExecutionStrategy.SOFTWARE_VIRTUALIZATION
-                    ? "剪贴板双向同步（本地通道）"
-                    : "剪贴板双向同步（vsock 硬件通道）";
+            return BADGE_LABELS.get(executionStrategy).clipboard();
         }
 
         public String pointerCaptureBadge() {

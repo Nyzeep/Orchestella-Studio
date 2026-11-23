@@ -1,0 +1,12 @@
+{
+  "instanceId": "00000000-0000-4000-8000-000000000010",
+  "distroId": "alpine",
+  "distroVersion": "3.22.2",
+  "runtimeClass": "FULL_LINUX",
+  "state": "STOPPED",
+  "diskSizeBytes": 1048576,
+  "sha256RootVolume": "0000000000000000000000000000000000000000000000000000000000000000",
+  "createdAtMillis": 1700000000000,
+  "updatedAtMillis": 1700000001000,
+  "exportedAtMillis": 1700000002000
+}

@@ -1,6 +1,7 @@
 package io.github.nyzeep.orchestella.runtime.instance;
 
 import io.github.nyzeep.orchestella.runtime.contract.BridgeHandshake;
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import java.io.IOException;
@@ -212,6 +213,7 @@ public final class InstanceLifecycle {
         private final String defaultUser;
         private final boolean hasSudo;
         private final ProvisioningEvidence provisioningEvidence;
+        private final ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity;
         private final Map<String, String> unknownMetadata;
 
         private Instance(
@@ -300,6 +302,31 @@ public final class InstanceLifecycle {
                 boolean hasSudo,
                 ProvisioningEvidence provisioningEvidence,
                 Map<String, String> unknownMetadata) {
+            this(id, distro, rootVolume, bridgeToken, guestPassword, runtimeClass, state,
+                    createdAtMillis, updatedAtMillis, crashDiagnostic, hardwareConfig,
+                    hostname, defaultUser, hasSudo, provisioningEvidence,
+                    ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent(),
+                    unknownMetadata);
+        }
+
+        Instance(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                String bridgeToken,
+                String guestPassword,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                long createdAtMillis,
+                long updatedAtMillis,
+                CrashDiagnostic crashDiagnostic,
+                VmHardwareConfig hardwareConfig,
+                String hostname,
+                String defaultUser,
+                boolean hasSudo,
+                ProvisioningEvidence provisioningEvidence,
+                ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity,
+                Map<String, String> unknownMetadata) {
             requireInstanceId(id);
             this.id = id;
             this.distro = Objects.requireNonNull(distro, "distro");
@@ -320,6 +347,9 @@ public final class InstanceLifecycle {
             }
             this.hasSudo = hasSudo;
             this.provisioningEvidence = provisioningEvidence;
+            this.executionIdentity = executionIdentity != null
+                    ? executionIdentity
+                    : ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent();
             this.unknownMetadata = Collections.unmodifiableMap(
                     new TreeMap<>(Objects.requireNonNull(unknownMetadata, "unknownMetadata")));
         }
@@ -422,6 +452,10 @@ public final class InstanceLifecycle {
             return crashDiagnostic != null ? crashDiagnostic.logPath() : null;
         }
 
+        public ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity() {
+            return executionIdentity;
+        }
+
         /** Package-private read access for {@link InstanceMetadataCodec#encode(Instance)}. */
         Map<String, String> unknownMetadata() {
             return unknownMetadata;
@@ -451,6 +485,7 @@ public final class InstanceLifecycle {
                     defaultUser,
                     hasSudo,
                     provisioningEvidence,
+                    executionIdentity,
                     unknownMetadata);
         }
 
@@ -471,6 +506,7 @@ public final class InstanceLifecycle {
                     defaultUser,
                     hasSudo,
                     provisioningEvidence,
+                    executionIdentity,
                     unknownMetadata);
         }
 
@@ -491,6 +527,7 @@ public final class InstanceLifecycle {
                     defaultUser,
                     hasSudo,
                     provisioningEvidence,
+                    executionIdentity,
                     unknownMetadata);
         }
 
@@ -511,6 +548,7 @@ public final class InstanceLifecycle {
                     defaultUser,
                     hasSudo,
                     provisioningEvidence,
+                    executionIdentity,
                     unknownMetadata);
         }
 
@@ -531,6 +569,7 @@ public final class InstanceLifecycle {
                     defaultUser,
                     hasSudo,
                     Objects.requireNonNull(evidence, "evidence"),
+                    executionIdentity,
                     unknownMetadata);
         }
 
@@ -581,6 +620,24 @@ public final class InstanceLifecycle {
                 boolean hasSudo,
                 ProvisioningEvidence provisioningEvidence,
                 Clock clock) {
+            return restore(id, distro, rootVolume, runtimeClass, state, hardwareConfig,
+                    hostname, defaultUser, hasSudo, provisioningEvidence,
+                    ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent(), clock);
+        }
+
+        static Instance restore(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                VmHardwareConfig hardwareConfig,
+                String hostname,
+                String defaultUser,
+                boolean hasSudo,
+                ProvisioningEvidence provisioningEvidence,
+                ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity,
+                Clock clock) {
             long now = Objects.requireNonNull(clock, "clock").millis();
             return new Instance(
                     id,
@@ -597,7 +654,9 @@ public final class InstanceLifecycle {
                     hostname,
                     defaultUser,
                     hasSudo,
-                    provisioningEvidence);
+                    provisioningEvidence,
+                    executionIdentity,
+                    Collections.emptyMap());
         }
 
         Properties toProperties() {

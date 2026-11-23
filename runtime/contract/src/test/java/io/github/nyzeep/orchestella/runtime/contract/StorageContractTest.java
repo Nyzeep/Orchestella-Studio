@@ -21,6 +21,7 @@ public final class StorageContractTest {
         instanceExportMetadataJsonRoundtripAndEscaping();
         instanceExportMetadataExtendedFieldsRoundtrip();
         instanceExportMetadataLegacyJsonUsesSafeDefaults();
+        instanceExportMetadataExecutionIdentityRoundtripAndRejection();
         checksumManifestFormattingAndParsing();
         sha256HexComputesAccurateDigests();
         System.out.println("STORAGE_CONTRACT_TEST_OK");
@@ -233,6 +234,62 @@ public final class StorageContractTest {
                 "legacy-id", "alpine", "3.24.1", "FULL_LINUX", "STOPPED",
                 2147483648L, sha256, 1L, 2L, 3L);
         assertEquals(expected, parsed, "legacy JSON equals default-extension metadata");
+        assertTrue(parsed.executionIdentity().isLegacyAbsent(), "legacy JSON has absent execution identity");
+        assertTrue(!expected.toJson().contains("\"executionStrategy\""), "legacy export omits executionStrategy");
+        assertTrue(!expected.toJson().contains("\"rootVolumeFormat\""), "legacy export omits rootVolumeFormat");
+    }
+
+    private static void instanceExportMetadataExecutionIdentityRoundtripAndRejection() {
+        String sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        ExecutionPolicyContract.InstanceExecutionIdentity umlIdentity =
+                ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        StorageContract.RootVolumeFormat.RAW_SPARSE);
+        StorageContract.InstanceExportMetadata metadata = new StorageContract.InstanceExportMetadata(
+                "inst-uml-1",
+                "alpine",
+                "3.24.1",
+                "FULL_LINUX",
+                "STOPPED",
+                2147483648L,
+                sha256,
+                10L,
+                20L,
+                30L,
+                "uml-host",
+                "root",
+                false,
+                VmHardwareConfig.defaultConfig(),
+                null,
+                umlIdentity);
+
+        String json = metadata.toJson();
+        assertTrue(json.contains("\"executionStrategy\": \"USER_MODE_KERNEL\""), "writes executionStrategy");
+        assertTrue(json.contains("\"rootVolumeFormat\": \"RAW_SPARSE\""), "writes rootVolumeFormat");
+
+        StorageContract.InstanceExportMetadata parsed = StorageContract.InstanceExportMetadata.fromJson(json);
+        assertEquals(umlIdentity, parsed.executionIdentity(), "round-trips execution identity");
+        assertEquals(metadata, parsed, "equality includes execution identity");
+
+        String unknownFieldsJson = json
+                .replace("\"USER_MODE_KERNEL\"", "\"FUTURE_ENGINE\"")
+                .replace("\"RAW_SPARSE\"", "\"FUTURE_DISK\"");
+        StorageContract.InstanceExportMetadata parsedUnknown =
+                StorageContract.InstanceExportMetadata.fromJson(unknownFieldsJson);
+        assertTrue(parsedUnknown.executionIdentity().hasUnknownStrategy(), "reads unknown strategy explicitly");
+        assertEquals("FUTURE_ENGINE", parsedUnknown.executionIdentity().strategy().rawValue(), "keeps raw strategy");
+        assertTrue(parsedUnknown.executionIdentity().hasUnrecognizedVolumeFormat(), "reads unknown volume format");
+        assertEquals("FUTURE_DISK", parsedUnknown.executionIdentity().volumeFormat().rawValue(), "keeps raw format");
+
+        String blankStrategyJson = json.replace("\"USER_MODE_KERNEL\"", "\"   \"");
+        assertThrows(IllegalArgumentException.class,
+                () -> StorageContract.InstanceExportMetadata.fromJson(blankStrategyJson),
+                "blank executionStrategy must be rejected");
+
+        String truncatedJson = json.substring(0, json.indexOf("\"executionStrategy\""));
+        assertThrows(IllegalArgumentException.class,
+                () -> StorageContract.InstanceExportMetadata.fromJson(truncatedJson),
+                "truncated metadata JSON before executionStrategy must fail closed");
     }
 
     private static void checksumManifestFormattingAndParsing() {

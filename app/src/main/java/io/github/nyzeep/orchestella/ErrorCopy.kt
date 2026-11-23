@@ -1,6 +1,7 @@
 package io.github.nyzeep.orchestella
 
 import androidx.annotation.StringRes
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStartException
@@ -89,6 +90,21 @@ object ErrorCopy {
                 R.string.error_oom, CODE_OOM, R.string.error_hint_retry)
             is java.util.concurrent.TimeoutException -> Entry(
                 R.string.error_wait_timeout, CODE_WAIT_TIMEOUT, R.string.error_hint_retry)
+            is ExecutionPolicyContract.ExecutionPolicyRefusalException -> when (error.verdict().code()) {
+                ExecutionPolicyContract.PreflightCode.UNKNOWN_EXECUTION_STRATEGY -> Entry(
+                    R.string.error_exec_strategy_unknown,
+                    CODE_EXEC_STRATEGY_UNKNOWN,
+                    R.string.error_hint_export_or_upgrade)
+                ExecutionPolicyContract.PreflightCode.UNRECOGNIZED_VOLUME_FORMAT,
+                ExecutionPolicyContract.PreflightCode.VOLUME_FORMAT_CONFLICT -> Entry(
+                    R.string.error_volume_format_conflict,
+                    CODE_VOLUME_FORMAT_CONFLICT,
+                    R.string.error_hint_export_or_upgrade)
+                else -> Entry(
+                    R.string.error_exec_strategy_unavailable,
+                    CODE_EXEC_STRATEGY_UNAVAILABLE,
+                    R.string.error_hint_see_log)
+            }
             is IllegalArgumentException -> Entry(
                 R.string.error_arg_invalid, CODE_ARG_INVALID, R.string.error_hint_recheck_config)
             is IllegalStateException -> Entry(
@@ -136,5 +152,8 @@ object ErrorCopy {
     const val CODE_AVF_GENERIC = "E-AVF-GENERIC"
     const val CODE_LANE = "E-LANE"
     const val CODE_OOM = "E-OOM"
+    const val CODE_EXEC_STRATEGY_UNKNOWN = "E-EXEC-STRATEGY"
+    const val CODE_VOLUME_FORMAT_CONFLICT = "E-VOL-FORMAT"
+    const val CODE_EXEC_STRATEGY_UNAVAILABLE = "E-EXEC-UNAVAILABLE"
     const val CODE_UNKNOWN = "E-UNKNOWN"
 }

@@ -1,8 +1,10 @@
 package io.github.nyzeep.orchestella.runtime.instance;
 
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.contract.StorageContract;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
+import java.util.Collections;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle.CrashDiagnostic;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle.DistroReference;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle.Instance;
@@ -70,10 +72,28 @@ class InstanceLifecycleController {
             Path rootVolume,
             VmHardwareConfig hardwareConfig,
             InstanceUserConfig userConfig) throws IOException {
+        return create(
+                distro,
+                rootVolume,
+                hardwareConfig,
+                userConfig,
+                ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent());
+    }
+
+    public synchronized Instance create(
+            DistroReference distro,
+            Path rootVolume,
+            VmHardwareConfig hardwareConfig,
+            InstanceUserConfig userConfig,
+            ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity) throws IOException {
         Objects.requireNonNull(distro, "distro");
         Objects.requireNonNull(rootVolume, "rootVolume");
         Objects.requireNonNull(hardwareConfig, "hardwareConfig");
         InstanceUserConfig effectiveConfig = userConfig != null ? userConfig : InstanceUserConfig.defaultRoot();
+        ExecutionPolicyContract.InstanceExecutionIdentity effectiveIdentity =
+                executionIdentity != null
+                        ? executionIdentity
+                        : ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent();
         // Writes a fresh metadata entry, so it must hold the directory-wide state monitor:
         // custom stores rely on the caller for exclusion, and the save must not interleave
         // with another Controller's write on the same state directory.
@@ -95,7 +115,9 @@ class InstanceLifecycleController {
                             effectiveConfig.hostname(),
                             effectiveConfig.username(),
                             effectiveConfig.hasSudo(),
-                            null);
+                            null,
+                            effectiveIdentity,
+                            Collections.emptyMap());
             store.save(instance);
             return instance;
         }
@@ -121,38 +143,7 @@ class InstanceLifecycleController {
     private Instance cloneInstanceLocked(String sourceId, Path targetRootVolume) throws IOException {
         Objects.requireNonNull(targetRootVolume, "targetRootVolume");
         Instance source = store.load(sourceId);
-        if (source.state() != State.STOPPED && source.state() != State.CREATED) {
-            throw new IllegalStateException(
-                    "cannot clone instance in state: " + source.state() + "; instance must be STOPPED or CREATED");
-        }
-        if (targetRootVolume.getParent() != null) {
-            Files.createDirectories(targetRootVolume.getParent());
-        }
-        if (source.rootVolume() != null && Files.isRegularFile(source.rootVolume())) {
-            Files.copy(source.rootVolume(), targetRootVolume, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING);
-        } else if (!Files.exists(targetRootVolume)) {
-            Files.createFile(targetRootVolume);
-        }
-        long now = clock.millis();
-        Instance cloned =
-                new Instance(
-                        UUID.randomUUID().toString(),
-                        source.distro(),
-                        targetRootVolume,
-                        InstanceLifecycle.newBridgeToken(),
-                        source.guestPassword(),
-                        source.runtimeClass(),
-                        State.CREATED,
-                        now,
-                        now,
-                        null,
-                        source.hardwareConfig(),
-                        source.hostname(),
-                        source.defaultUser(),
-                        source.hasSudo(),
-                        source.provisioningEvidence());
-        store.save(cloned);
-        return cloned;
+        return cloneFromSourceLocked(source, UUID.randomUUID().toString(), targetRootVolume);
     }
 
     /**
@@ -178,6 +169,11 @@ class InstanceLifecycleController {
         } else {
             targetVolume = Path.of(newId + ".raw");
         }
+        return cloneFromSourceLocked(source, newId, targetVolume);
+    }
+
+    private Instance cloneFromSourceLocked(Instance source, String newId, Path targetVolume)
+            throws IOException {
         if (source.state() != State.STOPPED && source.state() != State.CREATED) {
             throw new IllegalStateException(
                     "cannot clone instance in state: " + source.state() + "; instance must be STOPPED or CREATED");
@@ -185,8 +181,12 @@ class InstanceLifecycleController {
         if (targetVolume.getParent() != null) {
             Files.createDirectories(targetVolume.getParent());
         }
-        if (sourceVolume != null && Files.isRegularFile(sourceVolume)) {
-            Files.copy(sourceVolume, targetVolume, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING);
+        if (source.rootVolume() != null && Files.isRegularFile(source.rootVolume())) {
+            Files.copy(
+                    source.rootVolume(),
+                    targetVolume,
+                    StandardCopyOption.COPY_ATTRIBUTES,
+                    StandardCopyOption.REPLACE_EXISTING);
         } else if (!Files.exists(targetVolume)) {
             Files.createFile(targetVolume);
         }
@@ -207,7 +207,9 @@ class InstanceLifecycleController {
                         source.hostname(),
                         source.defaultUser(),
                         source.hasSudo(),
-                        source.provisioningEvidence());
+                        source.provisioningEvidence(),
+                        source.executionIdentity(),
+                        Collections.emptyMap());
         store.save(cloned);
         return cloned;
     }

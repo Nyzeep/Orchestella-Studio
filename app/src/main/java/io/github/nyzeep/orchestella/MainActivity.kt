@@ -1393,7 +1393,7 @@ class MainActivity : AppCompatActivity() {
                 // virtualization wording stays — no fake acceleration.
                 if (laneReady) BadgeCopy.derive(true, "") else "QEMU 软件虚拟化"
             is AvfInstanceLauncher.AvfSession -> "AVF 硬件虚拟化"
-            else -> strategyBadge
+            else -> session?.capabilityMatrix()?.performanceBadge() ?: strategyBadge
         }
         val guestIp = (session as? QemuInstanceLauncher.Session)?.let { NetworkGatewayDaemon.GUEST_IP }
         // G-04：卡片/sheet 的桌面能力位与三档入口共用 DesktopEntryPolicy 单源判定。
@@ -2088,6 +2088,7 @@ class MainActivity : AppCompatActivity() {
         clock = Clock.systemUTC(),
         orphanReconciler = Runnable { reconcileOrphanInstances() },
         umlFaceLane = umlFaceRideAlong,
+        isolatedQaEnabled = BooleanSupplier { BuildConfig.IS_ISOLATED_QA_BUILD },
     )
 
     private val launchSettings = object : InstanceLaunchCoordinator.LaunchSettings {

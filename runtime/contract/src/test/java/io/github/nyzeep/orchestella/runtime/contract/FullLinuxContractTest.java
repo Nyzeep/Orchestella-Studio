@@ -8,6 +8,7 @@ public final class FullLinuxContractTest {
         exposesSoftwareVirtualizationBadgeAsData();
         refusesAnIncompleteBaselineMatrix();
         exposesRfbGraphicsCapabilityAndBadges();
+        exposesUserModeKernelBaselineAndRejectsUnsupportedCapabilities();
     }
 
     private static void exposesSoftwareVirtualizationBadgeAsData() {
@@ -49,6 +50,36 @@ public final class FullLinuxContractTest {
                                 FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
                                 EnumSet.of(FullLinuxContract.Capability.TERMINAL)),
                 "software baseline requires its normal-path capabilities");
+    }
+
+    private static void exposesUserModeKernelBaselineAndRejectsUnsupportedCapabilities() {
+        FullLinuxContract.CapabilityMatrix umlBaseline =
+                FullLinuxContract.CapabilityMatrix.userModeKernelBaseline();
+        assertEquals(
+                FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                umlBaseline.executionStrategy(),
+                "UML strategy");
+        assertEquals("完整 Linux · 用户态内核（实验）", umlBaseline.performanceBadge(), "UML performance badge");
+        assertEquals("无图形通道", umlBaseline.graphicsBadge(), "UML graphics badge");
+        assertEquals("无音频输出", umlBaseline.audioBadge(), "UML audio badge");
+        assertEquals("无剪贴板同步", umlBaseline.clipboardBadge(), "UML clipboard badge");
+        for (FullLinuxContract.Capability capability : FullLinuxContract.Capability.values()) {
+            assertFalse(umlBaseline.supports(capability), "unverified capability must stay off: " + capability);
+        }
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new FullLinuxContract.CapabilityMatrix(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        EnumSet.of(FullLinuxContract.Capability.HARDWARE_ACCELERATION)),
+                "UML cannot claim hardware acceleration");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new FullLinuxContract.CapabilityMatrix(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        EnumSet.of(FullLinuxContract.Capability.GRAPHICS_RFB)),
+                "UML cannot claim unsupported graphics capability");
     }
 
     private static void assertTrue(boolean condition, String description) {

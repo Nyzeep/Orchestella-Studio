@@ -1,5 +1,7 @@
 package io.github.nyzeep.orchestella.runtime.instance;
 
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract;
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.contract.StorageContract;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import java.io.ByteArrayInputStream;
@@ -50,6 +52,8 @@ public final class InstanceStorageContractTest {
         rejectsOversizedMetadataAndChecksumEntries(testDirectory);
         rejectsTruncatedArchiveWithoutLeavingFiles(testDirectory);
         rollsBackNewRootVolumeWhenStoreSaveFails(testDirectory);
+        rejectsUnknownStrategyUnrecognizedFormatAndVolumeConflictsOnImportAndResize(testDirectory);
+        rejectsTruncatedMetadataJsonArchiveWithoutLeavingFiles(testDirectory);
 
         System.out.println("INSTANCE_STORAGE_CONTRACT_TEST_OK");
     }
@@ -557,6 +561,157 @@ public final class InstanceStorageContractTest {
         try (var stream = Files.list(parent)) {
             assertEquals(0L, stream.count(), "no half-instance files remain after save failure");
         }
+    }
+
+    private static void rejectsUnknownStrategyUnrecognizedFormatAndVolumeConflictsOnImportAndResize(
+            Path testDirectory) throws Exception {
+        Path caseDir = testDirectory.resolve("policy-volume-conflict-test");
+        Files.createDirectories(caseDir);
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(caseDir.resolve("metadata"));
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, CLOCK);
+
+        // An instance carrying an unknown strategy stays exportable for backup/recovery,
+        // while importing an archive with unknown strategy/format or QCOW2 container magic fails closed.
+        Path umlVol = caseDir.resolve("uml.raw");
+        createSparseFileWithSentinel(umlVol, 1024L * 1024L, "UML_RAW_DATA".getBytes(StandardCharsets.UTF_8));
+        InstanceLifecycle.Instance umlInstance = controller.create(
+                new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
+                umlVol,
+                VmHardwareConfig.defaultConfig(),
+                InstanceUserConfig.defaultRoot(),
+                ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        StorageContract.RootVolumeFormat.RAW_SPARSE));
+        controller.beginProvisioning(umlInstance.id());
+        controller.completeProvisioning(umlInstance.id());
+
+        java.util.Properties unknownProps = umlInstance.toProperties();
+        unknownProps.setProperty("execution.strategy", "FUTURE_EXEC_V9");
+        InstanceLifecycle.Instance unknownInstance = InstanceLifecycle.Instance.fromProperties(unknownProps);
+        store.save(unknownInstance);
+        byte[] unknownArchive = exportArchive(controller, umlInstance.id());
+        assertTrue(unknownArchive.length > 0, "unknown strategy instance remains exportable");
+
+        Path rejectedTarget = caseDir.resolve("rejected").resolve("rootfs.raw");
+        IOException unknownStrategyFailure = assertThrows(
+                IOException.class,
+                () -> controller.importFromArchive(
+                        new ByteArrayInputStream(unknownArchive),
+                        rejectedTarget,
+                        UUID.randomUUID().toString()),
+                "archive with unknown execution strategy must be rejected on import");
+        assertTrue(unknownStrategyFailure.getMessage().contains("UNKNOWN_EXECUTION_STRATEGY"),
+                "diagnoses unknown strategy on import");
+        assertFalse(Files.exists(rejectedTarget), "rejected import creates no root volume");
+
+        // QCOW2 header disguised as root-volume.raw must fail resize and archive import without touching source.
+        Path qcow2Vol = caseDir.resolve("spoofed-qcow2.raw");
+        byte[] qcow2Header = new byte[] { 0x51, 0x46, 0x49, (byte) 0xFB, 0x00, 0x00, 0x00, 0x03 };
+        Files.write(qcow2Vol, qcow2Header);
+        InstanceLifecycle.Instance spoofed = controller.create(
+                new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
+                qcow2Vol,
+                VmHardwareConfig.defaultConfig(),
+                InstanceUserConfig.defaultRoot(),
+                ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                        FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
+                        StorageContract.RootVolumeFormat.RAW_SPARSE));
+        controller.beginProvisioning(spoofed.id());
+        controller.completeProvisioning(spoofed.id());
+
+        StorageContract.StorageSpaceChecker checker = path -> 100L * 1024L * 1024L;
+        IOException resizeConflict = assertThrows(
+                IOException.class,
+                () -> controller.resizeRootVolume(spoofed.id(), 2L * 1024L * 1024L, checker),
+                "resize must refuse QCOW2 container");
+        assertTrue(resizeConflict.getMessage().contains("VOLUME_FORMAT_CONFLICT"),
+                "resize conflict carries diagnostic code");
+        assertEquals((long) qcow2Header.length, Files.size(qcow2Vol), "original conflicted file size untouched");
+
+        byte[] spoofedArchive = exportArchive(controller, spoofed.id());
+        IOException importConflict = assertThrows(
+                IOException.class,
+                () -> controller.importFromArchive(
+                        new ByteArrayInputStream(spoofedArchive),
+                        rejectedTarget,
+                        UUID.randomUUID().toString()),
+                "archive with QCOW2 root volume must fail import");
+        assertTrue(importConflict.getMessage().contains("VOLUME_FORMAT_CONFLICT"),
+                "import conflict carries diagnostic code");
+        assertFalse(Files.exists(rejectedTarget), "conflicted import creates no root volume");
+    }
+
+    private static void rejectsTruncatedMetadataJsonArchiveWithoutLeavingFiles(Path testDirectory) throws Exception {
+        Path caseDir = testDirectory.resolve("truncated-metadata-json-test");
+        Files.createDirectories(caseDir);
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(caseDir.resolve("metadata"));
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, CLOCK);
+
+        Path rootVol = caseDir.resolve("uml-trunc.raw");
+        createSparseFileWithSentinel(rootVol, 1024L * 1024L, "TRUNC_JSON_DATA".getBytes(StandardCharsets.UTF_8));
+        InstanceLifecycle.Instance instance = controller.create(
+                new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
+                rootVol,
+                VmHardwareConfig.defaultConfig(),
+                InstanceUserConfig.defaultRoot(),
+                ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        StorageContract.RootVolumeFormat.RAW_SPARSE));
+        controller.beginProvisioning(instance.id());
+        controller.completeProvisioning(instance.id());
+
+        byte[] validArchive = exportArchive(controller, instance.id());
+        byte[] volBytes = null;
+        byte[] metaBytes = null;
+        try (java.util.zip.ZipInputStream zin =
+                new java.util.zip.ZipInputStream(new ByteArrayInputStream(validArchive))) {
+            ZipEntry entry;
+            while ((entry = zin.getNextEntry()) != null) {
+                if (StorageContract.ROOT_VOLUME_FILE_NAME.equals(entry.getName())) {
+                    volBytes = zin.readAllBytes();
+                } else if (StorageContract.METADATA_FILE_NAME.equals(entry.getName())) {
+                    metaBytes = zin.readAllBytes();
+                }
+            }
+        }
+        assertTrue(volBytes != null && metaBytes != null, "valid archive contains volume and metadata");
+        String fullJson = new String(metaBytes, StandardCharsets.UTF_8);
+        int strategyKeyIdx = fullJson.indexOf("\"executionStrategy\"");
+        assertTrue(strategyKeyIdx > 0, "exported metadata includes executionStrategy");
+        byte[] truncatedMeta = fullJson.substring(0, strategyKeyIdx + 8).getBytes(StandardCharsets.UTF_8);
+
+        byte[] checksumsBytes = new StorageContract.ChecksumManifest(java.util.Map.of(
+                        StorageContract.ROOT_VOLUME_FILE_NAME, StorageContract.sha256Hex(volBytes),
+                        StorageContract.METADATA_FILE_NAME, StorageContract.sha256Hex(truncatedMeta)))
+                .format()
+                .getBytes(StandardCharsets.UTF_8);
+
+        ByteArrayOutputStream corruptedZip = new ByteArrayOutputStream();
+        try (ZipOutputStream zout = new ZipOutputStream(corruptedZip)) {
+            zout.putNextEntry(new ZipEntry(StorageContract.ROOT_VOLUME_FILE_NAME));
+            zout.write(volBytes);
+            zout.closeEntry();
+            zout.putNextEntry(new ZipEntry(StorageContract.METADATA_FILE_NAME));
+            zout.write(truncatedMeta);
+            zout.closeEntry();
+            zout.putNextEntry(new ZipEntry(StorageContract.CHECKSUMS_FILE_NAME));
+            zout.write(checksumsBytes);
+            zout.closeEntry();
+        }
+
+        Path rejectedTarget = caseDir.resolve("restore").resolve("rootfs.raw");
+        Exception failure = assertThrows(
+                Exception.class,
+                () -> controller.importFromArchive(
+                        new ByteArrayInputStream(corruptedZip.toByteArray()),
+                        rejectedTarget,
+                        UUID.randomUUID().toString()),
+                "truncated instance-metadata.json must fail closed");
+        assertTrue(
+                failure instanceof IOException || failure instanceof IllegalArgumentException,
+                "expected IOException or IllegalArgumentException, got: " + failure.getClass().getName());
+        assertFalse(Files.exists(rejectedTarget), "truncated JSON import creates no root volume");
+        assertEquals(1, store.list().size(), "failed import does not mutate instance store");
     }
 
     /** Builds a stored-entry ZIP that intentionally repeats one entry name twice. */

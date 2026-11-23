@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella;
 
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException;
 import java.io.IOException;
@@ -205,6 +206,12 @@ public final class InstanceStrategyLauncher {
                 throws IOException, InterruptedException;
     }
 
+    /** Strategy-specific launch seam for the standalone user-mode kernel (W3-00/W3-01). */
+    public interface UserModeKernelLaunch {
+        ExecutionSession launch(LaunchParameters parameters)
+                throws IOException, InterruptedException;
+    }
+
     /** Receives every AVF→QEMU degradation with its reason. */
     public interface DegradationSink {
         void record(AvfEngineException failure) throws IOException;
@@ -231,6 +238,22 @@ public final class InstanceStrategyLauncher {
 
         public boolean hardwareAccelerated() {
             return strategy == FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION;
+        }
+
+        /** Centralized fallback reason derived from the per-launch degradation string, if any. */
+        public ExecutionPolicyContract.FallbackReason fallbackReason() {
+            if (degradationReason == null || degradationReason.isBlank()) {
+                return ExecutionPolicyContract.FallbackReason.NONE;
+            }
+            return switch (degradationReason.trim()) {
+                case AvfEngineException.PERMISSION_DENIED ->
+                        ExecutionPolicyContract.FallbackReason.HARDWARE_PERMISSION_DENIED;
+                case AvfEngineException.HARDWARE_UNSUPPORTED ->
+                        ExecutionPolicyContract.FallbackReason.HARDWARE_UNSUPPORTED;
+                case AvfEngineException.CONFIG_MISMATCH ->
+                        ExecutionPolicyContract.FallbackReason.HARDWARE_CONFIG_MISMATCH;
+                default -> ExecutionPolicyContract.FallbackReason.HARDWARE_UNAVAILABLE;
+            };
         }
     }
 

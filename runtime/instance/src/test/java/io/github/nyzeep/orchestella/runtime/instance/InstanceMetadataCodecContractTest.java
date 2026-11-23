@@ -1,6 +1,8 @@
 package io.github.nyzeep.orchestella.runtime.instance;
 
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.orchestella.runtime.contract.StorageContract;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import java.time.Clock;
 import java.time.Instant;
@@ -19,6 +21,7 @@ public final class InstanceMetadataCodecContractTest {
     public static void main(String[] arguments) throws Exception {
         roundTripsEveryPersistedAspect();
         preservesUnknownMetadataKeysVerbatim();
+        roundTripsExecutionIdentityAndRejectsBlankTruncatedValues();
         failsClosedOnMalformedMetadata();
         failsClosedOnNewerSchemaVersion();
     }
@@ -87,6 +90,60 @@ public final class InstanceMetadataCodecContractTest {
         store.save(decoded);
         assertEquals("future-value", store.load(created.id()).toProperties().getProperty("future.field"),
                 "unknown metadata key survives persistence");
+    }
+
+    private static void roundTripsExecutionIdentityAndRejectsBlankTruncatedValues() throws Exception {
+        java.nio.file.Path storeDir = java.nio.file.Files.createTempDirectory("codec-exec-identity");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(storeDir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, CLOCK);
+
+        ExecutionPolicyContract.InstanceExecutionIdentity umlIdentity =
+                ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        StorageContract.RootVolumeFormat.RAW_SPARSE);
+        InstanceLifecycle.Instance created = controller.create(
+                new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
+                storeTestRoot("uml-identity"),
+                VmHardwareConfig.defaultConfig(),
+                InstanceUserConfig.defaultRoot(),
+                umlIdentity);
+        assertEquals(umlIdentity, store.load(created.id()).executionIdentity(), "persisted explicit UML identity");
+
+        // Explicit legacy strategy + explicit raw format round-trip cleanly.
+        Properties legacyExplicit = created.toProperties();
+        legacyExplicit.setProperty("execution.strategy", "SOFTWARE_VIRTUALIZATION");
+        legacyExplicit.setProperty("storage.rootVolumeFormat", "RAW_SPARSE");
+        InstanceLifecycle.Instance decodedLegacyExplicit = InstanceLifecycle.Instance.fromProperties(legacyExplicit);
+        assertEquals(FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
+                decodedLegacyExplicit.executionIdentity().strategy().strategy(), "explicit legacy strategy");
+        assertEquals(StorageContract.RootVolumeFormat.RAW_SPARSE,
+                decodedLegacyExplicit.executionIdentity().volumeFormat().format(), "explicit raw format");
+
+        // Unknown new strategy and unrecognized volume format remain inspectable and lossless on rewrite.
+        Properties futureProps = created.toProperties();
+        futureProps.setProperty("execution.strategy", "FUTURE_KERNEL_V2");
+        futureProps.setProperty("storage.rootVolumeFormat", "QCOW2_NEXT");
+        InstanceLifecycle.Instance decodedFuture = InstanceLifecycle.Instance.fromProperties(futureProps);
+        assertEquals(true, decodedFuture.executionIdentity().hasUnknownStrategy(), "unknown strategy surfaced");
+        assertEquals("FUTURE_KERNEL_V2", decodedFuture.executionIdentity().strategy().rawValue(), "unknown strategy raw");
+        assertEquals(true, decodedFuture.executionIdentity().hasUnrecognizedVolumeFormat(), "unknown format surfaced");
+        assertEquals("QCOW2_NEXT", decodedFuture.executionIdentity().volumeFormat().rawValue(), "unknown format raw");
+        assertEquals("FUTURE_KERNEL_V2", decodedFuture.toProperties().getProperty("execution.strategy"),
+                "unknown strategy preserved on re-encode");
+
+        // Truncated/blank strategy or volume format fails closed without corrupting saved file.
+        java.nio.file.Path propsPath = storeDir.resolve(created.id() + ".properties");
+        byte[] originalSavedBytes = java.nio.file.Files.readAllBytes(propsPath);
+        Properties blankStrategy = created.toProperties();
+        blankStrategy.setProperty("execution.strategy", "");
+        assertThrows(IllegalArgumentException.class, () -> InstanceLifecycle.Instance.fromProperties(blankStrategy),
+                "blank execution.strategy must fail closed");
+        Properties blankFormat = created.toProperties();
+        blankFormat.setProperty("storage.rootVolumeFormat", "   ");
+        assertThrows(IllegalArgumentException.class, () -> InstanceLifecycle.Instance.fromProperties(blankFormat),
+                "blank storage.rootVolumeFormat must fail closed");
+        assertEquals(true, java.util.Arrays.equals(originalSavedBytes, java.nio.file.Files.readAllBytes(propsPath)),
+                "saved metadata file remains untouched");
     }
 
     private static void failsClosedOnMalformedMetadata() {

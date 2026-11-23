@@ -63,6 +63,11 @@ public final class SessionCapabilities {
             throw new IllegalArgumentException(
                     "software virtualization cannot claim hardware acceleration");
         }
+        if (executionStrategy == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL
+                && hardwareAcceleration) {
+            throw new IllegalArgumentException(
+                    "user-mode kernel cannot claim hardware acceleration");
+        }
     }
 
     public static Builder builder(FullLinuxContract.ExecutionStrategy executionStrategy) {

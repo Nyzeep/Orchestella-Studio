@@ -134,14 +134,12 @@ public final class NetworkCapabilityDeclaration {
      * The immutable network capability entries declared for one strategy.
      */
     public static List<Entry> forStrategy(FullLinuxContract.ExecutionStrategy strategy) {
-        List<Entry> source;
-        if (strategy == FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION) {
-            source = SOFTWARE_VIRTUALIZATION;
-        } else if (strategy == FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION) {
-            source = HARDWARE_VIRTUALIZATION;
-        } else {
-            throw new IllegalArgumentException("unknown execution strategy: " + strategy);
-        }
+        Objects.requireNonNull(strategy, "strategy");
+        List<Entry> source = switch (strategy) {
+            case SOFTWARE_VIRTUALIZATION -> SOFTWARE_VIRTUALIZATION;
+            case HARDWARE_VIRTUALIZATION -> HARDWARE_VIRTUALIZATION;
+            case USER_MODE_KERNEL -> Collections.emptyList();
+        };
         return Collections.unmodifiableList(new ArrayList<>(source));
     }
 

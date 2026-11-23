@@ -1,5 +1,7 @@
 package io.github.nyzeep.orchestella
 
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStartException
@@ -200,6 +202,27 @@ class ErrorCopyTest {
     }
 
     @Test
+    fun executionPolicyRefusalMapsByPreflightCodeInsteadOfGenericIllegalState() {
+        val unknownStrategy = refusalFor("FUTURE_VM", null, true)
+        val unknownEntry = ErrorCopy.resolve(unknownStrategy)
+        assertEquals(ErrorCopy.CODE_EXEC_STRATEGY_UNKNOWN, unknownEntry.code)
+        assertEquals(R.string.error_exec_strategy_unknown, headline(unknownEntry))
+        assertEquals(R.string.error_hint_export_or_upgrade, hint(unknownEntry))
+
+        val volumeConflict = refusalFor("SOFTWARE_VIRTUALIZATION", "QCOW3", true)
+        val volumeEntry = ErrorCopy.resolve(volumeConflict)
+        assertEquals(ErrorCopy.CODE_VOLUME_FORMAT_CONFLICT, volumeEntry.code)
+        assertEquals(R.string.error_volume_format_conflict, headline(volumeEntry))
+        assertEquals(R.string.error_hint_export_or_upgrade, hint(volumeEntry))
+
+        val unavailable = refusalFor("USER_MODE_KERNEL", null, false)
+        val unavailableEntry = ErrorCopy.resolve(unavailable)
+        assertEquals(ErrorCopy.CODE_EXEC_STRATEGY_UNAVAILABLE, unavailableEntry.code)
+        assertEquals(R.string.error_exec_strategy_unavailable, headline(unavailableEntry))
+        assertEquals(R.string.error_hint_see_log, hint(unavailableEntry))
+    }
+
+    @Test
     fun everyFamilyOwnsADistinctStableCode() {
         val codes = listOf(
             ErrorCopy.resolve(SocketTimeoutException("t")).code,
@@ -219,6 +242,9 @@ class ErrorCopyTest {
             ErrorCopy.resolve(AvfEngineException(AvfEngineException.PERMISSION_DENIED, "a")).code,
             ErrorCopy.resolve(LaneStartException("X")).code,
             ErrorCopy.resolve(OutOfMemoryError("o")).code,
+            ErrorCopy.resolve(refusalFor("FUTURE_VM", null, true)).code,
+            ErrorCopy.resolve(refusalFor("SOFTWARE_VIRTUALIZATION", "QCOW3", true)).code,
+            ErrorCopy.resolve(refusalFor("USER_MODE_KERNEL", null, false)).code,
             ErrorCopy.resolve(null).code,
         )
         assertEquals(codes.size, codes.toSet().size)
@@ -245,9 +271,42 @@ class ErrorCopyTest {
             ErrorCopy.resolve(AvfEngineException(AvfEngineException.PERMISSION_DENIED, "a")),
             ErrorCopy.resolve(LaneStartException("X")),
             ErrorCopy.resolve(OutOfMemoryError("o")),
+            ErrorCopy.resolve(refusalFor("FUTURE_VM", null, true)),
+            ErrorCopy.resolve(refusalFor("SOFTWARE_VIRTUALIZATION", "QCOW3", true)),
+            ErrorCopy.resolve(refusalFor("USER_MODE_KERNEL", null, false)),
             ErrorCopy.resolve(null),
         )
         assertEquals(entries.size, entries.map { it.headlineRes }.toSet().size)
         assertNotEquals(entries[0].hintRes, entries[1].hintRes)
+    }
+
+    private fun refusalFor(
+        rawStrategy: String?,
+        rawFormat: String?,
+        qaEnabled: Boolean,
+    ): ExecutionPolicyContract.ExecutionPolicyRefusalException {
+        val available = if (qaEnabled) {
+            setOf(
+                io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
+                io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION,
+                io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+            )
+        } else {
+            setOf(
+                io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
+                io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION,
+            )
+        }
+        return ExecutionPolicyContract.ExecutionPolicyRefusalException(
+            ExecutionPolicyContract.evaluateLaunch(
+                ExecutionPolicyContract.InstanceExecutionIdentity.of(
+                    ExecutionPolicyContract.StrategyDeclaration.parse(rawStrategy),
+                    ExecutionPolicyContract.VolumeFormatDeclaration.parse(rawFormat),
+                ),
+                null,
+                available,
+                10L,
+            ),
+        )
     }
 }

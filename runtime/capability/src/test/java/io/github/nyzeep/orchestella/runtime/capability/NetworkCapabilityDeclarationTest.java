@@ -21,6 +21,7 @@ public final class NetworkCapabilityDeclarationTest {
         declaresAvfNetworkCapabilitiesWithContractEvidence();
         refusesToClaimUnobservedDeviceVerificationForAvf();
         bothStrategiesExposeTheFullNetworkCapabilitySet();
+        userModeKernelLeavesUnverifiedNetworkCapabilitiesDisabled();
         System.out.println(
                 "NETWORK_CAPABILITY_DECLARATION_TEST_OK software=2 avf=2"
                         + " honesty=1 parity_set=1");
@@ -100,6 +101,28 @@ public final class NetworkCapabilityDeclarationTest {
                 NetworkCapabilityDeclaration.capabilities(
                         FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION);
         assertEquals(software, hardware, "both strategies declare the same network capability set");
+    }
+
+    private static void userModeKernelLeavesUnverifiedNetworkCapabilitiesDisabled() {
+        List<Entry> entries = NetworkCapabilityDeclaration.forStrategy(
+                FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL);
+        assertTrue(entries.isEmpty(), "unverified UML network capabilities remain empty");
+        assertTrue(
+                NetworkCapabilityDeclaration.capabilities(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL).isEmpty(),
+                "UML capabilities list stays empty");
+        assertTrue(
+                !NetworkCapabilityDeclaration.isVerified(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        NetworkCapability.OUTBOUND_NETWORK,
+                        VerificationLevel.CONTRACT_VERIFIED),
+                "UML outbound network is not contract-verified yet");
+        assertTrue(
+                !NetworkCapabilityDeclaration.isVerified(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        NetworkCapability.PORT_FORWARDING,
+                        VerificationLevel.CONTRACT_VERIFIED),
+                "UML port forwarding is not contract-verified yet");
     }
 
     private static Entry entry(List<Entry> entries, NetworkCapability capability) {
