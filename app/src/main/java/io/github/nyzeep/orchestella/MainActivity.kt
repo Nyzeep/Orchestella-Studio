@@ -2128,7 +2128,7 @@ class MainActivity : AppCompatActivity() {
         isolatedQaEnabled = BooleanSupplier { BuildConfig.IS_ISOLATED_QA_BUILD },
         standaloneUmlLaunch = if (BuildConfig.IS_ISOLATED_QA_BUILD) {
             InstanceStrategyLauncher.UserModeKernelLaunch { params ->
-                UmlInstanceLauncher(this).launch(params)
+                UmlInstanceLauncher(this, instanceStore).launch(params)
             }
         } else {
             null

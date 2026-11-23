@@ -126,6 +126,24 @@ class InstanceFileStore implements InstanceLifecycle.Store {
 
         if (instance.rootVolume() != null) {
             Files.deleteIfExists(instance.rootVolume());
+            Path volumeParent = instance.rootVolume().getParent();
+            Path volumeName = instance.rootVolume().getFileName();
+            if (volumeParent != null && volumeName != null && Files.isDirectory(volumeParent)) {
+                String base = volumeName.toString();
+                try (var volEntries = Files.list(volumeParent)) {
+                    volEntries.filter(p -> {
+                        String name = p.getFileName().toString();
+                        return (name.startsWith(base + ".provision-") && name.endsWith(".part"))
+                                || (name.startsWith(base + ".backup-") && name.endsWith(".part"))
+                                || name.startsWith(base + ".import.tmp.");
+                    }).forEach(p -> {
+                        try {
+                            Files.deleteIfExists(p);
+                        } catch (IOException ignored) {
+                        }
+                    });
+                }
+            }
         }
 
         Files.deleteIfExists(directory.resolve(id + ".raw"));

@@ -17,13 +17,16 @@ import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.contract.StorageContract;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlBridgeAdapter;
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroCapabilityCatalog;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlEphemeralRootFixture;
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlInstanceRootfsProvisioner;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlLaunchSpec;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlProcessFactory;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlProcessHandle;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlReadinessTracker;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlRootReservationRegistry;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlRuntimeSupervisor;
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlVolumeInspector;
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorFacts;
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.BatteryState;
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.ThermalState;
@@ -757,6 +760,323 @@ public final class UmlInstanceLauncherContractTest {
         assertTrue(qemuOutcome instanceof InstanceLaunchCoordinator.LaunchOutcome.Launched);
         assertEquals(1, qemuCalls.get());
         assertEquals(0, faceLane.arms.get());
+    }
+
+    @Test(timeout = 20_000)
+    public void persistentExt4ProvisionOnFirstLaunchThenReusesSameDiskOnRebootAndSupportsExplicitMigration()
+            throws Exception {
+        Path root = tmp.newFolder("persistent-ext4").toPath();
+        File filesDir = root.resolve("files").toFile();
+        File nativeDir = root.resolve("native").toFile();
+        assertTrue(new File(filesDir, "instances").mkdirs());
+        assertTrue(nativeDir.mkdirs());
+        Files.createFile(nativeDir.toPath().resolve("libuml_kernel.so"));
+        Files.createFile(nativeDir.toPath().resolve("libuml_stub.so"));
+
+        Path storeDir = filesDir.toPath().resolve("instances");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(storeDir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, FIXED_CLOCK);
+
+        IsolatedQaExecutionEntry qaEntry = new IsolatedQaExecutionEntry(() -> true);
+        // Debian 13 & Arch are refused on FAST_UP_ARM64 before touching disk.
+        try {
+            qaEntry.ensurePersistentAlpineInstance(
+                    store, controller, filesDir.toPath().resolve("qa-uml-roots"), null, "debian");
+            fail("expected Debian 13 refusal under UML fast-profile");
+        } catch (UmlDistroCapabilityCatalog.DistroNotCreatableException expected) {
+            assertEquals("debian", expected.verdict().distroId());
+        }
+
+        InstanceLifecycle.Instance alpine = qaEntry.ensurePersistentAlpineInstance(
+                store, controller, filesDir.toPath().resolve("qa-uml-roots"));
+        cleanupInstanceIds.add(alpine.id());
+        assertEquals(0L, Files.size(alpine.rootVolume()));
+
+        byte[] tarGz = buildMinimalAlpineTarGz();
+        Path seedTar = root.resolve("alpine-seed.tar.gz");
+        Files.write(seedTar, tarGz);
+        String seedSha = sha256Hex(tarGz);
+
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        AtomicInteger provisionSpawns = new AtomicInteger();
+        AtomicInteger bootSpawns = new AtomicInteger();
+        List<UmlLaunchSpec> bootSpecs = new ArrayList<>();
+        CountDownLatch bootExit1 = new CountDownLatch(0);
+        CountDownLatch bootExit2 = new CountDownLatch(0);
+
+        UmlProcessFactory sharedFactory = (spec, cols, rows) -> {
+            if (spec.rootMode() == UmlLaunchSpec.RootMode.HOSTFS) {
+                provisionSpawns.incrementAndGet();
+                Path stageDir = spec.ephemeralRootDir();
+                String script = new String(
+                        Files.readAllBytes(stageDir.resolve("um-command.sh")),
+                        StandardCharsets.UTF_8);
+                String okLine = extractSuccessMarker(script);
+                // Write synthetic ext4 superblock magic and user-data marker byte into temp .part.
+                try (var ch = Files.newByteChannel(
+                        spec.ubd0Path(),
+                        java.nio.file.StandardOpenOption.CREATE,
+                        java.nio.file.StandardOpenOption.WRITE)) {
+                    ch.position(0x438);
+                    ch.write(java.nio.ByteBuffer.wrap(new byte[] {0x53, (byte) 0xEF}));
+                    ch.position(4096);
+                    ch.write(java.nio.ByteBuffer.wrap("BOOT1_DATA".getBytes(StandardCharsets.UTF_8)));
+                    ch.position(StorageContract.MIN_ROOT_VOLUME_BYTES - 1L);
+                    ch.write(java.nio.ByteBuffer.wrap(new byte[] {0}));
+                }
+                return new ImmediateConsoleProcess(0, okLine + "\n");
+            }
+            int seq = bootSpawns.getAndIncrement();
+            bootSpecs.add(spec);
+            return new FakeUmlProcessHandle(4800L + seq, seq == 0 ? bootExit1 : bootExit2, 0);
+        };
+
+        UmlInstanceRootfsProvisioner.ToolchainStager stager = stageDir -> {
+            Files.createDirectories(stageDir.resolve("sbin"));
+            Files.createDirectories(stageDir.resolve("etc"));
+            Files.createDirectories(stageDir.resolve("bin"));
+            Files.write(stageDir.resolve("sbin/mkfs.ext4"), "mkfs".getBytes(StandardCharsets.UTF_8));
+            Files.write(stageDir.resolve("etc/mke2fs.conf"), "[defaults]\n".getBytes(StandardCharsets.UTF_8));
+            Files.write(stageDir.resolve("bin/busybox"), "bb".getBytes(StandardCharsets.UTF_8));
+        };
+
+        UmlInstanceRootfsProvisioner provisioner = new UmlInstanceRootfsProvisioner(
+                sharedFactory,
+                registry,
+                stager,
+                path -> 4L * 1024L * 1024L * 1024L,
+                FIXED_CLOCK);
+
+        AtomicLong mono = new AtomicLong(1_000_000L);
+        UmlInstanceLauncher launcher = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir,
+                sharedFactory,
+                registry,
+                provisioner,
+                (params, distroId) -> new UmlInstanceRootfsProvisioner.SeedInput(
+                        "alpine", "3.22.2", seedTar, null, null, seedSha, tarGz.length),
+                store.stateMonitor(),
+                store,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L);
+
+        InstanceLaunchCoordinator coordinator = coordinator(
+                store, filesDir, true, launcher, new RecordingUmlFaceLane(), new RecordingUi());
+
+        // Boot 1: provisions ext4 disk atomically, boots with EXT4_UBD, records provisioning evidence.
+        InstanceLaunchCoordinator.LaunchOutcome boot1 = coordinator.launch(alpine);
+        assertTrue(boot1 instanceof InstanceLaunchCoordinator.LaunchOutcome.Launched);
+        awaitCondition(() -> isStopped(store, alpine.id()) && !registry.isReserved(alpine.rootVolume()),
+                5_000, "boot 1 did not finish cleanly");
+
+        assertEquals(1, provisionSpawns.get());
+        assertEquals(1, bootSpawns.get());
+        assertEquals(UmlLaunchSpec.RootMode.EXT4_UBD, bootSpecs.get(0).rootMode());
+        assertTrue(bootSpecs.get(0).argv().contains("umroot=/dev/ubda"));
+        assertTrue(bootSpecs.get(0).argv().contains("umrootfstype=ext4"));
+        assertTrue(store.load(alpine.id()).isProvisionedFor(seedSha));
+        assertEquals(
+                UmlVolumeInspector.VolumeState.EXT4_READY,
+                UmlVolumeInspector.inspect(alpine.rootVolume()).state());
+
+        // Boot 2: reuses the SAME ext4 volume without running provisioning again.
+        InstanceLaunchCoordinator.LaunchOutcome boot2 = coordinator.launch(store.load(alpine.id()));
+        assertTrue(boot2 instanceof InstanceLaunchCoordinator.LaunchOutcome.Launched);
+        awaitCondition(() -> isStopped(store, alpine.id()) && !registry.isReserved(alpine.rootVolume()),
+                5_000, "boot 2 did not finish cleanly");
+
+        assertEquals("second boot must not re-provision ext4 disk", 1, provisionSpawns.get());
+        assertEquals(2, bootSpawns.get());
+        // Verify persistent bytes inside the raw volume survived both boots.
+        byte[] probe = new byte[10];
+        try (var ch = Files.newByteChannel(alpine.rootVolume(), java.nio.file.StandardOpenOption.READ)) {
+            ch.position(4096);
+            ch.read(java.nio.ByteBuffer.wrap(probe));
+        }
+        assertEquals("BOOT1_DATA", new String(probe, StandardCharsets.UTF_8));
+
+        // Explicit migration preserves existing disk on failure, then replaces when succeeding.
+        UmlInstanceRootfsProvisioner failingProvisioner = new UmlInstanceRootfsProvisioner(
+                (spec, cols, rows) -> new ImmediateConsoleProcess(1, "ORCHESTELLA_UML_PROVISION_FAIL step=untar rc=1\n"),
+                registry,
+                stager,
+                path -> 4L * 1024L * 1024L * 1024L,
+                FIXED_CLOCK);
+        try {
+            qaEntry.replaceInstanceRootVolumeExplicitly(
+                    store,
+                    controller,
+                    failingProvisioner,
+                    registry,
+                    alpine.id(),
+                    new UmlInstanceRootfsProvisioner.SeedInput(
+                            "alpine", "3.22.2", seedTar, null, null, seedSha, tarGz.length),
+                    "test-failed-migration",
+                    nativeDir.toPath().resolve("libuml_kernel.so").toString(),
+                    nativeDir.toPath().resolve("libuml_stub.so").toString(),
+                    filesDir.toPath().resolve("runtime").resolve(alpine.id()));
+            fail("expected failed migration to throw");
+        } catch (UmlInstanceRootfsProvisioner.ProvisionException expected) {
+            assertEquals(UmlInstanceRootfsProvisioner.REASON_GUEST_FAILED, expected.reason());
+        }
+        // Existing disk bytes untouched after failed migration.
+        try (var ch = Files.newByteChannel(alpine.rootVolume(), java.nio.file.StandardOpenOption.READ)) {
+            ch.position(4096);
+            ch.read(java.nio.ByteBuffer.wrap(probe));
+        }
+        assertEquals("BOOT1_DATA", new String(probe, StandardCharsets.UTF_8));
+    }
+
+    @Test(timeout = 10_000)
+    public void persistentLauncherRefusesUnrecognizedNonEmptyVolumeWithoutOverwriting() throws Exception {
+        Path root = tmp.newFolder("corrupt-nonempty").toPath();
+        File filesDir = root.resolve("files").toFile();
+        File nativeDir = root.resolve("native").toFile();
+        assertTrue(new File(filesDir, "instances").mkdirs());
+        assertTrue(nativeDir.mkdirs());
+        Path badVolume = root.resolve("foreign-data.raw");
+        byte[] foreignBytes = new byte[4096];
+        System.arraycopy("FOREIGN_DATA".getBytes(StandardCharsets.UTF_8), 0, foreignBytes, 0, 12);
+        Files.write(badVolume, foreignBytes);
+
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        UmlInstanceRootfsProvisioner provisioner = new UmlInstanceRootfsProvisioner(
+                (spec, cols, rows) -> { throw new AssertionError("must not provision foreign disk"); },
+                registry,
+                stageDir -> {},
+                path -> 4L * 1024L * 1024L * 1024L,
+                FIXED_CLOCK);
+        UmlInstanceLauncher launcher = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir,
+                (spec, cols, rows) -> { throw new AssertionError("must not spawn on foreign disk"); },
+                registry,
+                provisioner,
+                (params, distroId) -> { throw new AssertionError("must not read seed"); },
+                new Object(),
+                null,
+                FIXED_CLOCK,
+                System::nanoTime,
+                100L, 100L, 100L);
+
+        String id = UUID.randomUUID().toString();
+        cleanupInstanceIds.add(id);
+        InstanceStrategyLauncher.LaunchParameters params = new InstanceStrategyLauncher.LaunchParameters(
+                id, TOKEN, UmlKernelAssets.FastProfile.ROOTFS_TAR, badVolume.toString(),
+                root.resolve("rt").toString(), root.toString(),
+                "orchestellaqa", VmHardwareConfig.defaultConfig());
+        try {
+            launcher.launch(params);
+            fail("expected unrecognized non-empty volume refusal");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("UNRECOGNIZED_NON_EMPTY"));
+        }
+        assertFalse(registry.isReserved(badVolume));
+        assertTrue(java.util.Arrays.equals(foreignBytes, Files.readAllBytes(badVolume)));
+    }
+
+    @Test(timeout = 10_000)
+    public void preAuthEchoFilterDropsEarlyTtyHelloEchoWithoutHidingGenuineErrors() throws Exception {
+        byte[] echoedPlusReady = ("\r\nORCHESTELLA/HELLO 1 1 " + TOKEN + "\r\n"
+                + "DROIDLAYER/HELLO 1 1 " + TOKEN + "\r\n"
+                + "ORCHESTELLA/READY 1\n").getBytes(StandardCharsets.US_ASCII);
+        ByteArrayOutputStream capturedOutbound = new ByteArrayOutputStream();
+        try (PipedOutputStream fakeGuestOut = new PipedOutputStream();
+             PipedInputStream inbound = new PipedInputStream(fakeGuestOut)) {
+            fakeGuestOut.write(echoedPlusReady);
+            fakeGuestOut.flush();
+            BridgeClient client = new BridgeClient(
+                    new UmlInstanceLauncher.PreAuthHelloEchoFilterInputStream(inbound),
+                    capturedOutbound);
+            client.startResponsePump(line -> "ORCHESTELLA/ERROR unauthenticated\n", 1_000L, 1_000L);
+            BridgeClient.Result handshake = client.handshake(TOKEN);
+            assertTrue(handshake.accepted());
+            assertTrue(client.isReady());
+            String sent = new String(capturedOutbound.toByteArray(), StandardCharsets.US_ASCII);
+            assertFalse("echoed HELLO must not trigger unauthenticated error reply",
+                    sent.contains("ORCHESTELLA/ERROR unauthenticated"));
+        }
+
+        // Post-READY passthrough reads verbatim (even a line containing HELLO would pass untouched).
+        try (UmlInstanceLauncher.PreAuthHelloEchoFilterInputStream rawCheck =
+                new UmlInstanceLauncher.PreAuthHelloEchoFilterInputStream(
+                        new ByteArrayInputStream(("ORCHESTELLA/HELLO 1 1 " + TOKEN + "\r\n"
+                                + "ORCHESTELLA/READY 1\n"
+                                + "ORCHESTELLA/HELLO 1 1 postready\n")
+                                .getBytes(StandardCharsets.US_ASCII)))) {
+            byte[] all = new byte[512];
+            int total = 0;
+            int n;
+            while ((n = rawCheck.read(all, total, all.length - total)) != -1) {
+                total += n;
+            }
+            assertEquals(
+                    "ORCHESTELLA/READY 1\nORCHESTELLA/HELLO 1 1 postready\n",
+                    new String(all, 0, total, StandardCharsets.US_ASCII));
+        }
+
+        // Genuine ERROR unauthorized before READY must NOT be suppressed.
+        byte[] genuineError = ("ORCHESTELLA/HELLO 1 1 " + TOKEN + "\r\n"
+                + "ORCHESTELLA/ERROR unauthorized\n").getBytes(StandardCharsets.US_ASCII);
+        try (PipedOutputStream errGuestOut = new PipedOutputStream();
+             PipedInputStream errInbound = new PipedInputStream(errGuestOut)) {
+            errGuestOut.write(genuineError);
+            errGuestOut.flush();
+            BridgeClient failingClient = new BridgeClient(
+                    new UmlInstanceLauncher.PreAuthHelloEchoFilterInputStream(errInbound),
+                    new ByteArrayOutputStream());
+            failingClient.startResponsePump(line -> "ORCHESTELLA/ERROR unauthenticated\n", 1_000L, 1_000L);
+            BridgeClient.Result failed = failingClient.handshake(TOKEN);
+            assertFalse(failed.accepted());
+            assertEquals("unauthorized", failed.responseKind());
+            assertFalse(failingClient.isReady());
+        }
+    }
+
+    private static String extractSuccessMarker(String script) {
+        for (String line : script.split("\n")) {
+            int idx = line.indexOf("ORCHESTELLA_UML_PROVISION_OK ");
+            if (idx >= 0) {
+                return line.substring(idx).replace("\\n'", "").trim();
+            }
+        }
+        throw new AssertionError("missing success marker");
+    }
+
+    private static String sha256Hex(byte[] bytes) throws Exception {
+        byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes);
+        StringBuilder sb = new StringBuilder(digest.length * 2);
+        for (byte b : digest) {
+            sb.append(String.format(java.util.Locale.ROOT, "%02x", b & 0xff));
+        }
+        return sb.toString();
+    }
+
+    private static final class ImmediateConsoleProcess implements UmlProcessHandle {
+        private final int exitCode;
+        private final byte[] console;
+
+        ImmediateConsoleProcess(int exitCode, String output) {
+            this.exitCode = exitCode;
+            this.console = output.getBytes(StandardCharsets.UTF_8);
+        }
+
+        @Override public long pid() { return 4999L; }
+        @Override public boolean isAlive() { return false; }
+        @Override public int waitFor() { return exitCode; }
+        @Override public boolean waitFor(long timeout, TimeUnit unit) { return true; }
+        @Override public void destroy() {}
+        @Override public void destroyForcibly() {}
+        @Override public OutputStream terminalInput() { return OutputStream.nullOutputStream(); }
+        @Override public InputStream terminalOutput() { return new ByteArrayInputStream(console); }
+        @Override public OutputStream controlInput() { return OutputStream.nullOutputStream(); }
+        @Override public InputStream controlOutput() { return InputStream.nullInputStream(); }
+        @Override public boolean resizeTerminal(int columns, int rows) { return true; }
+        @Override public void closeChannels() {}
     }
 
     private static InstanceLaunchCoordinator coordinator(

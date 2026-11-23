@@ -505,14 +505,7 @@ public final class InstanceStorageManager {
             // Build and validate the full instance before touching the final path, so malformed
             // metadata or unrecognized/conflicting execution & volume formats cannot leave a stray
             // root volume behind.
-            ExecutionPolicyContract.PreflightVerdict volumeConflict =
-                    ExecutionPolicyContract.detectVolumeFormatConflict(
-                            tempVolume, metadata.executionIdentity().volumeFormat());
-            if (volumeConflict != null) {
-                throw new IOException(
-                        "Archive root volume format conflict [" + volumeConflict.code() + "]: "
-                                + volumeConflict.detail());
-            }
+            validateImportContract(tempVolume, metadata.executionIdentity());
             InstanceLifecycle.Instance instance =
                     restoredInstance(instanceId, targetRootVolume, metadata, clock);
 
@@ -546,6 +539,42 @@ public final class InstanceStorageManager {
     private static void rejectExistingTarget(Path targetRootVolume) throws IOException {
         if (Files.exists(targetRootVolume)) {
             throw new IOException("refusing to overwrite existing root volume: " + targetRootVolume);
+        }
+    }
+
+    /**
+     * Validates an existing or staged root volume and persisted execution identity before
+     * registering an imported instance.
+     */
+    public static void validateImportContract(
+            Path volumePath, ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity)
+            throws IOException {
+        Objects.requireNonNull(volumePath, "volumePath");
+        ExecutionPolicyContract.InstanceExecutionIdentity effectiveIdentity =
+                executionIdentity != null
+                        ? executionIdentity
+                        : ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent();
+        if (effectiveIdentity.hasUnknownStrategy()) {
+            throw new IOException(
+                    "Unsupported execution strategy in archive metadata ["
+                            + ExecutionPolicyContract.PreflightCode.UNKNOWN_EXECUTION_STRATEGY
+                            + "]: "
+                            + effectiveIdentity.strategy().rawValue());
+        }
+        if (effectiveIdentity.hasUnrecognizedVolumeFormat()) {
+            throw new IOException(
+                    "Unrecognized root volume format in archive metadata ["
+                            + ExecutionPolicyContract.PreflightCode.UNRECOGNIZED_VOLUME_FORMAT
+                            + "]: "
+                            + effectiveIdentity.volumeFormat().rawValue());
+        }
+        ExecutionPolicyContract.PreflightVerdict volumeConflict =
+                ExecutionPolicyContract.detectVolumeFormatConflict(
+                        volumePath, effectiveIdentity.volumeFormat());
+        if (volumeConflict != null) {
+            throw new IOException(
+                    "Archive root volume format conflict [" + volumeConflict.code() + "]: "
+                            + volumeConflict.detail());
         }
     }
 
