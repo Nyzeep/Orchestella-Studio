@@ -61,6 +61,9 @@ public final class PortForwardingManagerContractTest {
             persistsRulesAcrossStoreAndManagerReconstruction(tempDir);
             reconcilesWithRunningEngineOnAdditionAndRemoval(tempDir);
             attachingRunningEngineReplaysExistingRules(tempDir);
+            compilerEndpointsStayReservedWhenLoadingOldRules(tempDir);
+            openPagesShareRuleChanges(tempDir);
+            updatesRulesAtomicallyRollsBackSaveFailuresAndSerializesApplyRule(tempDir);
             removesRuleAndUpdatesStore(tempDir);
             verifiesLiveTrafficForwardingAndImmediateInvalidationOnRemoval(
                     tempDir, liveEngineFactory);
@@ -295,6 +298,128 @@ public final class PortForwardingManagerContractTest {
         // Verify store on disk has 0 rules
         PortForwardingStore store2 = new FilePortForwardingStore(dir);
         assertEquals(0, store2.loadRules("inst-remove").size(), "store has 0 rules after removal");
+    }
+
+    private static void compilerEndpointsStayReservedWhenLoadingOldRules(Path dir) throws IOException {
+        String instance = "inst-compiler-endpoints";
+        PortForwardingStore store = new FilePortForwardingStore(dir);
+        PortForwardingRule legacy = PortForwardingRule.defaultRule("legacy", Protocol.TCP, 3632, 80);
+        store.saveRules(instance, List.of(legacy));
+        PortForwardingManager manager = new PortForwardingManager(instance, store, new PortConflictDetector());
+        MockEngine engine = new MockEngine();
+
+        manager.attachEngine(engine);
+        assertTrue(engine.addedRules.isEmpty(), "restart skips the reserved host endpoint");
+        assertEquals(List.of(legacy), manager.listRules(), "old configuration remains available for removal");
+
+        PortForwardingRule compileListener = PortForwardingRule.defaultRule(
+                "new", Protocol.UDP, 3633, 8080);
+        assertThrows(IOException.class, () -> manager.addRule(compileListener),
+                "adding a reserved host endpoint is rejected");
+        assertTrue(manager.removeRule(legacy.id()), "the user can delete the old rule");
+        assertTrue(engine.removedRules.isEmpty(), "deleting the old rule cannot touch the compiler listener");
+    }
+
+    private static void openPagesShareRuleChanges(Path dir) throws IOException {
+        String instance = "inst-shared-page";
+        PortForwardingManager first = PortForwardingManager.forInstance(instance, dir);
+        PortForwardingManager second = PortForwardingManager.forInstance(instance, dir);
+        PortForwardingRule web = PortForwardingRule.defaultRule("web", Protocol.TCP, 8000, 80);
+        PortForwardingRule ssh = PortForwardingRule.defaultRule("ssh", Protocol.TCP, 2222, 22);
+
+        first.addRule(web);
+        second.addRule(ssh);
+
+        assertEquals(List.of(web, ssh), new FilePortForwardingStore(dir).loadRules(instance),
+                "one page cannot overwrite an edit from another page");
+    }
+
+    private static void updatesRulesAtomicallyRollsBackSaveFailuresAndSerializesApplyRule(Path dir)
+            throws IOException {
+        Path storeDir = dir.resolve("update-contract");
+        Files.createDirectories(storeDir);
+        FailingSaveStore store = new FailingSaveStore(new FilePortForwardingStore(storeDir));
+        PortForwardingManager manager = new PortForwardingManager(
+                "inst-update", store, new PortConflictDetector());
+        TrackingLiveEngine engine = new TrackingLiveEngine();
+
+        PortForwardingRule first = PortForwardingRule.defaultRule("r1", Protocol.TCP, 8101, 80);
+        PortForwardingRule other = PortForwardingRule.defaultRule("r2", Protocol.TCP, 8102, 81);
+        manager.addRule(first, engine);
+        manager.addRule(other, engine);
+
+        // Update colliding with another rule's host port fails and leaves original applied.
+        PortForwardingRule conflict = PortForwardingRule.builder(first).hostPort(8102).build();
+        assertThrows(PortConflictException.class, () -> manager.updateRule(conflict, engine),
+                "conflicting update must reject");
+        assertTrue(engine.isApplied(first), "conflict preserves original rule");
+
+        // Update onto reserved compiler port fails.
+        PortForwardingRule reserved = PortForwardingRule.builder(first)
+                .hostPort(PortForwardingRule.COMPILE_WORKER_HOST_PORT).build();
+        assertThrows(IOException.class, () -> manager.updateRule(reserved, engine),
+                "reserved host port update must reject");
+        assertTrue(engine.isApplied(first), "reserved rejection preserves original rule");
+
+        // Save failure rolls back live engine replacement.
+        store.failNextSave = true;
+        PortForwardingRule moved = PortForwardingRule.builder(first).hostPort(8103).guestPort(8080).build();
+        assertThrows(IOException.class, () -> manager.updateRule(moved, engine),
+                "store failure must fail update");
+        assertTrue(engine.isApplied(first), "save failure must roll back live replacement");
+        assertFalse(engine.isApplied(moved), "rolled-back replacement must not remain applied");
+        assertEquals(first, manager.getRule("r1").orElseThrow(), "manager retains original rule");
+
+        // Successful update and applyRule on an unapplied saved rule.
+        assertTrue(manager.updateRule(moved, engine), "valid update returns true");
+        assertTrue(engine.isApplied(moved), "moved rule is live");
+        engine.removeRule(moved);
+        assertFalse(engine.isApplied(moved), "manually stopped before applyRule");
+        manager.applyRule("r1", engine);
+        assertTrue(engine.isApplied(moved), "applyRule re-activates saved rule under lock");
+    }
+
+    private static final class FailingSaveStore implements PortForwardingStore {
+        private final PortForwardingStore delegate;
+        boolean failNextSave;
+
+        FailingSaveStore(PortForwardingStore delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override public List<PortForwardingRule> loadRules(String instanceId) throws IOException {
+            return delegate.loadRules(instanceId);
+        }
+
+        @Override public void saveRules(String instanceId, List<PortForwardingRule> rules) throws IOException {
+            if (failNextSave) {
+                failNextSave = false;
+                throw new IOException("simulated save failure");
+            }
+            delegate.saveRules(instanceId, rules);
+        }
+
+        @Override public void clearRules(String instanceId) throws IOException {
+            delegate.clearRules(instanceId);
+        }
+    }
+
+    private static final class TrackingLiveEngine implements PortForwardingEngine.Live {
+        private final java.util.Map<String, PortForwardingRule> applied = new java.util.HashMap<>();
+
+        @Override public void addRule(PortForwardingRule rule) throws IOException {
+            applied.put(rule.id(), rule);
+        }
+
+        @Override public void removeRule(PortForwardingRule rule) throws IOException {
+            applied.remove(rule.id(), rule);
+        }
+
+        @Override public boolean isRunning() { return true; }
+        @Override public void refresh() {}
+        @Override public boolean isApplied(PortForwardingRule rule) {
+            return rule.equals(applied.get(rule.id()));
+        }
     }
 
     private static final class MockEngine implements PortForwardingEngine {

@@ -296,6 +296,8 @@ android {
         // Release build type adds no suffix, so the unsuffixed name is the
         // default; the debug channel branches below override it.
         manifestPlaceholders["accelExtensionPackage"] = accelExtensionPackageFor(null)
+        manifestPlaceholders["w303GatewayProbeEnabled"] =
+            (buildChannel == "qa" && buildPurpose == "w303").toString()
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -307,6 +309,13 @@ android {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
             buildStagingDirectory = rootProject.layout.buildDirectory.dir("native").get().asFile
+        }
+    }
+
+    if (buildChannel == "qa" && buildPurpose == "w303") {
+        sourceSets.getByName("androidTest") {
+            manifest.srcFile("src/w303Qa/AndroidManifest.xml")
+            java.srcDir("src/w303Qa/java")
         }
     }
 

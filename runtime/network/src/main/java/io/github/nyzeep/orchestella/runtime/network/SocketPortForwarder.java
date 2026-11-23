@@ -2,19 +2,24 @@ package io.github.nyzeep.orchestella.runtime.network;
 
 import io.github.nyzeep.orchestella.runtime.contract.PortForwardingEngine;
 import io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule;
+import io.github.nyzeep.orchestella.runtime.contract.Protocol;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -32,6 +37,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * relayed buffer.
  */
 public final class SocketPortForwarder implements PortForwardingEngine, Closeable {
+    @FunctionalInterface
+    public interface GuestConnector {
+        Socket connect(PortForwardingRule rule) throws IOException;
+    }
 
     private static final long THROTTLE_NANOS = 1_000_000_000L;
     private static final long INITIAL_BACKOFF_MILLIS = 50L;
@@ -50,6 +59,9 @@ public final class SocketPortForwarder implements PortForwardingEngine, Closeabl
     /** One slot per throttle key: {@code [0] = last emit nanoTime} ({@code Long.MIN_VALUE} = never). */
     private final Map<String, long[]> throttle = new ConcurrentHashMap<>();
     private final PortForwardingObserver observer;
+    private final GuestConnector connector;
+    private final Semaphore connectionSlots;
+    private final int idleTimeoutMillis;
     private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "orchestella-port-forwarder");
         t.setDaemon(true);
@@ -60,7 +72,8 @@ public final class SocketPortForwarder implements PortForwardingEngine, Closeabl
 
     private static final class ActiveListener {
         final ServerSocket serverSocket;
-        final PortForwardingRule rule;
+        final Set<Socket> clients = ConcurrentHashMap.newKeySet();
+        volatile PortForwardingRule rule;
 
         ActiveListener(ServerSocket serverSocket, PortForwardingRule rule) {
             this.serverSocket = serverSocket;
@@ -68,14 +81,8 @@ public final class SocketPortForwarder implements PortForwardingEngine, Closeabl
         }
 
         void close() {
-            try {
-                serverSocket.close();
-            } catch (IOException ignored) {
-                // Closeable's contract is best-effort: removeRule/close must finish even when the
-                // kernel already tore the socket down. Re-throwing would abort the remaining
-                // listeners, so the failure is dropped here instead of reported as a forwarding
-                // failure (the listener is going away either way).
-            }
+            closeQuietly(serverSocket);
+            for (Socket client : clients) closeQuietly(client);
         }
     }
 
@@ -85,31 +92,53 @@ public final class SocketPortForwarder implements PortForwardingEngine, Closeabl
 
     /** Reports forwarding failures to {@code observer}; {@code null} behaves like NOOP. */
     public SocketPortForwarder(PortForwardingObserver observer) {
+        this(rule -> new Socket(PortForwardingRule.LOOPBACK_ADDRESS, rule.guestPort()),
+                Integer.MAX_VALUE, 0, observer);
+    }
+
+    public SocketPortForwarder(GuestConnector connector, int maxConnections, int idleTimeoutMillis) {
+        this(connector, maxConnections, idleTimeoutMillis, PortForwardingObserver.NOOP);
+    }
+
+    private SocketPortForwarder(GuestConnector connector, int maxConnections, int idleTimeoutMillis,
+            PortForwardingObserver observer) {
+        this.connector = Objects.requireNonNull(connector, "connector");
+        this.connectionSlots = new Semaphore(maxConnections);
+        this.idleTimeoutMillis = idleTimeoutMillis;
         this.observer = observer == null ? PortForwardingObserver.NOOP : observer;
     }
 
     @Override
-    public void addRule(PortForwardingRule rule) throws IOException {
+    public synchronized void addRule(PortForwardingRule rule) throws IOException {
         Objects.requireNonNull(rule, "rule");
+        validateRule(rule);
         if (!running) {
             throw new IOException("SocketPortForwarder is closed");
         }
 
-        // Same id means replacement: retire the previous listener first so its ServerSocket is
-        // closed and its accept loop exits. Keeping it mapped would leave a bound socket, a live
-        // accept thread and its file descriptor behind, silently.
-        ActiveListener previous = listeners.remove(rule.id());
-        if (previous != null) {
-            previous.close();
+        ActiveListener previous = listeners.get(rule.id());
+        if (previous != null && !previous.serverSocket.isClosed()
+                && previous.rule.hasSameListener(rule)) {
+            previous.rule = rule;
+            notify(() -> observer.onListenerReplaced(rule.id(), rule.hostPort()));
+            return;
         }
 
+        // Keep an existing listener usable until the new endpoint actually binds.
         InetAddress bindAddr = InetAddress.getByName(rule.bindAddress());
-        ServerSocket serverSocket = new ServerSocket(rule.hostPort(), 50, bindAddr);
-
+        ServerSocket serverSocket = new ServerSocket();
+        try {
+            serverSocket.setReuseAddress(true);
+            serverSocket.bind(new InetSocketAddress(bindAddr, rule.hostPort()), 50);
+        } catch (IOException | RuntimeException failure) {
+            closeQuietly(serverSocket);
+            throw failure;
+        }
         ActiveListener listener = new ActiveListener(serverSocket, rule);
         listeners.put(rule.id(), listener);
         counters.computeIfAbsent(rule.id(), id -> new Counters());
         if (previous != null) {
+            previous.close();
             notify(() -> observer.onListenerReplaced(rule.id(), rule.hostPort()));
         }
 
@@ -117,12 +146,37 @@ public final class SocketPortForwarder implements PortForwardingEngine, Closeabl
     }
 
     @Override
-    public void removeRule(PortForwardingRule rule) {
+    public synchronized void removeRule(PortForwardingRule rule) {
         Objects.requireNonNull(rule, "rule");
-        ActiveListener listener = listeners.remove(rule.id());
-        if (listener != null) {
+        ActiveListener listener = listeners.get(rule.id());
+        if (listener != null && listener.rule.equals(rule) && listeners.remove(rule.id(), listener)) {
             listener.close();
         }
+    }
+
+    public synchronized void replaceRule(PortForwardingRule previous, PortForwardingRule replacement)
+            throws IOException {
+        Objects.requireNonNull(previous, "previous");
+        Objects.requireNonNull(replacement, "replacement");
+        validateRule(replacement);
+        if (!previous.id().equals(replacement.id()) || !isApplied(previous)) {
+            throw new IOException("the previous forwarding listener is not active");
+        }
+        addRule(replacement);
+    }
+
+    private static void validateRule(PortForwardingRule rule) throws IOException {
+        if (rule.protocol() != Protocol.TCP) {
+            throw new IOException("SocketPortForwarder supports TCP forwarding rules only");
+        }
+        if (PortForwardingRule.isReservedHostPort(rule.hostPort())) {
+            throw new IOException("host port is reserved for the compiler bridge");
+        }
+    }
+
+    public boolean isApplied(PortForwardingRule rule) {
+        ActiveListener active = listeners.get(rule.id());
+        return running && active != null && !active.serverSocket.isClosed() && active.rule.equals(rule);
     }
 
     @Override
@@ -131,7 +185,7 @@ public final class SocketPortForwarder implements PortForwardingEngine, Closeabl
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         running = false;
         for (ActiveListener listener : listeners.values()) {
             listener.close();
@@ -159,7 +213,20 @@ public final class SocketPortForwarder implements PortForwardingEngine, Closeabl
                 Socket clientSocket = listener.serverSocket.accept();
                 consecutiveFailures = 0;
                 backoffMillis = INITIAL_BACKOFF_MILLIS;
-                executor.submit(() -> handleClient(clientSocket, listener.rule));
+                if (!connectionSlots.tryAcquire()) {
+                    closeQuietly(clientSocket);
+                    continue;
+                }
+                listener.clients.add(clientSocket);
+                if (listener.serverSocket.isClosed()) {
+                    releaseClient(listener, clientSocket);
+                    continue;
+                }
+                try {
+                    executor.submit(() -> handleClient(clientSocket, listener, listener.rule));
+                } catch (RejectedExecutionException stopping) {
+                    releaseClient(listener, clientSocket);
+                }
             } catch (SocketException closedByUs) {
                 // Hot removal closes the server socket: accept fails with SocketException on a
                 // socket we just closed. That is the normal path (AC-2) and stays silent.
@@ -202,19 +269,17 @@ public final class SocketPortForwarder implements PortForwardingEngine, Closeabl
         }
     }
 
-    private void handleClient(Socket clientSocket, PortForwardingRule rule) {
+    private void handleClient(Socket clientSocket, ActiveListener listener, PortForwardingRule rule) {
         try (clientSocket) {
-            try (Socket targetSocket = new Socket("127.0.0.1", rule.guestPort())) {
-                Thread t1 = new Thread(
+            try (Socket targetSocket = connector.connect(rule)) {
+                clientSocket.setSoTimeout(idleTimeoutMillis);
+                targetSocket.setSoTimeout(idleTimeoutMillis);
+                Thread upload = new Thread(
                         () -> relay(clientSocket, targetSocket, rule, "c2s"), "forward-c2s");
-                Thread t2 = new Thread(
-                        () -> relay(targetSocket, clientSocket, rule, "s2c"), "forward-s2c");
-                t1.setDaemon(true);
-                t2.setDaemon(true);
-                t1.start();
-                t2.start();
-                t1.join();
-                t2.join();
+                upload.setDaemon(true);
+                upload.start();
+                relay(targetSocket, clientSocket, rule, "s2c");
+                upload.join();
             }
         } catch (IOException failure) {
             // Guest service not listening/refused: per-connection failure, never listener-fatal.
@@ -232,6 +297,22 @@ public final class SocketPortForwarder implements PortForwardingEngine, Closeabl
                 notify(() -> observer.onClientFailure(rule.id(), rule.guestPort(), reported));
             }
             throw failure;
+        } finally {
+            releaseClient(listener, clientSocket);
+        }
+    }
+
+    private void releaseClient(ActiveListener listener, Socket client) {
+        closeQuietly(client);
+        listener.clients.remove(client);
+        connectionSlots.release();
+    }
+
+    private static void closeQuietly(Closeable resource) {
+        try {
+            resource.close();
+        } catch (IOException ignored) {
+            // Continue closing other owned sockets.
         }
     }
 
@@ -249,14 +330,16 @@ public final class SocketPortForwarder implements PortForwardingEngine, Closeabl
                 out.write(buf, 0, n);
                 out.flush();
             }
+            dest.shutdownOutput();
         } catch (IOException failure) {
-            if (!running || source.isClosed()) {
-                return;
+            if (running && !source.isClosed() && !dest.isClosed()) {
+                recordFailure(rule.id());
+                if (shouldEmit(rule.id(), "relay-" + direction, failure)) {
+                    notify(() -> observer.onRelayFailure(rule.id(), direction, failure));
+                }
             }
-            recordFailure(rule.id());
-            if (shouldEmit(rule.id(), "relay-" + direction, failure)) {
-                notify(() -> observer.onRelayFailure(rule.id(), direction, failure));
-            }
+            closeQuietly(source);
+            closeQuietly(dest);
         }
     }
 

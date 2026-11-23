@@ -127,6 +127,9 @@ public final class UmlEphemeralRootFixture {
         writeUtf8File(etcOrch.resolve("bridge.token"), bridgeToken + "\n", 0600, false);
         writeUtf8File(etcOrch.resolve("bridge-agent.sh"), bridgeAgentScript(), 0755, true);
         writeUtf8File(
+                etcOrch.resolve("forward-connection.sh"),
+                UmlPersistentGuestScripts.forwardConnectionScript(), 0755, true);
+        writeUtf8File(
                 etcOrch.resolve("login-shell.sh"), loginShellScript(hostname), 0755, true);
         writeUtf8File(etcOrch.resolve("ashrc"), ashRcScript(), 0644, false);
         writeUtf8File(rootDir.resolve("um-command.sh"), umCommandScript(), 0755, true);
@@ -186,10 +189,14 @@ public final class UmlEphemeralRootFixture {
                 if ! grep -q ' /tmp ' /proc/mounts 2>/dev/null; then
                     mount -t tmpfs -o mode=1777 tmpfs /tmp 2>/dev/null || :
                 fi
+                if ! grep -q ' /run ' /proc/mounts 2>/dev/null; then
+                    mount -t tmpfs -o mode=0755 tmpfs /run 2>/dev/null || :
+                fi
 
                 /etc/orchestella/bridge-agent.sh &
                 agent_pid=$!
 
+                """ + UmlPersistentGuestScripts.startGuestNetwork() + """
                 setsid_bin=/usr/bin/setsid
                 if [ ! -x "$setsid_bin" ]; then
                     setsid_bin=$(command -v setsid 2>/dev/null || printf /bin/busybox)
@@ -201,7 +208,8 @@ public final class UmlEphemeralRootFixture {
                 fi
                 shell_rc=$?
 
-                kill "$agent_pid" 2>/dev/null || :
+                kill "$agent_pid" "$net_pid" 2>/dev/null || :
+                umount /etc/resolv.conf 2>/dev/null || :
                 sync 2>/dev/null || :
                 poweroff -f 2>/dev/null || :
                 exit "$shell_rc"

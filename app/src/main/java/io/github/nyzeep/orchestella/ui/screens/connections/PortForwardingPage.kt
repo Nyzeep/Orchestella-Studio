@@ -33,9 +33,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
-import io.github.nyzeep.orchestella.NetworkGatewayDaemon
 import io.github.nyzeep.orchestella.PortForwardingPresenter
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.runtime.contract.Protocol
@@ -58,6 +60,7 @@ import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 import io.github.nyzeep.orchestella.ui.shell.oeScrollOffsetPx
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /** One rendered forwarding rule; [description] already carries the live status suffix. */
 @Immutable
@@ -69,6 +72,8 @@ data class PortForwardingRuleRow(
     val description: String,
     val enabled: Boolean,
     val canToggle: Boolean,
+    val savedDescription: String = "",
+    val canEdit: Boolean = false,
 )
 
 /** Which input the presenter's validation message belongs to. */
@@ -80,6 +85,7 @@ data class PortForwardingPageUiState(
     val hostPort: String = "",
     val guestPort: String = "",
     val description: String = "",
+    val editingRuleId: String? = null,
     val hostPortError: String? = null,
     val guestPortError: String? = null,
     val generalError: String? = null,
@@ -99,14 +105,14 @@ object PortForwardingPageSpec {
     fun emptyStateVisible(ruleCount: Int): Boolean = ruleCount <= 0
 
     /**
-     * The presenter emits English validation strings. Route them to the same
-     * fields as the legacy sheet: host-port errors own "Host port" / 1024,
-     * guest-port errors own "Guest port", everything else is page-level.
+     * Route host- and guest-port validation errors to their corresponding
+     * fields. General errors belong to the form.
      */
     fun errorField(message: String?): PortForwardingErrorField {
         val text = message.orEmpty()
         return when {
             text.contains("Host port", ignoreCase = true) ||
+                text.contains("宿主端口") ||
                 text.contains("1024", ignoreCase = true) -> PortForwardingErrorField.HOST
             text.contains("Guest port", ignoreCase = true) -> PortForwardingErrorField.GUEST
             else -> PortForwardingErrorField.GENERAL
@@ -129,9 +135,8 @@ class PortForwardingPageState(
     var state by mutableStateOf(PortForwardingPageUiState(hasLiveEngine = hasLiveEngine))
         private set
 
-    fun setHasLiveEngine(value: Boolean) {
-        if (state.hasLiveEngine == value) return
-        state = state.copy(hasLiveEngine = value)
+    override fun showLiveEngine(available: Boolean) {
+        onMain { state = state.copy(hasLiveEngine = available) }
     }
 
     private fun onMain(block: () -> Unit) {
@@ -153,11 +158,14 @@ class PortForwardingPageState(
                         guestPort = model.guestPort,
                         description = model.description,
                         enabled = model.isEnabled,
-                        canToggle = state.hasLiveEngine && model.protocol == Protocol.TCP,
+                        canToggle = model.canToggle(),
+                        savedDescription = model.savedDescription,
+                        canEdit = model.canEdit(),
                     )
                 },
                 hostPortError = null,
                 guestPortError = null,
+                generalError = null,
             )
         }
     }
@@ -182,8 +190,10 @@ class PortForwardingPageState(
                 hostPort = "",
                 guestPort = "",
                 description = "",
+                editingRuleId = null,
                 hostPortError = null,
                 guestPortError = null,
+                generalError = null,
             )
         }
     }
@@ -203,24 +213,34 @@ class PortForwardingPageState(
     }
 
     fun onHostPortChange(value: String) {
-        state = state.copy(hostPort = value, hostPortError = null)
+        state = state.copy(hostPort = value, hostPortError = null, generalError = null)
     }
 
     fun onGuestPortChange(value: String) {
-        state = state.copy(guestPort = value, guestPortError = null)
+        state = state.copy(guestPort = value, guestPortError = null, generalError = null)
     }
 
     fun onDescriptionChange(value: String) {
         state = state.copy(description = value)
+    }
+
+    fun editRule(rule: PortForwardingRuleRow) {
+        state = state.copy(
+            editingRuleId = rule.id,
+            hostPort = rule.hostPort.toString(),
+            guestPort = rule.guestPort.toString(),
+            description = rule.savedDescription,
+            hostPortError = null,
+            guestPortError = null,
+            generalError = null,
+        )
     }
 }
 
 /**
  * Port-forwarding secondary page.
  *
- * Reuses [PortForwardingPresenter] + [PortForwardingManager] untouched: this
- * composable is only a new View. Presenter calls run on one background thread
- * and the adapter posts state changes back to main.
+ * Presenter calls run on a background thread. The adapter posts changes to main.
  */
 @Composable
 fun PortForwardingPage(
@@ -230,25 +250,25 @@ fun PortForwardingPage(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val adapter = remember(instanceId) { PortForwardingPageState() }
-    val presenter = remember(instanceId) {
-        PortForwardingPresenter(
-            instanceId,
-            manager,
-            NetworkGatewayDaemon.forwardingEngine(instanceId),
-        )
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val adapter = remember(instanceId, manager) { PortForwardingPageState() }
+    val presenter = remember(instanceId, manager) {
+        PortForwardingPresenter.forActiveSession(instanceId, manager)
     }
-    val executor: ExecutorService = remember(instanceId) {
+    val executor: ExecutorService = remember(presenter, lifecycle) {
         Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "port-forwarding-page").apply { isDaemon = true }
         }
     }
 
-    DisposableEffect(presenter) {
-        adapter.setHasLiveEngine(presenter.hasLiveEngine())
+    DisposableEffect(presenter, lifecycle) {
         presenter.attachView(adapter)
-        executor.execute { presenter.loadRules() }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) runOffMain(executor) { presenter.loadRules() }
+        }
+        lifecycle.addObserver(observer)
         onDispose {
+            lifecycle.removeObserver(observer)
             presenter.detachView()
             executor.shutdown()
         }
@@ -271,24 +291,35 @@ fun PortForwardingPage(
         onHostPortChange = adapter::onHostPortChange,
         onGuestPortChange = adapter::onGuestPortChange,
         onDescriptionChange = adapter::onDescriptionChange,
+        onEditRule = adapter::editRule,
+        onCancelEdit = adapter::clearInputForm,
         onAddRule = {
-            executor.execute {
-                presenter.addRule(
-                    state.hostPort,
-                    state.guestPort,
-                    Protocol.TCP,
-                    state.description,
-                )
+            runOffMain(executor) {
+                val editingRuleId = state.editingRuleId
+                if (editingRuleId == null) {
+                    presenter.addRule(state.hostPort, state.guestPort, Protocol.TCP, state.description)
+                } else {
+                    presenter.updateRule(editingRuleId, state.hostPort, state.guestPort, state.description)
+                }
             }
         },
         onToggleRule = { id, enabled ->
-            executor.execute { presenter.toggleRule(id, enabled) }
+            runOffMain(executor) { presenter.toggleRule(id, enabled) }
         },
         onDeleteRule = { id ->
-            executor.execute { presenter.deleteRule(id) }
+            runOffMain(executor) { presenter.deleteRule(id) }
         },
         modifier = modifier,
     )
+}
+
+private fun runOffMain(executor: ExecutorService, task: () -> Unit) {
+    if (executor.isShutdown) return
+    try {
+        executor.execute(task)
+    } catch (_: RejectedExecutionException) {
+        // The page is disposing and the presenter has already detached.
+    }
 }
 
 /**
@@ -309,6 +340,8 @@ fun PortForwardingContent(
     onToggleRule: (String, Boolean) -> Unit,
     onDeleteRule: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onEditRule: (PortForwardingRuleRow) -> Unit = {},
+    onCancelEdit: () -> Unit = {},
 ) {
     val colors = Oe3ThemeValues.colors
     var pendingDelete by remember { mutableStateOf<PortForwardingRuleRow?>(null) }
@@ -355,73 +388,60 @@ fun PortForwardingContent(
                     PortForwardingRuleCard(
                         rule = rule,
                         onToggle = { enabled -> onToggleRule(rule.id, enabled) },
+                        onEdit = { onEditRule(rule) },
                         onDelete = { pendingDelete = rule },
                     )
                 }
             }
 
-            Spacer(Modifier.height(Oe3Spacing.xs))
-
-            Oe3Card {
-                Text(
-                    text = stringResource(R.string.connections_pf_section_add),
-                    style = Oe3Typography.style(Oe3TextRole.BodyStrong),
-                    color = colors.onSurface.oe3Color(),
-                )
-                Spacer(Modifier.height(Oe3Spacing.sm))
-                Row(horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.sm)) {
-                    ConnectionsTextField(
-                        value = state.hostPort,
-                        onValueChange = onHostPortChange,
-                        label = stringResource(R.string.port_forwarding_host_port),
-                        modifier = Modifier.weight(1f),
-                        isError = state.hostPortError != null,
-                        keyboardType = KeyboardType.Number,
-                        testTag = "connections:pf:host",
-                    )
-                    ConnectionsTextField(
-                        value = state.guestPort,
-                        onValueChange = onGuestPortChange,
-                        label = stringResource(R.string.port_forwarding_guest_port),
-                        modifier = Modifier.weight(1f),
-                        isError = state.guestPortError != null,
-                        keyboardType = KeyboardType.Number,
-                        testTag = "connections:pf:guest",
-                    )
-                }
-
-                val formError = state.hostPortError ?: state.guestPortError ?: state.generalError
-                if (formError != null) {
-                    Spacer(Modifier.height(Oe3Spacing.xs))
+            if (state.editingRuleId == null) {
+                Spacer(Modifier.height(Oe3Spacing.xs))
+                Oe3Card {
                     Text(
-                        text = formError,
-                        style = Oe3Typography.style(Oe3TextRole.Caption),
-                        color = colors.error.oe3Color(),
-                        modifier = Modifier.testTag("connections:pf:error"),
+                        text = stringResource(R.string.connections_pf_section_add),
+                        style = Oe3Typography.style(Oe3TextRole.BodyStrong),
+                        color = colors.onSurface.oe3Color(),
+                    )
+                    Spacer(Modifier.height(Oe3Spacing.sm))
+                    PortForwardingFields(
+                        state, onHostPortChange, onGuestPortChange, onDescriptionChange,
+                    )
+                    Spacer(Modifier.height(Oe3Spacing.md))
+                    Oe3Button(
+                        text = stringResource(R.string.port_forwarding_add_rule),
+                        onClick = onAddRule,
+                        modifier = Modifier.fillMaxWidth().testTag("connections:pf:add"),
                     )
                 }
-
-                Spacer(Modifier.height(Oe3Spacing.sm))
-                Row(horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs)) {
-                    Oe3Chip(label = "TCP", selected = true)
-                    Oe3Chip(label = "UDP", selected = false, enabled = false)
-                }
-                Spacer(Modifier.height(Oe3Spacing.sm))
-                ConnectionsTextField(
-                    value = state.description,
-                    onValueChange = onDescriptionChange,
-                    label = stringResource(R.string.port_forwarding_desc_hint),
-                    testTag = "connections:pf:desc",
-                )
-                Spacer(Modifier.height(Oe3Spacing.md))
-                Oe3Button(
-                    text = stringResource(R.string.port_forwarding_add_rule),
-                    onClick = onAddRule,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("connections:pf:add"),
-                )
             }
+        }
+    }
+
+    if (state.editingRuleId != null) {
+        Oe3DialogEnterMotion {
+            AlertDialog(
+                onDismissRequest = onCancelEdit,
+                shape = RoundedCornerShape(OeShape.alert),
+                title = { Text(stringResource(R.string.connections_pf_edit_title)) },
+                text = {
+                    Column {
+                        PortForwardingFields(
+                            state, onHostPortChange, onGuestPortChange, onDescriptionChange,
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = onAddRule,
+                        modifier = Modifier.testTag("connections:pf:edit-save"),
+                    ) { Text(stringResource(R.string.connections_pf_save)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = onCancelEdit) {
+                        Text(stringResource(R.string.connections_cancel))
+                    }
+                },
+            )
         }
     }
 
@@ -466,9 +486,64 @@ fun PortForwardingContent(
 }
 
 @Composable
+private fun PortForwardingFields(
+    state: PortForwardingPageUiState,
+    onHostPortChange: (String) -> Unit,
+    onGuestPortChange: (String) -> Unit,
+    onDescriptionChange: (String) -> Unit,
+) {
+    val colors = Oe3ThemeValues.colors
+    Row(horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.sm)) {
+        ConnectionsTextField(
+            value = state.hostPort,
+            onValueChange = onHostPortChange,
+            label = stringResource(R.string.port_forwarding_host_port),
+            modifier = Modifier.weight(1f),
+            isError = state.hostPortError != null,
+            keyboardType = KeyboardType.Number,
+            testTag = "connections:pf:host",
+        )
+        ConnectionsTextField(
+            value = state.guestPort,
+            onValueChange = onGuestPortChange,
+            label = stringResource(R.string.port_forwarding_guest_port),
+            modifier = Modifier.weight(1f),
+            isError = state.guestPortError != null,
+            keyboardType = KeyboardType.Number,
+            testTag = "connections:pf:guest",
+        )
+    }
+
+    val formError = state.hostPortError ?: state.guestPortError ?: state.generalError
+    if (formError != null) {
+        Spacer(Modifier.height(Oe3Spacing.xs))
+        Text(
+            text = formError,
+            style = Oe3Typography.style(Oe3TextRole.Caption),
+            color = colors.error.oe3Color(),
+            modifier = Modifier.testTag("connections:pf:error"),
+        )
+    }
+
+    Spacer(Modifier.height(Oe3Spacing.sm))
+    Row(horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs)) {
+        Oe3Chip(label = "TCP", selected = true)
+        Oe3Chip(label = "UDP", selected = false, enabled = false)
+    }
+    Spacer(Modifier.height(Oe3Spacing.sm))
+    ConnectionsTextField(
+        value = state.description,
+        onValueChange = onDescriptionChange,
+        label = stringResource(R.string.port_forwarding_desc_hint),
+        testTag = "connections:pf:desc",
+    )
+}
+
+@Composable
 private fun PortForwardingRuleCard(
     rule: PortForwardingRuleRow,
     onToggle: (Boolean) -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val colors = Oe3ThemeValues.colors
@@ -503,6 +578,14 @@ private fun PortForwardingRuleCard(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End,
         ) {
+            if (rule.canEdit) {
+                Oe3Button(
+                    text = stringResource(R.string.connections_pf_edit),
+                    onClick = onEdit,
+                    style = Oe3ButtonStyle.Text,
+                    modifier = Modifier.testTag("connections:pf:edit-${rule.id}"),
+                )
+            }
             Oe3Button(
                 text = stringResource(R.string.connections_delete),
                 onClick = onDelete,

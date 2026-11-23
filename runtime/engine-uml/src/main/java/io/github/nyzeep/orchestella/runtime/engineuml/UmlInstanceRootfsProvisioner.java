@@ -510,6 +510,11 @@ public final class UmlInstanceRootfsProvisioner {
                 0755,
                 true);
         writeUtf8(
+                etcOrch.resolve("forward-connection.sh"),
+                UmlPersistentGuestScripts.forwardConnectionScript(),
+                0755,
+                true);
+        writeUtf8(
                 etcOrch.resolve("login-shell.sh"),
                 UmlPersistentGuestScripts.persistentLoginShellScript(hostname),
                 0755,
@@ -664,6 +669,8 @@ public final class UmlInstanceRootfsProvisioner {
                 + "\"$BB\" chmod 0755 /mnt/target/um-command.sh || fail_prov chmod_cmd $?\n"
                 + "\"$BB\" cp /guest-assets/etc/orchestella/bridge-agent.sh /mnt/target/etc/orchestella/bridge-agent.sh || fail_prov cp_agent $?\n"
                 + "\"$BB\" chmod 0755 /mnt/target/etc/orchestella/bridge-agent.sh || fail_prov chmod_agent $?\n"
+                + "\"$BB\" cp /guest-assets/etc/orchestella/forward-connection.sh /mnt/target/etc/orchestella/forward-connection.sh || fail_prov cp_forward $?\n"
+                + "\"$BB\" chmod 0755 /mnt/target/etc/orchestella/forward-connection.sh || fail_prov chmod_forward $?\n"
                 + "\"$BB\" cp /guest-assets/etc/orchestella/login-shell.sh /mnt/target/etc/orchestella/login-shell.sh || fail_prov cp_login $?\n"
                 + "\"$BB\" chmod 0755 /mnt/target/etc/orchestella/login-shell.sh || fail_prov chmod_login $?\n"
                 + "\"$BB\" cp /guest-assets/etc/orchestella/ashrc /mnt/target/etc/orchestella/ashrc || fail_prov cp_ashrc $?\n"

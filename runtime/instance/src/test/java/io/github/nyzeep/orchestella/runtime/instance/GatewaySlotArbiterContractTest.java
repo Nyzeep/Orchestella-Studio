@@ -28,7 +28,8 @@ import static org.junit.Assert.assertTrue;
  *   <li>S6 — derived port matches the hand-computed values, including a negative hash;</li>
  *   <li>S7 — identity strings are stable and the hex directory name is unsigned;</li>
  *   <li>S8 — every verdict has a stable, path-free sentence;</li>
- *   <li>S9 — {@link ProcessRef} value semantics and substring matching.</li>
+ *   <li>S9 — {@link ProcessRef} value semantics and substring matching;</li>
+ *   <li>S10 — unknown Unix API socket holds the slot even without a listener.</li>
  * </ul>
  */
 public final class GatewaySlotArbiterContractTest {
@@ -55,6 +56,7 @@ public final class GatewaySlotArbiterContractTest {
             s7IdentityStringsAreStable();
             s8DescribeIsStableAndPathFree();
             s9ProcessRefValueSemantics();
+            s10UnknownSocketHoldsTheSlot();
             System.out.println("GATEWAY_SLOT_ARBITER_TEST_OK");
         } finally {
             if (owned) {
@@ -108,7 +110,12 @@ public final class GatewaySlotArbiterContractTest {
         s9ProcessRefValueSemantics();
     }
 
-    /** S1: an idle port is idle, no matter what the snapshot looks like. */
+    @Test
+    public void s10UnknownSocket() {
+        s10UnknownSocketHoldsTheSlot();
+    }
+
+    /** S1: an idle slot is free even when a lookalike process appears in the evidence. */
     private static void s1IdlePortIsFreeEvenWithLookalikeProcess() {
         String instanceId = "alpha";
         ProcessRef lookalike = process(
@@ -118,7 +125,7 @@ public final class GatewaySlotArbiterContractTest {
                 "/data/user/0/app/files/runtime/" + GatewaySlotArbiter.configFileName(instanceId));
 
         GatewaySlotEvidence idle =
-                new GatewaySlotEvidence(false, true, List.of(lookalike), true);
+                new GatewaySlotEvidence(false, false, List.of(lookalike), true);
         assertEquals("S1: an idle port must be FREE even when a lookalike process exists",
                 GatewaySlotVerdict.FREE, GatewaySlotArbiter.verdict(instanceId, idle));
 
@@ -173,7 +180,8 @@ public final class GatewaySlotArbiterContractTest {
                 process(501, "/data/app/libgvproxy.so", "-config", "/runtime/net-other.yaml"),
                 process(502, "gvproxy", "-config", "/runtime/net-unknown-8.yaml"),
                 process(503, "gvproxy", "-config", "/runtime/net-" + instanceId + ".yml"),
-                process(504, "com.android.systemui"));
+                process(504, "com.android.systemui"),
+                process(505, "gvproxy", "-config", "/runtime/" + configFileName + ".bak"));
 
         GatewaySlotEvidence evidence =
                 new GatewaySlotEvidence(true, false, nearMisses, true);
@@ -183,7 +191,7 @@ public final class GatewaySlotArbiterContractTest {
 
         // Reverse control: adding the exact identity flips the verdict.
         List<ProcessRef> withIdentity = new ArrayList<>(nearMisses);
-        withIdentity.add(process(505, "gvproxy", "-config", "/runtime/" + configFileName));
+        withIdentity.add(process(506, "gvproxy", "-config", "/runtime/" + configFileName));
         assertEquals("S3: adding the exact identity string must flip the verdict",
                 GatewaySlotVerdict.ORPHAN_OF_THIS_INSTANCE,
                 GatewaySlotArbiter.verdict(instanceId,
@@ -360,6 +368,11 @@ public final class GatewaySlotArbiterContractTest {
 
     private static ProcessRef process(int pid, String... argv) {
         return new ProcessRef(pid, List.of(argv));
+    }
+
+    private static void s10UnknownSocketHoldsTheSlot() {
+        assertEquals(GatewaySlotVerdict.HELD_BY_UNKNOWN, GatewaySlotArbiter.verdict("socket-only",
+                new GatewaySlotEvidence(false, true, List.of(), true)));
     }
 
     private static void deleteRecursively(Path path) throws IOException {

@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella;
 
+import io.github.nyzeep.orchestella.runtime.contract.PortForwardingEngine;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -105,6 +106,16 @@ public interface ExecutionSession {
 
     default ServiceForward openServiceForward(int guestPort) throws IOException {
         throw new IOException("本地服务转发在当前执行策略尚未验证");
+    }
+
+    /** The live adapter for this session's explicit user rules, or null when unavailable. */
+    default PortForwardingEngine.Live portForwardingEngine() {
+        return null;
+    }
+
+    /** Sanitized session network diagnostic code, or null when ready/not reported. */
+    default String networkDiagnostic() {
+        return null;
     }
 
     default io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.CapabilityMatrix capabilityMatrix() {

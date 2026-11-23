@@ -2,30 +2,37 @@ package io.github.nyzeep.orchestella;
 
 import android.content.Context;
 import android.net.ConnectivityManager;
+import android.net.Credentials;
 import android.net.LinkProperties;
 import android.net.Network;
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
+import android.system.ErrnoException;
 import android.system.Os;
+import android.system.OsConstants;
+import android.system.StructStat;
 import android.util.Log;
+import io.github.nyzeep.orchestella.runtime.contract.PortForwardingEngine;
 import io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule;
-import io.github.nyzeep.orchestella.runtime.contract.Protocol;
+import io.github.nyzeep.orchestella.runtime.instance.GatewaySlotArbiter;
+import io.github.nyzeep.orchestella.runtime.instance.GatewaySlotLease;
 import io.github.nyzeep.orchestella.runtime.network.FilePortForwardingStore;
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -45,23 +52,34 @@ public final class NetworkGatewayDaemon {
         private final String instanceId;
         private final File apiSocket;
         private final ForwardingEngine forwarding;
+        private final GatewaySlotLease lease;
         private final Object stopLock = new Object();
-        private boolean stopStarted;
         private boolean stopConfirmed;
 
         Running(String configPath, int tcpPort, Process process, String instanceId,
                 File apiSocket, ForwardingEngine forwarding) {
+            this(configPath, tcpPort, process, instanceId, apiSocket, forwarding, null);
+        }
+
+        Running(String configPath, int tcpPort, Process process, String instanceId,
+                File apiSocket, ForwardingEngine forwarding, GatewaySlotLease lease) {
             this.unixSocketPath = configPath;
             this.tcpPort = tcpPort;
             this.process = process;
             this.instanceId = instanceId;
             this.apiSocket = apiSocket;
             this.forwarding = forwarding;
+            this.lease = lease;
         }
 
         @Override
         public boolean isAlive() {
             return process.isAlive();
+        }
+
+        @Override
+        public PortForwardingEngine.Live forwardingEngine() {
+            return isAlive() ? forwarding : null;
         }
 
         /** Default-grace stop used by callers that do not tune the shutdown window. */
@@ -70,38 +88,27 @@ public final class NetworkGatewayDaemon {
         }
 
         /**
-         * Idempotent bounded stop. The LIVE entry and API socket are only removed
-         * after the process has actually exited; an unconfirmed stop keeps both so
-         * the next start fails instead of reusing a port owned by an old gateway.
+         * Idempotent bounded stop. The lease stays held until the process has exited and
+         * its generation's socket can be released.
          */
         @Override
         public boolean stop(long graceMs) {
             synchronized (stopLock) {
                 if (stopConfirmed) return true;
-                // A previous UNCONFIRMED attempt is retryable. If the process has
-                // exited in the meantime, finish the LIVE/socket cleanup now.
-                if (stopStarted && !process.isAlive()) {
-                    stopConfirmed = true;
-                    cleanupLiveEntry();
-                    return true;
-                }
-                stopStarted = true;
-                stopConfirmed = terminateProcess(process, graceMs, FORCE_WAIT_MS);
-                if (stopConfirmed) cleanupLiveEntry();
-                return stopConfirmed;
-            }
-        }
-
-        /** Removes only this owner's LIVE entry and socket; never a replacement's. */
-        private void cleanupLiveEntry() {
-            if (LIVE.remove(instanceId, this)) {
+                if (!terminateProcess(process, graceMs, FORCE_WAIT_MS)) return false;
                 try {
-                    Files.deleteIfExists(apiSocket.toPath());
-                } catch (IOException ignored) {
-                    // Owner's own socket file is removed best-effort: a leftover unix socket
-                    // file is tolerated because the gateway mutual-exclusion checks re-verify
-                    // liveness before any bind reuses the path.
+                    if (lease != null) {
+                        lease.releaseAfterExit();
+                    } else if (LIVE.get(instanceId) == this) {
+                        Files.deleteIfExists(apiSocket.toPath());
+                    }
+                } catch (IOException failure) {
+                    Log.w(TAG, "gateway-slot-release-failed endpoint=local-gateway");
+                    return false;
                 }
+                LIVE.remove(instanceId, this);
+                stopConfirmed = true;
+                return true;
             }
         }
     }
@@ -146,7 +153,7 @@ public final class NetworkGatewayDaemon {
         } catch (RuntimeException unavailable) {
             // Missing permission, unavailable service, or a network transition: keep the fallback.
         }
-        Log.i(TAG, "guest-dns server=" + selected);
+        Log.i(TAG, "guest-dns source=" + (GUEST_DNS.equals(selected) ? "fallback" : "active-network"));
         return selected;
     }
 
@@ -175,9 +182,9 @@ public final class NetworkGatewayDaemon {
         return first > 0 && first != 127 && first < 224;
     }
 
-    public static PortForwardingPresenter.LiveEngine forwardingEngine(String instanceId) {
+    public static PortForwardingEngine.Live forwardingEngine(String instanceId) {
         Running running = LIVE.get(instanceId);
-        return running != null && running.isAlive() ? running.forwarding : null;
+        return running != null ? running.forwardingEngine() : null;
     }
 
     /** Loads only explicit user rules; an empty store never creates an SSH listener. */
@@ -191,76 +198,133 @@ public final class NetworkGatewayDaemon {
         if (instanceId == null || !instanceId.matches("[A-Za-z0-9_-]{1,64}")) {
             throw new IOException("invalid gateway instance id");
         }
-        // Payload builds keep native libraries inside the APK (no legacy
-        // extraction), so the gateway binary may need to be materialized
-        // from the APK before ProcessBuilder can exec it.
-        String gvproxyPath = NativeExecutableStore.ensure(context, "libgvproxy.so");
         Path privateRoot = context.getFilesDir().getCanonicalFile().toPath();
         Path runtimePath = runtimeDirectory.getCanonicalFile().toPath();
         if (!runtimePath.startsWith(privateRoot) || runtimePath.equals(privateRoot)) {
             throw new IOException("gateway runtime must be app-private");
         }
         Files.createDirectories(runtimePath);
-        // Keep the pathname below sockaddr_un's limit even with a full UUID runtime directory.
-        Path apiRoot = privateRoot.resolve("net-api");
-        Path apiDirectory = apiRoot.resolve(Integer.toUnsignedString(instanceId.hashCode(), 16));
-        if (Files.isSymbolicLink(apiRoot) || Files.isSymbolicLink(apiDirectory)) {
-            throw new IOException("invalid gateway API directory");
-        }
-        Files.createDirectories(apiDirectory);
-        File apiSocket = apiDirectory.resolve("api.sock").toFile();
-        if (apiSocket.getAbsolutePath().getBytes(StandardCharsets.UTF_8).length > 100) {
-            throw new IOException("gateway API socket path is too long");
-        }
         int port = listenPortFor(instanceId);
-        ensureGatewaySlotAvailable(instanceId);
-        if (portAssignedToAnotherInstance(instanceId, port)) {
-            throw new IOException("gateway port is shared by another instance");
+        for (Running existing : LIVE.values()) {
+            if (existing.tcpPort == port && !existing.isAlive()) existing.stop(0);
         }
-        if (portBound(port)) {
-            throw new IOException("gateway port is already in use; old gateway may still be running");
+        Path netSlots = privateRoot.resolve("net-slots");
+        Files.createDirectories(netSlots);
+        chmod(netSlots, 0700);
+        Path netApi = privateRoot.resolve("net-api");
+        Files.createDirectories(netApi);
+        chmod(netApi, 0700);
+        int launcherPid = android.os.Process.myPid();
+        long launcherStartTicks = processStartTicks(launcherPid);
+        GatewaySlotLease lease = GatewaySlotLease.acquire(privateRoot, instanceId,
+                NetworkGatewayDaemon::inspectProcess, NetworkGatewayDaemon::apiSocketIdentity,
+                launcherPid, launcherStartTicks);
+        Process process = null;
+        Running running = null;
+        File apiSocket = lease.apiSocket().toFile();
+        try {
+            // Keep the pathname below sockaddr_un's limit even with a full UUID runtime directory.
+            Path api = lease.apiSocket();
+            if (api.toString().getBytes(StandardCharsets.UTF_8).length > 100) {
+                throw new IOException("gateway API socket path is too long");
+            }
+            Path apiDirectory = api.getParent();
+            chmod(apiDirectory.getParent(), 0700);
+            chmod(apiDirectory, 0700);
+            Path config = runtimePath.resolve(GatewaySlotArbiter.configFileName(instanceId));
+            List<PortForwardingRule> stored =
+                    new FilePortForwardingStore(privateRoot.resolve("network")).loadRules(instanceId);
+            Files.write(config, configuration(port, api.toString(), stored).getBytes(StandardCharsets.UTF_8));
+            chmod(config, 0600);
+            List<String> command = List.of(NativeExecutableStore.ensure(context, "libgvproxy.so"),
+                    "-config", config.toString());
+            process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            Process gateway = process;
+            GatewayPeer peer = new GatewayPeer(gateway, command, lease);
+            ForwardingEngine engine = new ForwardingEngine(
+                    (method, endpoint, body) -> unixRequest(apiSocket, peer, method, endpoint, body),
+                    gateway::isAlive);
+            running = new Running(config.toString(), port, process, instanceId, apiSocket, engine, lease);
+            drainGatewayOutput(process);
+            awaitReady(running, stored);
+            LIVE.put(instanceId, running);
+            return running;
+        } catch (IOException | RuntimeException | Error failure) {
+            if (running != null) {
+                if (!running.stop(0)) {
+                    LIVE.put(instanceId, running);
+                    throw new UnconfirmedStartCleanup(failure);
+                }
+            } else {
+                if (!terminateProcess(process, 0, FORCE_WAIT_MS)) {
+                    if (process != null) {
+                        LIVE.put(instanceId, new Running(
+                                runtimePath.resolve(GatewaySlotArbiter.configFileName(instanceId)).toString(),
+                                port, process, instanceId, apiSocket, null, lease));
+                    }
+                    throw new UnconfirmedStartCleanup(failure);
+                }
+                try {
+                    lease.releaseAfterExit();
+                } catch (IOException cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                    throw new UnconfirmedStartCleanup(failure);
+                }
+            }
+            throw failure;
         }
-        try { Os.chmod(apiRoot.toString(), 0700); Os.chmod(apiDirectory.toString(), 0700); }
-        catch (Exception failure) { throw new IOException("cannot secure gateway API directory", failure); }
-        Files.deleteIfExists(apiSocket.toPath());
-        File configFile = new File(runtimeDirectory, "net-" + instanceId + ".yaml");
-        List<PortForwardingRule> stored = new FilePortForwardingStore(privateRoot.resolve("network")).loadRules(instanceId);
-        Files.write(configFile.toPath(), configuration(port, apiSocket.getAbsolutePath(), stored).getBytes(StandardCharsets.UTF_8));
-        try { Os.chmod(configFile.getAbsolutePath(), 0600); }
-        catch (Exception failure) { throw new IOException("cannot secure gateway config", failure); }
+    }
 
-        Process process = new ProcessBuilder(gvproxyPath, "-config", configFile.getAbsolutePath())
-                .redirectErrorStream(true).start();
-        ForwardingEngine engine = new ForwardingEngine(
-                (method, endpoint, body) -> unixRequest(apiSocket, method, endpoint, body), process::isAlive);
-        Running running = new Running(configFile.getAbsolutePath(), port,
-                process, instanceId, apiSocket, engine);
+    private static void chmod(Path path, int mode) throws IOException {
+        try {
+            Os.chmod(path.toString(), mode);
+        } catch (ErrnoException failure) {
+            throw new IOException("cannot secure gateway files", failure);
+        }
+    }
+
+    private static String apiSocketIdentity(Path api) throws IOException {
+        try {
+            StructStat attributes = Os.lstat(api.toString());
+            if (!OsConstants.S_ISSOCK(attributes.st_mode)) return "";
+            return Long.toUnsignedString(attributes.st_dev) + ':' + Long.toUnsignedString(attributes.st_ino);
+        } catch (ErrnoException failure) {
+            if (failure.errno == OsConstants.ENOENT) return null;
+            throw new IOException("cannot verify gateway API socket", failure);
+        }
+    }
+
+    private static void drainGatewayOutput(Process process) {
+        Thread drainer = new Thread(() -> {
+            try (InputStream output = process.getInputStream()) {
+                byte[] buffer = new byte[4096];
+                while (output.read(buffer) != -1) {
+                    // Native output can contain paths and network addresses.
+                }
+            } catch (IOException ignored) {
+                // The stream closes during teardown.
+            }
+        }, "gvproxy-output");
+        drainer.setDaemon(true);
+        drainer.start();
+    }
+
+    private static void awaitReady(Running running, List<PortForwardingRule> stored) throws IOException {
         String stage = "services-socket";
         int probes = 0;
         IOException lastProbeFailure = null;
         try {
-            Thread logger = new Thread(() -> {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) Log.d(TAG, line);
-                } catch (IOException ignored) {
-                    // The process closes its output stream during teardown.
-                }
-            }, "gvproxy-log-" + instanceId);
-            logger.setDaemon(true);
-            logger.start();
             long deadline = android.os.SystemClock.elapsedRealtime() + SOCKET_WAIT_MILLIS;
             while (android.os.SystemClock.elapsedRealtime() < deadline) {
-                if (!process.isAlive()) throw new IOException("gvproxy exited during startup");
-                if (apiSocket.exists()) {
+                if (!running.isAlive()) throw new IOException("gvproxy exited during startup");
+                if (running.apiSocket.exists()) {
                     try {
-                        stage = "services-permissions";
-                        Os.chmod(apiSocket.getAbsolutePath(), 0600);
                         stage = "services-http";
                         probes++;
+                        ForwardingEngine engine = running.forwarding;
                         engine.refresh(); // GET /services/forwarder/all only; never consume the QEMU single-client listener.
                         stage = "qemu-listener";
-                        if (portBound(port)) {
+                        if (GatewaySlotLease.tcpListenerBound(running.tcpPort) && running.isAlive()) {
                             stage = "configured-forwards";
                             for (PortForwardingRule rule : stored) {
                                 if (isSupported(rule) && !engine.isApplied(rule)) {
@@ -268,16 +332,11 @@ public final class NetworkGatewayDaemon {
                                 }
                             }
                             Log.i(TAG, "gateway-ready api=200 forwards=" + engine.appliedCount() + " probes=" + probes);
-                            LIVE.put(instanceId, running);
-                            return running;
+                            return;
                         }
                     } catch (ApiTransportFailure transientFailure) {
                         lastProbeFailure = transientFailure;
                         Log.w(TAG, "gateway-api-not-ready stage=" + transientFailure.stage + " attempt=" + probes);
-                    } catch (IOException failure) {
-                        throw failure;
-                    } catch (Exception failure) {
-                        throw new IOException("cannot secure gateway API socket", failure);
                     }
                 }
                 try { Thread.sleep(120); }
@@ -288,44 +347,14 @@ public final class NetworkGatewayDaemon {
             }
             throw new IOException("gateway API did not become ready at " + stage, lastProbeFailure);
         } catch (IOException | RuntimeException | Error failure) {
-            if (!running.stop(0)) {
-                // Keep the slot fenced while the process still owns its listener.
-                LIVE.put(instanceId, running);
-                throw new UnconfirmedStartCleanup(failure);
-            }
             Log.w(TAG, "gateway-start-failed stage=" + stage + " probes=" + probes
                     + " reason=" + diagnosticReason(failure));
-            try { Files.deleteIfExists(apiSocket.toPath()); }
-            catch (IOException cleanupFailure) { failure.addSuppressed(cleanupFailure); }
             throw failure;
         }
     }
 
     public static void stop(Running running) {
         if (running != null) running.stop(DEFAULT_STOP_GRACE_MS);
-    }
-
-    /** Fails fast when an instance already owns a live gateway; cleans a dead entry first. */
-    static void ensureGatewaySlotAvailable(String instanceId) throws IOException {
-        Running existing = LIVE.get(instanceId);
-        if (existing == null) return;
-        if (existing.isAlive()) throw new IOException("gateway is already running for this instance");
-        existing.stop(0);
-        if (existing.isAlive()) throw new IOException("previous gateway did not stop");
-    }
-
-    static boolean portAssignedToAnotherInstance(String instanceId, int port) {
-        for (Map.Entry<String, Running> entry : LIVE.entrySet()) {
-            if (entry.getKey().equals(instanceId)) continue;
-            Running other = entry.getValue();
-            if (!other.isAlive()) {
-                // A dead entry must not reserve a port for an instance that is gone.
-                other.stop(0);
-                continue;
-            }
-            if (other.tcpPort == port) return true;
-        }
-        return false;
     }
 
     /** Bounded destroy/force sequence shared by running handles and start-failure cleanup. */
@@ -348,7 +377,7 @@ public final class NetworkGatewayDaemon {
     }
 
     static boolean isSupported(PortForwardingRule rule) {
-        return rule.protocol() == Protocol.TCP && PortForwardingRule.LOOPBACK_ADDRESS.equals(rule.bindAddress());
+        return PortForwardingEngine.Live.supportsIpv4LoopbackTcp(rule);
     }
 
     /** gvproxy v0.9.0: top-level services, stack.forwards map of host endpoint to netstack guest endpoint. */
@@ -380,7 +409,7 @@ public final class NetworkGatewayDaemon {
 
     interface Api { String request(String method, String endpoint, String body) throws IOException; }
 
-    static final class ForwardingEngine implements PortForwardingPresenter.LiveEngine {
+    static final class ForwardingEngine implements PortForwardingEngine.Live {
         private final Api api;
         private final java.util.function.BooleanSupplier alive;
         private final Map<String, String> confirmed = new HashMap<>();
@@ -393,7 +422,24 @@ public final class NetworkGatewayDaemon {
         @Override public synchronized void refresh() throws IOException {
             confirmed.clear();
             if (!isRunning()) throw new IOException("gateway is not running");
-            confirmed.putAll(parseForwards(api.request("GET", "/services/forwarder/all", "")));
+            IOException lastFailure = null;
+            for (int attempt = 0; attempt < 2; attempt++) {
+                try {
+                    confirmed.putAll(parseForwards(api.request("GET", "/services/forwarder/all", "")));
+                    return;
+                } catch (ApiTransportFailure transientFailure) {
+                    lastFailure = transientFailure;
+                    if (attempt == 0 && isRunning()) {
+                        try {
+                            Thread.sleep(60L);
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            throw transientFailure;
+                        }
+                    }
+                }
+            }
+            throw lastFailure;
         }
         @Override public synchronized void addRule(PortForwardingRule rule) throws IOException {
             requireSupported(rule);
@@ -466,7 +512,8 @@ public final class NetworkGatewayDaemon {
         return result;
     }
 
-    private static String unixRequest(File socketPath, String method, String endpoint, String body) throws IOException {
+    private static String unixRequest(File socketPath, GatewayPeer peer, String method, String endpoint,
+            String body) throws IOException {
         if (!(method.equals("GET") && endpoint.equals("/services/forwarder/all")) &&
                 !(method.equals("POST") && (endpoint.equals("/services/forwarder/expose") || endpoint.equals("/services/forwarder/unexpose")))) {
             throw new IOException("unknown gateway API request");
@@ -476,25 +523,157 @@ public final class NetworkGatewayDaemon {
         try (LocalSocket socket = new LocalSocket()) {
             // connect() creates the Android LocalSocket fd. Setting SO_TIMEOUT before that
             // calls setOption on an uncreated socket and aborts launch before QEMU starts.
+            String identity = apiSocketIdentity(socketPath.toPath());
+            if (identity != null && identity.isEmpty()) throw new IOException("gateway API path is not a socket");
             try {
+                if (identity == null) throw new IOException("gateway API socket is absent");
                 socket.connect(new LocalSocketAddress(socketPath.getAbsolutePath(), LocalSocketAddress.Namespace.FILESYSTEM));
             } catch (IOException failure) {
                 throw new ApiTransportFailure("connect", failure);
             }
+            peer.verify(socket, identity);
             try {
                 socket.setSoTimeout(API_TIMEOUT_MS); // Set receive/send timeouts only after fd creation.
             } catch (IOException failure) {
                 throw new IOException("gvproxy-api-timeout-options-failed", failure);
             }
-            String headers = method + " " + endpoint + " HTTP/1.0\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: " + data.length + "\r\nConnection: close\r\n\r\n";
+            String headers = method + " " + endpoint + " HTTP/1.0\r\nHost: localhost\r\n"
+                    + "Content-Type: application/json\r\nContent-Length: " + data.length
+                    + "\r\nConnection: close\r\n\r\n";
+            byte[] headerBytes = headers.getBytes(StandardCharsets.US_ASCII);
+            byte[] request = new byte[headerBytes.length + data.length];
+            System.arraycopy(headerBytes, 0, request, 0, headerBytes.length);
+            System.arraycopy(data, 0, request, headerBytes.length, data.length);
             try {
-                socket.getOutputStream().write(headers.getBytes(StandardCharsets.US_ASCII));
-                socket.getOutputStream().write(data);
-                socket.getOutputStream().flush();
+                // LocalSocket writes directly to its descriptor. Go can close after replying to
+                // a GET before a second empty write or flush gets to the socket.
+                socket.getOutputStream().write(request);
             } catch (IOException failure) {
                 throw new ApiTransportFailure("write", failure);
             }
             return readResponse(socket.getInputStream());
+        }
+    }
+
+    /** Authenticates the API peer and fences operations issued by a handle from a prior start. */
+    private static final class GatewayPeer {
+        private final Process process;
+        private final List<String> command;
+        private final GatewaySlotLease lease;
+        private int pid;
+        private long startTicks;
+        private String socketIdentity;
+
+        GatewayPeer(Process process, List<String> command, GatewaySlotLease lease) {
+            this.process = process;
+            this.command = command;
+            this.lease = lease;
+        }
+
+        synchronized void verify(LocalSocket socket, String identity) throws IOException {
+            Credentials credentials = socket.getPeerCredentials();
+            int peerPid = credentials.getPid();
+            if (peerPid <= 0 || credentials.getUid() != android.os.Process.myUid() || !process.isAlive()) {
+                throw new IOException("gateway API peer could not be verified");
+            }
+            if (!identity.equals(apiSocketIdentity(lease.apiSocket()))) {
+                throw new IOException("gateway API socket changed");
+            }
+            long peerStart = processStartTicks(peerPid);
+            if (pid != 0) {
+                if (pid != peerPid || !identity.equals(socketIdentity) || (startTicks != 0 && peerStart != startTicks)) {
+                    throw new IOException("gateway API peer changed");
+                }
+                return;
+            }
+            List<String> actualCommand = processCommandLine(peerPid);
+            // The virgin app-private path and peer UID cover devices that restrict /proc.
+            if (!actualCommand.isEmpty() && !actualCommand.equals(command)) {
+                throw new IOException("gateway API peer identity differs");
+            }
+            lease.recordProcess(peerPid, peerStart, identity);
+            pid = peerPid;
+            startTicks = peerStart;
+            socketIdentity = identity;
+        }
+    }
+
+    private static GatewaySlotLease.ProcessObservation inspectProcess(int pid, long startTicks) {
+        return inspectProcess(
+                pid,
+                startTicks,
+                () -> processStartTicks(pid),
+                () -> {
+                    try {
+                        // Signal zero queries existence and permission without delivering a signal.
+                        Os.kill(pid, 0);
+                        return GatewaySlotLease.ProcessState.RUNNING;
+                    } catch (ErrnoException error) {
+                        return error.errno == OsConstants.ESRCH
+                                ? GatewaySlotLease.ProcessState.EXITED
+                                : GatewaySlotLease.ProcessState.UNAVAILABLE;
+                    }
+                },
+                () -> processCommandLine(pid));
+    }
+
+    static GatewaySlotLease.ProcessObservation inspectProcess(
+            int pid,
+            long startTicks,
+            LongSupplier actualStartTicks,
+            Supplier<GatewaySlotLease.ProcessState> killProbe,
+            Supplier<List<String>> cmdlineSupplier) {
+        long actualStart = actualStartTicks.getAsLong();
+        if (startTicks != 0 && actualStart != 0 && startTicks != actualStart) {
+            return new GatewaySlotLease.ProcessObservation(GatewaySlotLease.ProcessState.EXITED);
+        }
+        GatewaySlotLease.ProcessState signalState = killProbe.get();
+        if (signalState != GatewaySlotLease.ProcessState.RUNNING) {
+            return new GatewaySlotLease.ProcessObservation(signalState);
+        }
+        if (startTicks != 0 && actualStart == 0) {
+            return new GatewaySlotLease.ProcessObservation(GatewaySlotLease.ProcessState.UNAVAILABLE);
+        }
+        return new GatewaySlotLease.ProcessObservation(GatewaySlotLease.ProcessState.RUNNING,
+                cmdlineSupplier.get());
+    }
+
+    private static long processStartTicks(int pid) {
+        return parseStartTicksFromStat(readProcessField(pid, "stat"));
+    }
+
+    static long parseStartTicksFromStat(String stat) {
+        if (stat == null) return 0;
+        // comm is parenthesized and can itself contain spaces and parentheses. After it,
+        // the state is field 3, so the kernel's field 22 (starttime) is at index 19.
+        int commandEnd = stat.lastIndexOf(')');
+        if (commandEnd < 0 || commandEnd + 2 >= stat.length()) return 0;
+        String[] fields = stat.substring(commandEnd + 2).split(" ", 21);
+        if (fields.length <= 19) return 0;
+        try {
+            return Math.max(0, Long.parseLong(fields[19]));
+        } catch (NumberFormatException malformed) {
+            return 0;
+        }
+    }
+
+    private static List<String> processCommandLine(int pid) {
+        String command = readProcessField(pid, "cmdline");
+        return command == null || command.isEmpty() ? List.of() : List.of(command.split("\0"));
+    }
+
+    private static String readProcessField(int pid, String field) {
+        try (InputStream input = Files.newInputStream(Paths.get("/proc", Integer.toString(pid), field))) {
+            byte[] data = new byte[4096];
+            int length = 0;
+            while (length < data.length) {
+                int count = input.read(data, length, data.length - length);
+                if (count < 0) return new String(data, 0, length, StandardCharsets.UTF_8);
+                length += count;
+            }
+            return null;
+        } catch (IOException | SecurityException unavailable) {
+            return null;
         }
     }
 
@@ -507,10 +686,14 @@ public final class NetworkGatewayDaemon {
         }
     }
 
-    private static String diagnosticReason(Throwable failure) {
+    static IOException transportFailureForTest(String stage) {
+        return new ApiTransportFailure(stage, new IOException("synthetic transport failure"));
+    }
+
+    static String diagnosticReason(Throwable failure) {
         String message = failure.getMessage();
         // These are local parser/stage diagnostics, never response bodies or guest data.
-        if (message != null && message.matches("(?:gvproxy-api-|gateway |invalid gateway |configured forward |unknown forwarding |duplicate forwarding |invalid forwarding )[A-Za-z0-9 ._-]{0,100}")) {
+        if (message != null && message.matches("(?:gvproxy-api-|gateway |gateway-slot-|invalid gateway |configured forward |unknown forwarding |duplicate forwarding |invalid forwarding )[A-Za-z0-9 ._-]{0,100}")) {
             return message;
         }
         return failure.getClass().getSimpleName();
@@ -619,14 +802,7 @@ public final class NetworkGatewayDaemon {
         }
     }
 
-    private static boolean portBound(int port) {
-        try (java.net.ServerSocket ss = new java.net.ServerSocket()) {
-            ss.bind(new java.net.InetSocketAddress("127.0.0.1", port));
-            return false;
-        } catch (IOException bound) { return true; }
-    }
-
     static int listenPortFor(String instanceId) {
-        return 24100 + Math.floorMod(instanceId != null ? instanceId.hashCode() : 0, 800);
+        return GatewaySlotArbiter.derivedPort(instanceId);
     }
 }

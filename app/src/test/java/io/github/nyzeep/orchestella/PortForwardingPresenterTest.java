@@ -5,13 +5,18 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule;
 import io.github.nyzeep.orchestella.runtime.contract.Protocol;
+import io.github.nyzeep.orchestella.runtime.contract.SessionCapabilities;
 import io.github.nyzeep.orchestella.runtime.network.PortConflictDetector;
 import io.github.nyzeep.orchestella.runtime.network.PortForwardingManager;
 import io.github.nyzeep.orchestella.runtime.network.PortForwardingStore;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -281,24 +286,218 @@ public final class PortForwardingPresenterTest {
         assertNotNull(view.lastValidationError);
     }
 
+    @Test public void activeSessionProjectionControlsOperationsAndRefreshesAfterReplacement()
+            throws IOException {
+        FakeEngine engine = new FakeEngine();
+        FakeEngine unsupportedEngine = new FakeEngine();
+        ExecutionSession capableSession = new ForwardingSession(engine, true);
+        ExecutionSession unsupportedSession = new ForwardingSession(unsupportedEngine, false);
+        presenter = PortForwardingPresenter.forActiveSession("inst-test", manager);
+        presenter.attachView(view);
+        try {
+            ExecutionSessionRegistry.register("inst-test", unsupportedSession);
+            presenter.addRule("4040", "80", Protocol.TCP, "Web");
+            assertFalse(view.displayedRules.get(0).isEnabled());
+            assertEquals(0, unsupportedEngine.addCalls);
+
+            ExecutionSessionRegistry.register("inst-test", capableSession);
+            presenter.toggleRule(view.displayedRules.get(0).getId(), true);
+            assertTrue(view.displayedRules.get(0).isEnabled());
+            assertEquals(1, engine.addCalls);
+            assertEquals(0, unsupportedEngine.addCalls);
+        } finally {
+            ExecutionSessionRegistry.unregister("inst-test");
+        }
+    }
+
+    @Test public void hotEditWithBusyEndpointKeepsOriginalListenerAndConfiguration() throws IOException {
+        PortForwardingRule rule = manager.addRule(PortForwardingRule.defaultRule("web", Protocol.TCP, 4040, 80));
+        FakeEngine engine = new FakeEngine();
+        engine.addRule(rule);
+        engine.busyPort = 4041;
+        presenter = new PortForwardingPresenter("inst-test", manager, engine);
+        presenter.attachView(view);
+
+        presenter.updateRule(rule.id(), "4041", "8080", "Edited");
+
+        assertEquals(rule, store.loadRules("inst-test").get(0));
+        assertTrue(engine.isApplied(rule));
+        assertEquals(0, engine.removeCalls);
+        assertTrue(view.displayedRules.get(0).isEnabled());
+        assertNotNull(view.lastErrorMessage);
+    }
+
+    @Test public void hotEditPersistFailureRestoresTheOriginalListener() throws IOException {
+        PortForwardingRule rule = manager.addRule(PortForwardingRule.defaultRule("web", Protocol.TCP, 4040, 80));
+        FakeEngine engine = new FakeEngine();
+        engine.addRule(rule);
+        store.failSave = true;
+        presenter = new PortForwardingPresenter("inst-test", manager, engine);
+        presenter.attachView(view);
+
+        presenter.updateRule(rule.id(), "4041", "8080", "Edited");
+
+        assertEquals(rule, store.loadRules("inst-test").get(0));
+        assertEquals(List.of(rule), new ArrayList<>(engine.applied.values()));
+        assertNotNull(view.lastErrorMessage);
+    }
+
+    @Test public void addRemoveOnlyGatewayKeepsItsBindWhenSamePortRetargetIsRequested()
+            throws IOException {
+        PortForwardingRule rule = manager.addRule(PortForwardingRule.defaultRule("web", Protocol.TCP, 4040, 80));
+        FakeEngine engine = new FakeEngine();
+        engine.addRule(rule);
+        presenter = new PortForwardingPresenter("inst-test", manager, engine);
+        presenter.attachView(view);
+
+        presenter.updateRule(rule.id(), "4040", "8080", "Edited");
+
+        assertEquals(List.of(rule), manager.listRules());
+        assertTrue(engine.isApplied(rule));
+        assertEquals(0, engine.removeCalls);
+        assertNotNull(view.lastValidationError);
+    }
+
+    @Test public void successfulHotEditPersistsReplacementUnderTheSameRuleId() throws IOException {
+        PortForwardingRule rule = manager.addRule(PortForwardingRule.defaultRule("web", Protocol.TCP, 4040, 80));
+        FakeEngine engine = new FakeEngine();
+        engine.addRule(rule);
+        presenter = new PortForwardingPresenter("inst-test", manager, engine);
+        presenter.attachView(view);
+
+        presenter.updateRule(rule.id(), "4041", "8080", "Edited");
+
+        PortForwardingRule changed = store.loadRules("inst-test").get(0);
+        assertEquals(rule.id(), changed.id());
+        assertEquals(rule.createdAtMillis(), changed.createdAtMillis());
+        assertEquals(4041, changed.hostPort());
+        assertEquals(8080, changed.guestPort());
+        assertTrue(engine.isApplied(changed));
+        assertFalse(engine.isApplied(rule));
+        assertTrue(view.displayedRules.get(0).isEnabled());
+    }
+
+    @Test public void reservedHostPortsAndRuntimeGuestPortAreHandledHonestly() throws IOException {
+        PortForwardingRule relayRule = manager.addRule(
+                PortForwardingRule.defaultRule("relay-conflict", Protocol.TCP, 8085, 65353));
+        FakeEngine umlLikeEngine = new FakeEngine();
+        umlLikeEngine.reservedGuestPort = 65353;
+        presenter = new PortForwardingPresenter("inst-test", manager, umlLikeEngine);
+        presenter.attachView(view);
+
+        presenter.loadRules();
+        PortForwardingPresenter.RuleItemModel model = view.displayedRules.get(0);
+        assertTrue("reserved runtime guest port must not misreport TCP 127.0.0.1 error",
+                model.getDescription().contains("Guest 端口"));
+        assertTrue("user must be able to edit the reserved guest port without deleting", model.canEdit());
+        assertFalse(model.canToggle());
+
+        // Adding 3632/3633 or runtime-reserved guest port fails cleanly via validation error.
+        presenter.addRule("3632", "22", Protocol.TCP, "Compiler");
+        assertNotNull(view.lastValidationError);
+        assertTrue(view.lastValidationError.contains("3632"));
+
+        presenter.addRule("8086", "65353", Protocol.TCP, "Relay");
+        assertNotNull(view.lastValidationError);
+        assertTrue(view.lastValidationError.contains("Guest port"));
+
+        // Editing the saved 65353 rule to 8080 succeeds on UML-like engine.
+        presenter.updateRule(relayRule.id(), "8085", "8080", "Fixed");
+        assertTrue(umlLikeEngine.isApplied(manager.getRule(relayRule.id()).orElseThrow()));
+    }
+
+    @Test public void descriptionOnlyEditAndConcurrentDeleteCloseFormCleanly() throws IOException {
+        PortForwardingRule rule = manager.addRule(PortForwardingRule.defaultRule("web", Protocol.TCP, 4040, 80));
+        FakeEngine engine = new FakeEngine();
+        engine.addRule(rule);
+        presenter = new PortForwardingPresenter("inst-test", manager, engine);
+        presenter.attachView(view);
+
+        presenter.updateRule(rule.id(), "4040", "80", "Updated label");
+        assertEquals("Updated label", manager.getRule(rule.id()).orElseThrow().description());
+        assertTrue(engine.isApplied(manager.getRule(rule.id()).orElseThrow()));
+
+        // Concurrent deletion while editing must clear the edit dialog state and surface error.
+        view.formCleared = false;
+        presenter.updateRule("missing-id", "4040", "80", "Stale");
+        assertTrue(view.formCleared);
+        assertNotNull(view.lastErrorMessage);
+
+        PortForwardingManager raceManager = new PortForwardingManager(
+                "inst-race", store, new PortConflictDetector());
+        PortForwardingRule raced = raceManager.addRule(
+                PortForwardingRule.defaultRule("raced", Protocol.TCP, 5050, 80));
+        PortForwardingPresenter racePresenter = new PortForwardingPresenter("inst-race", raceManager, engine);
+        MockView raceView = new MockView();
+        racePresenter.attachView(raceView);
+        raceManager.removeRule(raced.id());
+        racePresenter.updateRule(raced.id(), "5050", "80", "Gone");
+        assertTrue(raceView.formCleared);
+        assertNotNull(raceView.lastErrorMessage);
+    }
+
+    @Test public void toggleOnPersistedRuleAppliesThroughManager() throws IOException {
+        PortForwardingRule rule = manager.addRule(PortForwardingRule.defaultRule("ssh", Protocol.TCP, 2222, 22));
+        FakeEngine engine = new FakeEngine();
+        presenter = new PortForwardingPresenter("inst-test", manager, engine);
+        presenter.attachView(view);
+
+        presenter.toggleRule(rule.id(), true);
+        assertTrue(engine.isApplied(rule));
+        assertTrue(view.displayedRules.get(0).isEnabled());
+    }
+
+    private record ForwardingSession(FakeEngine engine, boolean capable) implements RuntimeOwnedSession {
+        @Override public FullLinuxContract.CapabilityMatrix capabilityMatrix() {
+            SessionCapabilities descriptor = SessionCapabilities.builder(
+                            FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL)
+                    .portForwarding(capable)
+                    .build();
+            return FullLinuxContract.CapabilityMatrix.from(descriptor,
+                    EnumSet.of(FullLinuxContract.Capability.PORT_FORWARDING));
+        }
+
+        @Override public PortForwardingPresenter.LiveEngine portForwardingEngine() { return engine; }
+        @Override public RuntimeProcessSupervisor.StopResult stopRuntime(long graceMs) {
+            return RuntimeProcessSupervisor.StopResult.CONFIRMED;
+        }
+        @Override public boolean isRuntimeAlive() { return true; }
+        @Override public int waitFor() { return 0; }
+        @Override public OutputStream terminalInput() { return OutputStream.nullOutputStream(); }
+        @Override public InputStream terminalOutput() { return InputStream.nullInputStream(); }
+        @Override public OutputStream controlInput() { return OutputStream.nullOutputStream(); }
+        @Override public InputStream controlOutput() { return InputStream.nullInputStream(); }
+        @Override public void close() {}
+    }
+
     private static final class FakeEngine implements PortForwardingPresenter.LiveEngine {
-        final Map<String, PortForwardingRule> applied = new HashMap<>();
+        final Map<Integer, PortForwardingRule> applied = new HashMap<>();
         boolean failAdd;
+        int busyPort;
+        int reservedGuestPort;
         int addCalls;
         int removeCalls;
         InMemoryStore requireEmptyStore;
+        @Override public boolean supportsRule(PortForwardingRule rule) {
+            return io.github.nyzeep.orchestella.runtime.contract.PortForwardingEngine.Live
+                    .supportsIpv4LoopbackTcp(rule)
+                    && rule.guestPort() != reservedGuestPort;
+        }
         @Override public void addRule(PortForwardingRule rule) throws IOException {
             addCalls++;
             if (requireEmptyStore != null) assertTrue(requireEmptyStore.loadRules("inst-test").isEmpty());
-            if (failAdd) throw new IOException("synthetic apply failure");
-            applied.put(rule.id(), rule);
+            if (failAdd || rule.hostPort() == busyPort) throw new IOException("synthetic apply failure");
+            applied.put(rule.hostPort(), rule);
         }
         @Override public void removeRule(PortForwardingRule rule) {
             removeCalls++;
-            applied.remove(rule.id());
+            applied.remove(rule.hostPort());
         }
         @Override public boolean isRunning() { return true; }
-        @Override public boolean isApplied(PortForwardingRule rule) { return applied.containsKey(rule.id()); }
+        @Override public boolean isApplied(PortForwardingRule rule) {
+            PortForwardingRule active = applied.get(rule.hostPort());
+            return active != null && active.hasSameListener(rule) && active.guestPort() == rule.guestPort();
+        }
         @Override public void refresh() { }
     }
 }

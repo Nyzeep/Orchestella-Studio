@@ -1037,6 +1037,80 @@ public final class UmlInstanceLauncherContractTest {
         }
     }
 
+    @Test(timeout = 10_000)
+    public void sessionNetworkStartsOnShellReadyProjectsPortForwardingAndGuardsEphemeralQa()
+            throws Exception {
+        if (!BuildConfig.IS_ISOLATED_QA_BUILD) {
+            try {
+                UmlInstanceLauncher.forEphemeralQa(null);
+                fail("forEphemeralQa must refuse non-QA builds");
+            } catch (IllegalStateException expected) {
+                assertTrue(expected.getMessage().contains("QA"));
+            }
+        }
+
+        Path root = tmp.newFolder("uml-net-session").toPath();
+        Path runtimeDir = Files.createDirectories(root.resolve("rt"));
+        Path netDir = Files.createDirectories(root.resolve("net"));
+        AtomicBoolean started = new AtomicBoolean(false);
+        CountDownLatch pumpStopped = new CountDownLatch(1);
+        UmlPasstNetwork network = new UmlPasstNetwork(
+                runtimeDir, netDir, "inst-session-net", TOKEN,
+                () -> "/fake/libuml_passt.so",
+                0, () -> {},
+                (argv, pidFile) -> {
+                    started.set(true);
+                    return new UmlPasstNetwork.PasstProcess() {
+                        @Override public int pid() { return 8888; }
+                        @Override public void pump(int guestFd) {
+                            try { pumpStopped.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                        }
+                        @Override public void stopPump() { pumpStopped.countDown(); }
+                        @Override public boolean reap(boolean force) { return true; }
+                        @Override public void close() { pumpStopped.countDown(); }
+                    };
+                },
+                new UmlPasstNetwork.RouteMonitor() {
+                    @Override public UmlPasstNetwork.HostRoute snapshot() {
+                        return new UmlPasstNetwork.HostRoute(null, null);
+                    }
+                    @Override public AutoCloseable observe(Runnable onChange) { return () -> {}; }
+                });
+        network.restoreBeforePublish();
+
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        Path dummyRoot = runtimeDir.resolve("ephemeral-net");
+        Files.createDirectories(dummyRoot);
+        UmlRootReservationRegistry.Reservation reservation =
+                registry.acquire(dummyRoot, "inst-session-net", "gen-1");
+        ImmediateConsoleProcess proc = new ImmediateConsoleProcess(0, "");
+        UmlInstanceLauncher.Session session = new UmlInstanceLauncher.Session(
+                "inst-session-net", "gen-1", proc, network, dummyRoot,
+                registry, reservation,
+                new UmlReadinessTracker("inst-session-net", "gen-1"),
+                LaunchTimeline.open(runtimeDir, "inst-session-net", "alpine", 512, 1, System::nanoTime),
+                new LaunchStageObserver() {}, System::nanoTime,
+                500L, 500L, 500L, 500L);
+
+        assertNotNull(session.portForwardingEngine());
+        assertTrue(session.capabilityMatrix().supports(FullLinuxContract.Capability.TERMINAL));
+        assertTrue(session.capabilityMatrix().supports(FullLinuxContract.Capability.BRIDGE_HANDSHAKE));
+        assertTrue(session.capabilityMatrix().supports(FullLinuxContract.Capability.PORT_FORWARDING));
+        assertEquals("uml-network-waiting_for_shell", session.networkDiagnostic());
+
+        // Shell readiness must launch network independently even before Bridge authentication.
+        session.markShellReady();
+        long deadline = System.currentTimeMillis() + 3_000L;
+        while (!started.get() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20L);
+        }
+        assertTrue("network must start when shell reaches prompt even before Bridge auth", started.get());
+
+        assertEquals(StopResult.ALREADY_STOPPED, session.stopRuntime(200L));
+        assertNull(session.portForwardingEngine());
+        assertEquals(UmlPasstNetwork.Status.STOPPED, session.networkStatus());
+    }
+
     private static String extractSuccessMarker(String script) {
         for (String line : script.split("\n")) {
             int idx = line.indexOf("ORCHESTELLA_UML_PROVISION_OK ");

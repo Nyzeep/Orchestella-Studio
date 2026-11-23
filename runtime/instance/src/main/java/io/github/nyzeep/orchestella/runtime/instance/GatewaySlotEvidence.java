@@ -87,8 +87,7 @@ public final class GatewaySlotEvidence {
     }
 
     /**
-     * Reports whether any process in the snapshot carries the given identity string in its
-     * command line.
+     * Reports whether a command-line argument names exactly the given config file.
      *
      * @param configFileName identity string, normally {@code net-<instanceId>.yaml}; a null or
      *     empty value yields false
@@ -99,8 +98,11 @@ public final class GatewaySlotEvidence {
             return false;
         }
         for (ProcessRef process : processes) {
-            if (process.cmdlineContains(configFileName)) {
-                return true;
+            for (String argument : process.cmdline()) {
+                if (argument.equals(configFileName) || argument.endsWith("/" + configFileName)
+                        || argument.endsWith("\\" + configFileName)) {
+                    return true;
+                }
             }
         }
         return false;

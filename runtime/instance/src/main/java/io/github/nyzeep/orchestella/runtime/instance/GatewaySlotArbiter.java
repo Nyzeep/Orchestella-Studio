@@ -7,15 +7,14 @@ import java.util.Objects;
  * stable short sentence.
  *
  * <p>The module is a pure function over {@link GatewaySlotEvidence}: it does not probe the OS, start
- * threads, touch the file system or mutate the process table. It exists because the production
- * start path only asks one question — "is the derived port bindable?" — and that question cannot
- * distinguish a previous gateway of <em>this</em> instance from an unrelated listener. The decision
- * order below makes that distinction explicit and is evaluated strictly in this sequence:
+ * threads, touch the file system or mutate the process table. The production lease applies this
+ * decision while it holds the exclusive slot lock:
  *
  * <ol>
  *   <li>{@link GatewaySlotEvidence#processTableReadable()} is false &rarr;
  *       {@link GatewaySlotVerdict#EVIDENCE_UNAVAILABLE};</li>
- *   <li>{@link GatewaySlotEvidence#portBound()} is false &rarr; {@link GatewaySlotVerdict#FREE};</li>
+ *   <li>neither the TCP listener nor the Unix API path is occupied &rarr;
+ *       {@link GatewaySlotVerdict#FREE};</li>
  *   <li>the snapshot carries the identity of this instance &rarr;
  *       {@link GatewaySlotVerdict#ORPHAN_OF_THIS_INSTANCE};</li>
  *   <li>otherwise &rarr; {@link GatewaySlotVerdict#HELD_BY_UNKNOWN}.</li>
@@ -23,31 +22,11 @@ import java.util.Objects;
  *
  * <p>The identity string is {@code net-<instanceId>.yaml}: the very file name that the production
  * start path writes into the runtime directory and passes to gvproxy through {@code -config}, so it
- * appears verbatim in that process's argument vector. The derived port is shared by all instances
- * with the same {@link String#hashCode()}, therefore a bound port alone is never evidence of
- * ownership.
+ * appears verbatim in that process's argument vector. Instances can share a derived port, so a
+ * bound port alone provides no evidence of ownership.
  *
- * <p><b>Intentionally not wired into production.</b> As of ticket Q3 the product has no
- * cross-process gateway ownership surface: every stop path funnels into
- * {@code RuntimeProcessSupervisor.stop()}, which only knows handles held by this process, so only
- * the decision table (not the evidence collection, not the reclaim action) is portable. This type
- * is therefore exercised solely by {@code GatewaySlotArbiterContractTest} and is kept as a deep
- * module on purpose; it is not dead code. Adding a production caller is a separate decision.
- *
- * <p>The decision is kept out of the start path for three reasons:
- *
- * <ul>
- *   <li><b>No handle exists across processes.</b> A reclaimed gateway would have to be signalled
- *       through {@code android.system.Os.kill} or {@code ProcessHandle.of(pid)}, and
- *       {@code app/src/main} has no precedent for either; the whole ownership chain today is built
- *       on {@code java.lang.Process}.</li>
- *   <li><b>A wrong kill is unrecoverable.</b> Killing another instance's gvproxy tears down the
- *       netdev socket its QEMU is connected to, and that QEMU aborts without retrying — so a
- *       misclassification is worse than the current refusal to start.</li>
- *   <li><b>The confirmation chain is unverifiable here.</b> Reclaiming needs
- *       kill &rarr; re-probe &rarr; still bound means {@code HELD_BY_UNKNOWN}, and that sequence only
- *       holds on a real device with a real {@code /proc}; no JVM test can falsify it.</li>
- * </ul>
+ * <p>A matching command line is diagnostic evidence. Reuse of a previous generation's socket
+ * also requires the lease's persisted identity and confirmed process exit.
  */
 public final class GatewaySlotArbiter {
 
@@ -63,8 +42,7 @@ public final class GatewaySlotArbiter {
     /**
      * Derives the gateway port of an instance.
      *
-     * <p>Mirrors {@code NetworkGatewayDaemon.listenPortFor} expression for expression, including
-     * the null case, so that the two can never disagree:
+     * <p>The daemon and its lease use the same derivation:
      * {@code PORT_BASE + Math.floorMod(instanceId != null ? instanceId.hashCode() : 0, PORT_SLOTS)}.
      * {@link String#hashCode()} is fixed by the language specification, hence the same id always
      * maps to the same port across processes and restarts.
@@ -118,7 +96,7 @@ public final class GatewaySlotArbiter {
         if (!evidence.processTableReadable()) {
             return GatewaySlotVerdict.EVIDENCE_UNAVAILABLE;
         }
-        if (!evidence.portBound()) {
+        if (!evidence.portBound() && !evidence.apiSocketPresent()) {
             return GatewaySlotVerdict.FREE;
         }
         if (evidence.hasIdentityFor(configFileName(instanceId))) {
@@ -144,8 +122,8 @@ public final class GatewaySlotArbiter {
         return switch (verdict) {
             case FREE -> "gateway slot is free";
             case ORPHAN_OF_THIS_INSTANCE ->
-                    "port " + port + " is held by a previous gateway of this instance";
-            case HELD_BY_UNKNOWN -> "port " + port + " is in use by an unidentified process";
+                    "gateway slot for port " + port + " is held by a previous gateway of this instance";
+            case HELD_BY_UNKNOWN -> "gateway slot for port " + port + " has unidentified resources";
             case EVIDENCE_UNAVAILABLE -> "cannot determine gateway slot owner for port " + port;
         };
     }

@@ -111,8 +111,14 @@ pin) are statically linked bionic executables carrying a .so name for the
 jniLibs packaging convention. passt is GPL-2.0-or-later (see its upstream
 source); the umnet harness and the forwarding patch are distributed with
 the same public repository as the rest of the corresponding source. The
-inbound forward binds loopback only (127.0.0.1:3632) and serves the guest's
-distccd compile route; there is no UDP inbound and no LAN exposure.
+inbound forward of the umnet compile helper binds 127.0.0.1:3632 and
+serves the guest's distccd compile route.
+
+The isolated standalone UML runtime uses the same passt binary for IPv4
+egress and DNS. Its App-owned user listeners bind IPv4 loopback for
+explicit TCP forwards. A private loopback transport authenticates the
+launch before relaying to the guest's local TCP service. This path does
+not use the compile lane's ports.
 
 Corresponding source and written offer
 --------------------------------------

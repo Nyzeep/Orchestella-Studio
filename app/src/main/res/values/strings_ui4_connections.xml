@@ -34,12 +34,15 @@
     <string name="connections_ssh_delete_message">将删除「%1$s」的本地连接配置，不影响远端主机。</string>
 
     <!-- 端口转发页 -->
-    <string name="connections_pf_live_hint">QEMU 本机 TCP 映射 · 服务需在 Linux 中运行</string>
-    <string name="connections_pf_no_engine_hint">当前没有可用的 QEMU 网关。配置仅保存；AVF 尚未接入端口转发，需切换 QEMU 使用。</string>
+    <string name="connections_pf_live_hint">本机 TCP · 127.0.0.1 · 服务需在 Linux 中运行</string>
+    <string name="connections_pf_no_engine_hint">当前没有可用的端口转发会话。规则将保存，供支持转发的会话加载。</string>
     <string name="connections_pf_section_rules">已配置规则</string>
     <string name="connections_pf_section_add">添加转发规则</string>
     <string name="connections_pf_empty">暂无端口转发规则，可在下方添加</string>
     <string name="connections_pf_enabled">启用规则</string>
+    <string name="connections_pf_edit">编辑</string>
+    <string name="connections_pf_edit_title">编辑端口转发规则</string>
+    <string name="connections_pf_save">保存</string>
     <string name="connections_pf_delete_title">删除端口转发规则</string>
     <string name="connections_pf_delete_message">删除 %1$s 端口 %2$d → %3$d？该操作不会影响 Guest 内服务。</string>
     <string name="connections_pf_rule_ports">%1$d → %2$d</string>

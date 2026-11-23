@@ -13,6 +13,13 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density"
             android:exported="true"
             android:theme="@style/Theme.Orchestella" />
+
+        <provider
+            android:name=".GatewaySlotProbeProvider"
+            android:authorities="${applicationId}.w303-gateway"
+            android:enabled="${w303GatewayProbeEnabled}"
+            android:exported="false"
+            android:process=":w303_gateway" />
     </application>
 
 </manifest>

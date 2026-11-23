@@ -8,6 +8,7 @@ import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.orchestella.runtime.contract.PortForwardingEngine;
 import io.github.nyzeep.orchestella.runtime.contract.SessionCapabilities;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import io.github.nyzeep.orchestella.runtime.engineqemu.GpuAccelerationStatus;
@@ -44,6 +45,7 @@ public final class QemuInstanceLauncher {
         private final String terminalSocketName;
         private final String instanceId;
         private final QemuProcessLauncher.ProcessHandle handle;
+        private final RuntimeGateway gateway;
         private final RuntimeProcessSupervisor supervisor;
         private final LaunchTimeline timeline;
         /** Observation-only stage trace (ticket 27); null records nothing. */
@@ -86,11 +88,11 @@ public final class QemuInstanceLauncher {
         private final class SessionServiceForward implements ExecutionSession.ServiceForward {
             private final io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule rule;
             private final int hostPort;
-            private final PortForwardingPresenter.LiveEngine engine;
+            private final PortForwardingEngine.Live engine;
             private final AtomicBoolean active = new AtomicBoolean(true);
 
             SessionServiceForward(io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule rule,
-                    int hostPort, PortForwardingPresenter.LiveEngine engine) {
+                    int hostPort, PortForwardingEngine.Live engine) {
                 this.rule = rule;
                 this.hostPort = hostPort;
                 this.engine = engine;
@@ -185,6 +187,7 @@ public final class QemuInstanceLauncher {
             this.instanceId = instanceId;
             this.proxySocketName = proxySocketName;
             this.handle = handle;
+            this.gateway = gateway;
             this.timeline = timeline;
             this.stageObserver = stageObserver;
             this.supervisor = new RuntimeProcessSupervisor(handle, gateway, this::closeChannels,
@@ -293,11 +296,15 @@ public final class QemuInstanceLauncher {
 
         private volatile boolean closing;
 
+        @Override public PortForwardingEngine.Live portForwardingEngine() {
+            return closing || gateway == null ? null : gateway.forwardingEngine();
+        }
+
         @Override public synchronized ServiceForward openServiceForward(int guestPort) throws IOException {
             if (closing) throw new IOException("session is closing");
             if (guestPort != 18080) throw new IOException("service port is not approved");
             if (instanceId == null) throw new IOException("service owner is unavailable");
-            PortForwardingPresenter.LiveEngine engine = NetworkGatewayDaemon.forwardingEngine(instanceId);
+            PortForwardingEngine.Live engine = portForwardingEngine();
             if (engine == null || !engine.isRunning()) throw new IOException("gateway forwarding is unavailable");
             int port;
             try (java.net.ServerSocket candidate = new java.net.ServerSocket(0, 1,
@@ -537,6 +544,7 @@ public final class QemuInstanceLauncher {
                                     ? SessionCapabilities.DisplayTransport.NONE
                                     : SessionCapabilities.DisplayTransport.RFB)
                             .serviceForward(!serviceForwards.isEmpty())
+                            .portForwarding(portForwardingEngine() != null)
                             .build());
         }
 

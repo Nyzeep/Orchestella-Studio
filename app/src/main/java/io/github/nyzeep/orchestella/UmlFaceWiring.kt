@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella
 
+import io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule
 import java.io.BufferedReader
 import java.io.File
 import java.io.IOException
@@ -717,10 +718,10 @@ class UmlCompileBridgeWiring(
         val LOOPBACK_V4: java.net.InetAddress = java.net.InetAddress.getByName("127.0.0.1")
 
         /** Provisional Gate 1 dial target: the guest distccd via passt's loopback forward. */
-        const val DEFAULT_GUEST_DISTCC_PORT = 3632
+        const val DEFAULT_GUEST_DISTCC_PORT = PortForwardingRule.COMPILE_WORKER_HOST_PORT
 
         /** Provisional Gate 1 listener: the QEMU guest's distcc clients enter here. */
-        const val DEFAULT_SUBMITTER_LISTENER_PORT = 3633
+        const val DEFAULT_SUBMITTER_LISTENER_PORT = PortForwardingRule.COMPILE_SUBMITTER_HOST_PORT
 
         /** The bridge's connection cap for the submitter listener. */
         const val SUBMITTER_MAX_CONNECTIONS = 4

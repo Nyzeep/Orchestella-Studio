@@ -34,6 +34,8 @@ public final class SocketPortForwarderDiagnosticsTest {
         suite.guestPortWithoutListenerIsReported();
         suite.repeatedFailuresAreThrottled();
         suite.sameIdReplacesAndClosesThePreviousListener();
+        suite.retargetsInPlaceAndKeepsOriginalOnBindConflict();
+        suite.rejectsUdpAndReservedCompilerPortsAndTracksIsApplied();
         suite.closeEmitsOneSummaryPerRule();
         System.out.println("SOCKET_FORWARDER_DIAGNOSTICS_TEST_OK");
     }
@@ -156,6 +158,77 @@ public final class SocketPortForwarderDiagnosticsTest {
         assertTrue(observer.summaries.get() >= 1, "close() must emit onSummary");
     }
 
+    @Test
+    public void retargetsInPlaceAndKeepsOriginalOnBindConflict() throws Exception {
+        try (SocketPortForwarder forwarder = new SocketPortForwarder();
+                ServerSocket firstGuest = startEchoServer(0, "first");
+                ServerSocket secondGuest = startEchoServer(0, "second");
+                ServerSocket conflicting = new ServerSocket(
+                        0, 50, InetAddress.getByName("127.0.0.1"))) {
+            int hostPort = freePort();
+            PortForwardingRule original = PortForwardingRule.defaultRule(
+                    "stable", Protocol.TCP, hostPort, firstGuest.getLocalPort());
+            forwarder.addRule(original);
+            assertEquals("first", readLine(hostPort), "initial target");
+
+            PortForwardingRule occupied = PortForwardingRule.builder(original)
+                    .hostPort(conflicting.getLocalPort()).guestPort(secondGuest.getLocalPort()).build();
+            try {
+                forwarder.replaceRule(original, occupied);
+                throw new AssertionError("the occupied host endpoint must reject the replacement");
+            } catch (IOException expected) {
+                assertEquals("first", readLine(hostPort), "bind conflict preserves the original target");
+            }
+
+            PortForwardingRule retargeted = PortForwardingRule.builder(original)
+                    .guestPort(secondGuest.getLocalPort()).build();
+            forwarder.replaceRule(original, retargeted);
+            assertTrue(!forwarder.isApplied(original), "replaced rule must no longer report applied");
+            assertTrue(forwarder.isApplied(retargeted), "replacement rule must report applied");
+            assertEquals("second", readLine(hostPort), "same endpoint reaches the new target");
+
+            PortForwardingRule redescribed = PortForwardingRule.builder(retargeted)
+                    .description("Updated description").build();
+            forwarder.replaceRule(retargeted, redescribed);
+            assertTrue(forwarder.isApplied(redescribed), "description-only update updates active rule");
+            forwarder.removeRule(redescribed);
+            assertTrue(!forwarder.isApplied(redescribed), "removed rule must report not applied");
+            assertTrue(!isConnectable(hostPort), "revocation releases the listener");
+        }
+    }
+
+    @Test
+    public void rejectsUdpAndReservedCompilerPortsAndTracksIsApplied() throws Exception {
+        SocketPortForwarder forwarder = new SocketPortForwarder();
+        try {
+            int free = freePort();
+            PortForwardingRule udp = PortForwardingRule.defaultRule("udp", Protocol.UDP, free, 8080);
+            try {
+                forwarder.addRule(udp);
+                throw new AssertionError("UDP forwarding must be rejected");
+            } catch (IOException expected) {
+                assertTrue(!forwarder.isApplied(udp), "rejected UDP rule cannot be applied");
+            }
+            for (int reserved : new int[] {
+                    PortForwardingRule.COMPILE_WORKER_HOST_PORT,
+                    PortForwardingRule.COMPILE_SUBMITTER_HOST_PORT}) {
+                PortForwardingRule compile = PortForwardingRule.defaultRule("res-" + reserved, Protocol.TCP, reserved, 22);
+                try {
+                    forwarder.addRule(compile);
+                    throw new AssertionError("reserved compiler port " + reserved + " must be rejected");
+                } catch (IOException expected) {
+                    assertTrue(!forwarder.isApplied(compile), "reserved port cannot be applied");
+                }
+            }
+            PortForwardingRule valid = PortForwardingRule.defaultRule("valid", Protocol.TCP, free, 8080);
+            forwarder.addRule(valid);
+            assertTrue(forwarder.isApplied(valid), "valid TCP rule must be applied");
+        } finally {
+            forwarder.close();
+        }
+        assertTrue(!forwarder.isRunning(), "closed forwarder must not be running");
+    }
+
     /** Counts the events the scenarios assert on instead of scraping log output. */
     private static final class RecordingObserver implements PortForwardingObserver {
         final AtomicInteger clientFailures = new AtomicInteger();
@@ -184,6 +257,10 @@ public final class SocketPortForwarderDiagnosticsTest {
 
     /** Minimal guest service that answers one line per connection; closing it ends the thread. */
     private static ServerSocket startEchoServer(int port) throws IOException {
+        return startEchoServer(port, "PONG");
+    }
+
+    private static ServerSocket startEchoServer(int port, String response) throws IOException {
         ServerSocket server = new ServerSocket();
         server.setReuseAddress(true);
         server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 50);
@@ -192,7 +269,7 @@ public final class SocketPortForwarderDiagnosticsTest {
                 try (Socket client = server.accept();
                         OutputStream out = client.getOutputStream()) {
                     client.getInputStream().read();
-                    out.write("PONG\n".getBytes(StandardCharsets.US_ASCII));
+                    out.write((response + "\n").getBytes(StandardCharsets.US_ASCII));
                     out.flush();
                 } catch (IOException closing) {
                     return;

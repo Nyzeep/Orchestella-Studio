@@ -40,7 +40,9 @@ public final class FullLinuxContract {
         POINTER_CAPTURE,
         /** A read-only 9p share server actually serving this session. */
         SHARED_DIRECTORY,
-        GPU_HARDWARE_ACCELERATION;
+        GPU_HARDWARE_ACCELERATION,
+        /** This launch assembled a live adapter for explicit user rules. */
+        PORT_FORWARDING;
 
         /** Compatibility alias for callers that use a transport-neutral name. */
         public static final Capability GRAPHICS_DISPLAY = GRAPHICS_RFB;
@@ -54,8 +56,9 @@ public final class FullLinuxContract {
         /** Capabilities structurally reachable by the standalone CLI user-mode kernel strategy. */
         public static final Set<Capability> USER_MODE_KERNEL_ALLOWED_CAPABILITIES =
                 Collections.unmodifiableSet(
-                        EnumSet.of(Capability.TERMINAL, Capability.BRIDGE_HANDSHAKE));
-        /** Capabilities verified on device/contract for standalone UML; empty until Wave 3 slices verify them. */
+                        EnumSet.of(Capability.TERMINAL, Capability.BRIDGE_HANDSHAKE,
+                                Capability.PORT_FORWARDING));
+        /** The default assumes no verified adapters for an arbitrary standalone UML launch. */
         public static final Set<Capability> USER_MODE_KERNEL_VERIFIED_PROFILE =
                 Collections.emptySet();
         private static final Map<ExecutionStrategy, Set<Capability>> DEFAULT_VERIFIED_PROFILES =
@@ -197,6 +200,9 @@ public final class FullLinuxContract {
             }
             if (descriptor.gpuAcceleration()) {
                 declared.add(Capability.GPU_HARDWARE_ACCELERATION);
+            }
+            if (descriptor.portForwarding()) {
+                declared.add(Capability.PORT_FORWARDING);
             }
             return declared;
         }

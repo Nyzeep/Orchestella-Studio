@@ -3,15 +3,21 @@ package io.github.nyzeep.orchestella;
 import static org.junit.Assert.*;
 import io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule;
 import io.github.nyzeep.orchestella.runtime.contract.Protocol;
+import io.github.nyzeep.orchestella.runtime.instance.GatewaySlotLease;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -73,27 +79,63 @@ public final class NetworkGatewayDaemonTest {
     }
 
     @Test(timeout = 10000)
-    public void liveGatewayBlocksSlotAndDeadGatewayIsCleaned() throws Exception {
-        String id = "gw-slot";
-        Process process = TestProcesses.longRunning();
+    public void unconfirmedStopKeepsTheLeaseAndLateStopPreservesTheReplacement() throws Exception {
+        String id = "gw-unconfirmed";
+        Path root = temporaryFolder.getRoot().toPath();
+        GatewaySlotLease lease = acquireTestLease(root, id);
+        ExitControlledProcess process = new ExitControlledProcess();
+        File apiSocket = Files.createFile(lease.apiSocket()).toFile();
+        lease.recordProcess(1, 1, "fixture");
         NetworkGatewayDaemon.Running running = new NetworkGatewayDaemon.Running(
-                "/tmp/net.yaml", 24198, process, id,
-                temporaryFolder.newFile("slot.sock"),
-                new NetworkGatewayDaemon.ForwardingEngine((method, endpoint, body) -> "[]",
-                        process::isAlive));
+                "/tmp/net.yaml", NetworkGatewayDaemon.listenPortFor(id), process, id, apiSocket,
+                new NetworkGatewayDaemon.ForwardingEngine((method, endpoint, body) -> "[]", process::isAlive),
+                lease);
         NetworkGatewayDaemon.LIVE.put(id, running);
         try {
+            assertFalse(running.stop(0));
+            assertTrue(apiSocket.exists());
+            assertSame(running, NetworkGatewayDaemon.LIVE.get(id));
+            assertThrows(IOException.class, () -> acquireTestLease(root, id));
+
+            process.exited = true;
+            assertTrue(running.stop(0));
+            assertFalse(apiSocket.exists());
+            assertFalse(NetworkGatewayDaemon.LIVE.containsKey(id));
+            GatewaySlotLease replacement = acquireTestLease(root, id);
             try {
-                NetworkGatewayDaemon.ensureGatewaySlotAvailable(id);
-                fail("a live gateway must block a second start");
-            } catch (IOException expected) {
-                assertTrue(expected.getMessage().contains("already running"));
+                Files.createFile(replacement.apiSocket());
+                replacement.recordProcess(1, 1, "fixture");
+                assertTrue(running.stop(0));
+                assertTrue(Files.exists(replacement.apiSocket()));
+                assertThrows(IOException.class, () -> acquireTestLease(root, id));
+            } finally {
+                replacement.releaseAfterExit();
             }
-            assertTrue(running.stop(200));
-            NetworkGatewayDaemon.ensureGatewaySlotAvailable(id);
         } finally {
-            process.destroyForcibly();
-            NetworkGatewayDaemon.LIVE.remove(id);
+            process.exited = true;
+            running.stop(0);
+        }
+    }
+
+    private static GatewaySlotLease acquireTestLease(Path root, String id) throws IOException {
+        return GatewaySlotLease.acquire(root, id, (pid, startTicks) ->
+                new GatewaySlotLease.ProcessObservation(GatewaySlotLease.ProcessState.UNAVAILABLE),
+                socket -> Files.exists(socket) ? "fixture" : null);
+    }
+
+    private static final class ExitControlledProcess extends Process {
+        boolean exited;
+
+        @Override public OutputStream getOutputStream() { return OutputStream.nullOutputStream(); }
+        @Override public InputStream getInputStream() { return InputStream.nullInputStream(); }
+        @Override public InputStream getErrorStream() { return InputStream.nullInputStream(); }
+        @Override public int waitFor() { return exitValue(); }
+        @Override public boolean waitFor(long timeout, TimeUnit unit) { return exited; }
+        @Override public boolean isAlive() { return !exited; }
+        @Override public void destroy() {}
+        @Override public int exitValue() {
+            if (!exited) throw new IllegalThreadStateException();
+            return 0;
         }
     }
 
@@ -137,44 +179,6 @@ public final class NetworkGatewayDaemonTest {
             }
         } finally {
             owner.destroyForcibly();
-        }
-    }
-
-    @Test(timeout = 10000)
-    public void deadLiveEntryDoesNotReserveAnotherInstancePort() throws Exception {
-        String deadId = "gw-dead-entry";
-        int port = NetworkGatewayDaemon.listenPortFor(deadId);
-        Process dead = TestProcesses.exitImmediately();
-        assertTrue(dead.waitFor(2, java.util.concurrent.TimeUnit.SECONDS));
-        NetworkGatewayDaemon.Running running = new NetworkGatewayDaemon.Running(
-                "/tmp/net.yaml", port, dead, deadId, temporaryFolder.newFile("dead.sock"),
-                new NetworkGatewayDaemon.ForwardingEngine((method, endpoint, body) -> "[]",
-                        dead::isAlive));
-        NetworkGatewayDaemon.LIVE.put(deadId, running);
-        try {
-            assertFalse("a dead entry must not reserve a port for another instance",
-                    NetworkGatewayDaemon.portAssignedToAnotherInstance("other", port));
-            assertFalse("the dead entry must be cleaned", NetworkGatewayDaemon.LIVE.containsKey(deadId));
-        } finally {
-            NetworkGatewayDaemon.LIVE.remove(deadId);
-        }
-    }
-
-    @Test(timeout = 10000)
-    public void livePortOfAnotherInstanceIsReserved() throws Exception {
-        String id = "gw-live-port";
-        int port = NetworkGatewayDaemon.listenPortFor(id);
-        Process live = TestProcesses.longRunning();
-        NetworkGatewayDaemon.Running running = new NetworkGatewayDaemon.Running(
-                "/tmp/net.yaml", port, live, id, temporaryFolder.newFile("live.sock"),
-                new NetworkGatewayDaemon.ForwardingEngine((method, endpoint, body) -> "[]",
-                        live::isAlive));
-        NetworkGatewayDaemon.LIVE.put(id, running);
-        try {
-            assertTrue(NetworkGatewayDaemon.portAssignedToAnotherInstance("other", port));
-        } finally {
-            running.stop(200);
-            NetworkGatewayDaemon.LIVE.remove(id);
         }
     }
 
@@ -242,9 +246,10 @@ public final class NetworkGatewayDaemonTest {
         assertTrue(yaml.contains("gatewayIP: 192.168.127.1"));
         assertFalse(yaml.contains("services: \"tcp:"));
     }
-    @Test public void unsupportedUdpAndLanNeverExpandListeningSurface() throws Exception {
+    @Test public void unsupportedAndReservedRulesNeverExpandListeningSurface() throws Exception {
         String yaml = NetworkGatewayDaemon.configuration(24101, "/data/private/api.sock", List.of(
-                rule("udp", Protocol.UDP, 2222, 22, false), rule("lan", Protocol.TCP, 3333, 22, true)));
+                rule("udp", Protocol.UDP, 2222, 22, false), rule("lan", Protocol.TCP, 3333, 22, true),
+                rule("compiler", Protocol.TCP, 3632, 22, false), rule("submitter", Protocol.TCP, 3633, 22, false)));
         assertTrue(yaml.contains("forwards: {}"));
         assertFalse(yaml.contains("3333"));
         assertFalse(yaml.contains("0.0.0.0"));
@@ -298,6 +303,8 @@ public final class NetworkGatewayDaemonTest {
         NetworkGatewayDaemon.ForwardingEngine engine = new NetworkGatewayDaemon.ForwardingEngine(api, () -> true);
         reject(() -> engine.addRule(rule("lan", Protocol.TCP, 2222, 22, true)));
         reject(() -> engine.addRule(rule("udp", Protocol.UDP, 2222, 22, false)));
+        reject(() -> engine.addRule(rule("compiler", Protocol.TCP, 3632, 22, false)));
+        reject(() -> engine.addRule(rule("submitter", Protocol.TCP, 3633, 22, false)));
         assertEquals(0, api.calls);
     }
     @Test public void unknownProtocolHostAndOversizedResponsesFailClosed() {
@@ -352,6 +359,89 @@ public final class NetworkGatewayDaemonTest {
             assertEquals("gateway HTTP status 404", expected.getMessage());
             assertFalse(expected.getMessage().contains("synthetic-private"));
         }
+    }
+
+    @Test public void diagnosticReasonPreservesGatewaySlotCodes() {
+        assertEquals("gateway-slot-owner-busy",
+                NetworkGatewayDaemon.diagnosticReason(new IOException("gateway-slot-owner-busy")));
+        assertEquals("gateway-slot-held_by_unknown",
+                NetworkGatewayDaemon.diagnosticReason(new IOException("gateway-slot-held_by_unknown")));
+        assertEquals("gateway-slot-previous-owner-running",
+                NetworkGatewayDaemon.diagnosticReason(new IOException("gateway-slot-previous-owner-running")));
+    }
+
+    @Test public void processStatParserHandlesParenthesesAndSpacesInComm() {
+        String stat = "1234 (gv (proxy) v1) S 1 1234 1234 0 -1 4194304 100 0 0 0 1 0 0 0 20 0 1 0 987654321 1000 10";
+        assertEquals(987654321L, NetworkGatewayDaemon.parseStartTicksFromStat(stat));
+        assertEquals(0L, NetworkGatewayDaemon.parseStartTicksFromStat("1234 (broken)"));
+    }
+
+    @Test public void inspectProcessDetectsPidReuseAndFailsClosedWhenStatUnreadable() {
+        GatewaySlotLease.ProcessObservation reused = NetworkGatewayDaemon.inspectProcess(
+                42, 100L, () -> 200L, () -> GatewaySlotLease.ProcessState.RUNNING, () -> List.of("gvproxy"));
+        assertEquals(GatewaySlotLease.ProcessState.EXITED, reused.state());
+
+        GatewaySlotLease.ProcessObservation unreadable = NetworkGatewayDaemon.inspectProcess(
+                42, 100L, () -> 0L, () -> GatewaySlotLease.ProcessState.RUNNING, () -> List.of("gvproxy"));
+        assertEquals(GatewaySlotLease.ProcessState.UNAVAILABLE, unreadable.state());
+
+        GatewaySlotLease.ProcessObservation dead = NetworkGatewayDaemon.inspectProcess(
+                42, 100L, () -> 100L, () -> GatewaySlotLease.ProcessState.EXITED, () -> List.of());
+        assertEquals(GatewaySlotLease.ProcessState.EXITED, dead.state());
+
+        GatewaySlotLease.ProcessObservation eperm = NetworkGatewayDaemon.inspectProcess(
+                42, 100L, () -> 100L, () -> GatewaySlotLease.ProcessState.UNAVAILABLE, () -> List.of());
+        assertEquals(GatewaySlotLease.ProcessState.UNAVAILABLE, eperm.state());
+    }
+
+    @Test public void forwardingEngineReplaceRuleHotSwapsAndPreservesOriginalOnConflict() throws Exception {
+        FakeApi api = new FakeApi();
+        NetworkGatewayDaemon.ForwardingEngine engine = new NetworkGatewayDaemon.ForwardingEngine(api, () -> true);
+        PortForwardingRule original = rule("ssh", Protocol.TCP, 2222, 22, false);
+        PortForwardingRule conflictRule = rule("other", Protocol.TCP, 2223, 80, false);
+        engine.addRule(original);
+        engine.addRule(conflictRule);
+
+        // Moving host port succeeds and removes old mapping.
+        PortForwardingRule moved = rule("ssh", Protocol.TCP, 2224, 22, false);
+        engine.replaceRule(original, moved);
+        assertTrue(engine.isApplied(moved));
+        assertFalse(engine.isApplied(original));
+        assertFalse(api.mappings.containsKey("127.0.0.1:2222"));
+
+        // Moving onto an occupied host port fails while keeping moved active.
+        PortForwardingRule collide = rule("ssh", Protocol.TCP, 2223, 22, false);
+        reject(() -> engine.replaceRule(moved, collide));
+        assertTrue(engine.isApplied(moved));
+        assertTrue(engine.isApplied(conflictRule));
+
+        // Changing guestPort while keeping same hostPort throws ListenerRetargetUnsupported and keeps moved active.
+        PortForwardingRule retargetGuest = rule("ssh", Protocol.TCP, 2224, 2222, false);
+        assertThrows(io.github.nyzeep.orchestella.runtime.contract.PortForwardingEngine.ListenerRetargetUnsupported.class,
+                () -> engine.replaceRule(moved, retargetGuest));
+        assertTrue(engine.isApplied(moved));
+
+        // Description-only change (same hostPort & guestPort) succeeds as a no-op.
+        PortForwardingRule renamed = PortForwardingRule.builder()
+                .id("ssh").protocol(Protocol.TCP).hostPort(2224).guestPort(22)
+                .bindAddress("127.0.0.1").allowLanExposure(false).description("SSH renamed").build();
+        engine.replaceRule(moved, renamed);
+        assertTrue(engine.isApplied(renamed));
+    }
+
+    @Test public void forwardingEngineRefreshRetriesOnceOnTransientTransportFailure() throws Exception {
+        final int[] calls = {0};
+        NetworkGatewayDaemon.ForwardingEngine engine = new NetworkGatewayDaemon.ForwardingEngine(
+                (method, endpoint, body) -> {
+                    calls[0]++;
+                    if (calls[0] == 1) {
+                        throw NetworkGatewayDaemon.transportFailureForTest("read");
+                    }
+                    return "[{\"local\":\"127.0.0.1:2222\",\"remote\":\"192.168.127.15:22\",\"protocol\":\"tcp\"}]";
+                }, () -> true);
+        engine.refresh();
+        assertEquals(2, calls[0]);
+        assertTrue(engine.isApplied(rule("ssh", Protocol.TCP, 2222, 22, false)));
     }
     private static ByteArrayInputStream openConnection(byte[] response) {
         return new ByteArrayInputStream(response) {

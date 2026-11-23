@@ -20,6 +20,8 @@ import java.util.regex.Pattern;
 public final class PortForwardingRule {
     public static final String LOOPBACK_ADDRESS = "127.0.0.1";
     public static final String LAN_EXPOSED_ADDRESS = "0.0.0.0";
+    public static final int COMPILE_WORKER_HOST_PORT = 3632;
+    public static final int COMPILE_SUBMITTER_HOST_PORT = 3633;
 
     public static final String SECURITY_LAN_WARNING =
             "LAN exposure binds to 0.0.0.0, allowing any device on your local network to access this guest service. "
@@ -109,6 +111,17 @@ public final class PortForwardingRule {
 
     public String description() {
         return description;
+    }
+
+    /** The host endpoints owned by the compiler ride-along, outside the user rule store. */
+    public static boolean isReservedHostPort(int hostPort) {
+        return hostPort == COMPILE_WORKER_HOST_PORT || hostPort == COMPILE_SUBMITTER_HOST_PORT;
+    }
+
+    /** Whether two rules bind the same socket endpoint. */
+    public boolean hasSameListener(PortForwardingRule other) {
+        return protocol == other.protocol && hostPort == other.hostPort
+                && bindAddress.equals(other.bindAddress);
     }
 
     @Override

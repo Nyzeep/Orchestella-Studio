@@ -251,7 +251,7 @@ public final class RuntimeProcessSupervisorTest {
                 "/tmp/net.yaml", 24197, process, instanceId, apiSocket, engine);
         NetworkGatewayDaemon.LIVE.put(instanceId, gateway);
         QemuInstanceLauncher.Session session = new QemuInstanceLauncher.Session(
-                "t4-ctl", "t4-term", null, null, null, handleFor(process), instanceId);
+                "t4-ctl", "t4-term", null, null, null, handleFor(process), instanceId, gateway);
         try {
             List<ExecutionSession.ServiceForward> forwards = new ArrayList<>();
             // Ephemeral ports can collide with an already-open forward; retry those instead

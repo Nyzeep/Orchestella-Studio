@@ -49,20 +49,32 @@ public class UmlEphemeralRootFixtureTest {
                 rootDir.resolve("etc/orchestella/bridge-agent.sh"), StandardCharsets.UTF_8);
         String loginShell = Files.readString(
                 rootDir.resolve("etc/orchestella/login-shell.sh"), StandardCharsets.UTF_8);
+        String forwardScript = Files.readString(
+                rootDir.resolve("etc/orchestella/forward-connection.sh"), StandardCharsets.UTF_8);
         String ashrc = Files.readString(
                 rootDir.resolve("etc/orchestella/ashrc"), StandardCharsets.UTF_8);
 
-        for (String script : new String[] {umCommand, agentScript, loginShell, ashrc}) {
+        for (String script : new String[] {umCommand, agentScript, loginShell, forwardScript, ashrc}) {
             assertFalse("script must use LF line endings only", script.contains("\r"));
         }
         assertTrue(rootDir.resolve("um-command.sh").toFile().canExecute());
         assertTrue(rootDir.resolve("etc/orchestella/bridge-agent.sh").toFile().canExecute());
+        assertTrue(rootDir.resolve("etc/orchestella/forward-connection.sh").toFile().canExecute());
         assertTrue(rootDir.resolve("etc/orchestella/login-shell.sh").toFile().canExecute());
 
         assertTrue(umCommand.contains("/etc/orchestella/bridge-agent.sh"));
+        assertTrue(umCommand.contains("tmpfs /run"));
+        assertTrue(umCommand.contains("net_pid=$!"));
+        assertTrue(umCommand.contains("kill \"$agent_pid\" \"$net_pid\""));
+        assertTrue(umCommand.contains("umount /etc/resolv.conf"));
         assertTrue(umCommand.contains("/dev/tty0"));
         assertTrue(umCommand.contains("setsid"));
         assertTrue(umCommand.contains("poweroff"));
+
+        assertTrue(forwardScript.contains(Integer.toString(UmlNetworkProfile.GUEST_RELAY_PORT)));
+        assertTrue(forwardScript.contains("nc -w 60 127.0.0.1 \"$port\""));
+        assertFalse(forwardScript.contains("nc -w 3"));
+        assertFalse(forwardScript.contains("timeout -k 1 300"));
 
         assertTrue(agentScript.contains("stty raw -echo"));
         assertTrue(agentScript.indexOf("stty raw -echo") < agentScript.indexOf("exec 3<\"$DEV\""));

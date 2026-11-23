@@ -544,6 +544,22 @@ public final class UmlInstanceRootfsProvisionerTest {
         }
     }
 
+    @Test
+    public void persistentGuestNetworkScriptsShutdownCleanlyAndUseAlignedRelayTimeout() {
+        String init = UmlPersistentGuestScripts.persistentUmCommandScript();
+        String forward = UmlPersistentGuestScripts.forwardConnectionScript();
+
+        assertTrue(init.contains("net_pid=$!"));
+        assertTrue(init.contains("kill \"$agent_pid\" \"$net_pid\""));
+        assertTrue(init.contains("umount /etc/resolv.conf"));
+        assertTrue(init.indexOf("umount /etc/resolv.conf") < init.indexOf("mount -o remount,ro /"));
+
+        assertTrue(forward.contains("nc -w 60 127.0.0.1 \"$port\""));
+        assertFalse(forward.contains("nc -w 3"));
+        assertFalse(forward.contains("timeout -k 1 300"));
+        assertTrue(forward.contains("-ne " + UmlNetworkProfile.GUEST_RELAY_PORT));
+    }
+
     private UmlInstanceRootfsProvisioner.ProvisionRequest baseRequest(
             String instanceId,
             String generation,

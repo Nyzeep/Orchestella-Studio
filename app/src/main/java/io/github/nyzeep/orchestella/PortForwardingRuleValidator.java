@@ -24,6 +24,7 @@ public final class PortForwardingRuleValidator {
         INVALID_HOST_PORT,
         INVALID_GUEST_PORT,
         CONFLICT_HOST_PORT,
+        RESERVED_HOST_PORT,
         EMPTY_FIELD
     }
 
@@ -78,6 +79,10 @@ public final class PortForwardingRuleValidator {
                 return Result.error(
                         ValidationStatus.INVALID_HOST_PORT,
                         "Host port must be between " + MIN_PORT + " and " + MAX_PORT + ".");
+            }
+            if (PortForwardingRule.isReservedHostPort(port)) {
+                return Result.error(ValidationStatus.RESERVED_HOST_PORT,
+                        "Host port " + port + " is reserved for the compiler bridge.");
             }
             return Result.valid(port);
         } catch (NumberFormatException e) {

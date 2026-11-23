@@ -13,6 +13,7 @@ public final class SessionCapabilitiesTest {
         userModeKernelRefusesHardwareAcceleration();
         waylandIsAChoiceNotAnUpgradeFromRfb();
         sharedDirectoryIsAToggle();
+        projectsUserPortForwardingOnlyWhenWired();
         System.out.println("SESSION_CAPABILITIES_TEST_OK parts=1 hardware=2 rfb=1 share=1");
     }
 
@@ -116,6 +117,18 @@ public final class SessionCapabilitiesTest {
                 "the declaration can be withdrawn when the server is not serving");
         assertTrue(wired.withSharedDirectory(false).terminal(),
                 "withdrawing 9p keeps the rest of the declaration");
+    }
+
+    private static void projectsUserPortForwardingOnlyWhenWired() {
+        SessionCapabilities.Builder declaration = SessionCapabilities.builder(
+                        FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION)
+                .terminal(true)
+                .bridge(true);
+        FullLinuxContract.Capability forwarding = FullLinuxContract.Capability.PORT_FORWARDING;
+        assertFalse(FullLinuxContract.CapabilityMatrix.from(declaration.serviceForward(true).build())
+                .supports(forwarding), "a private service relay does not expose user forwarding");
+        assertTrue(FullLinuxContract.CapabilityMatrix.from(declaration.portForwarding(true).build())
+                .supports(forwarding), "the session with a forwarding adapter can manage user rules");
     }
 
     private static void assertTrue(boolean condition, String description) {

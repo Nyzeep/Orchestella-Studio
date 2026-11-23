@@ -50,6 +50,7 @@ final class UmlPersistentGuestScripts {
                 /etc/orchestella/bridge-agent.sh &
                 agent_pid=$!
 
+                """ + startGuestNetwork() + """
                 setsid_bin=/usr/bin/setsid
                 if [ ! -x "$setsid_bin" ]; then
                     setsid_bin=$(command -v setsid 2>/dev/null || printf /bin/busybox)
@@ -61,13 +62,92 @@ final class UmlPersistentGuestScripts {
                 fi
                 shell_rc=$?
 
-                kill "$agent_pid" 2>/dev/null || :
+                kill "$agent_pid" "$net_pid" 2>/dev/null || :
+                umount /etc/resolv.conf 2>/dev/null || :
                 sync 2>/dev/null || :
                 mount -o remount,ro / 2>/dev/null || :
                 sync 2>/dev/null || :
                 poweroff -f 2>/dev/null || :
                 exit "$shell_rc"
                 """;
+    }
+
+    static String startGuestNetwork() {
+        return """
+                # The network is optional. Never wait for a host resolver or DHCP before login.
+                (
+                    /bin/busybox ip link set lo up
+                    /bin/busybox ip link set vec0 up || exit
+                    /bin/busybox ip addr add %s/%d dev vec0 || exit
+                    /bin/busybox ip route add default via %s dev vec0 || exit
+                    mkdir -p /run/orchestella
+                    printf 'nameserver %s\\noptions timeout:2 attempts:2\\n' > /run/orchestella/resolv.conf
+                    mkdir -p /run/orchestella/forward-slots
+                    # A bind mount keeps the user volume's resolver configuration after shutdown.
+                    # Touch only a missing regular resolver target from the Alpine image.
+                    if [ ! -e /etc/resolv.conf ] && [ ! -L /etc/resolv.conf ]; then
+                        touch /etc/resolv.conf
+                    fi
+                    if [ -f /etc/resolv.conf ] && [ ! -L /etc/resolv.conf ]; then
+                        if ! mount -o bind /run/orchestella/resolv.conf /etc/resolv.conf &&
+                                [ ! -s /etc/resolv.conf ]; then
+                            cp /run/orchestella/resolv.conf /etc/resolv.conf
+                        fi
+                    fi
+                    exec /bin/busybox nc -ll -p %d -e /etc/orchestella/forward-connection.sh
+                ) </dev/null >/dev/null 2>&1 &
+                net_pid=$!
+
+                """.formatted(
+                        UmlNetworkProfile.GUEST_ADDRESS, UmlNetworkProfile.PREFIX_LENGTH,
+                        UmlNetworkProfile.GUEST_GATEWAY, UmlNetworkProfile.GUEST_DNS,
+                        UmlNetworkProfile.GUEST_RELAY_PORT);
+    }
+
+    static String forwardConnectionScript() {
+        return """
+                #!/bin/sh
+                set -u
+                token_file=/run/orchestella/bridge.token
+                if [ ! -r "$token_file" ]; then
+                    token_file=/etc/orchestella/bridge.token
+                fi
+                IFS= read -r token < "$token_file" || exit 1
+
+                is_hex64() {
+                    [ "${#1}" -eq 64 ] || return 1
+                    case "$1" in *[!0-9a-f]*) return 1 ;; esac
+                }
+                is_hex64 "$token" || exit 1
+                slot=
+                for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+                    candidate=/run/orchestella/forward-slots/$i
+                    if mkdir "$candidate" 2>/dev/null; then
+                        slot=$candidate
+                        break
+                    fi
+                done
+                [ -n "$slot" ] || exit 1
+                trap 'rmdir "$slot" 2>/dev/null' EXIT
+
+                # Authenticate both ends before relaying application bytes. The token
+                # is never written to the socket, command line, environment or logs.
+                IFS=' ' read -r -t 3 -n 72 hello challenge extra || exit 1
+                [ "$hello" = H1 ] && [ -z "$extra" ] && is_hex64 "$challenge" || exit 1
+                nonce=$(/bin/busybox od -An -N32 -tx1 /dev/urandom | /bin/busybox tr -d ' \\n')
+                is_hex64 "$nonce" || exit 1
+                proof=$(printf 'G1:%s:%s' "$challenge" "$token" | /bin/busybox sha256sum)
+                printf 'G1 %s %s\\n' "${proof%% *}" "$nonce"
+
+                IFS=' ' read -r -t 3 -n 80 request port proof extra || exit 1
+                [ "$request" = F1 ] && [ -z "$extra" ] && is_hex64 "$proof" || exit 1
+                case "$port" in ''|0*|*[!0-9]*) exit 1 ;; esac
+                [ "${#port}" -le 5 ] && [ "$port" -le 65535 ] && [ "$port" -ne @RELAY_PORT@ ] || exit 1
+                expected=$(printf 'F1:%s:%s:%s' "$nonce" "$port" "$token" | /bin/busybox sha256sum)
+                [ "$proof" = "${expected%% *}" ] || exit 1
+                printf 'OK\\n'
+                /bin/busybox nc -w 60 127.0.0.1 "$port"
+                """.replace("@RELAY_PORT@", Integer.toString(UmlNetworkProfile.GUEST_RELAY_PORT));
     }
 
     static String persistentLoginShellScript(String defaultHostname) {

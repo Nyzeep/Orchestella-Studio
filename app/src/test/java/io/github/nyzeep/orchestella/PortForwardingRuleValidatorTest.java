@@ -29,6 +29,14 @@ public final class PortForwardingRuleValidatorTest {
     }
 
     @Test
+    public void compileEndpointsAreReservedOnTheHostOnly() {
+        assertFalse(PortForwardingRuleValidator.validateHostPort("3632").isValid());
+        assertFalse(PortForwardingRuleValidator.validateHostPort("3633").isValid());
+        assertTrue(PortForwardingRuleValidator.validateGuestPort("3632").isValid());
+        assertTrue(PortForwardingRuleValidator.validateGuestPort("3633").isValid());
+    }
+
+    @Test
     public void testRejectsPortsBelow1024() {
         PortForwardingRuleValidator.Result r1 = PortForwardingRuleValidator.validateHostPort("1023");
         assertFalse(r1.isValid());

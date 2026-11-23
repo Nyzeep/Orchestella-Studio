@@ -1,5 +1,7 @@
 package io.github.nyzeep.orchestella;
 
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.Capability;
+import io.github.nyzeep.orchestella.runtime.contract.PortConflictException;
 import io.github.nyzeep.orchestella.runtime.contract.PortForwardingEngine;
 import io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule;
 import io.github.nyzeep.orchestella.runtime.contract.Protocol;
@@ -10,8 +12,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 
-/** Shows persisted configuration separately from confirmed, live gateway listeners. */
+/** Shows persisted configuration separately from confirmed session listeners. */
 public final class PortForwardingPresenter {
     public interface View {
         void displayRules(List<RuleItemModel> rules);
@@ -19,154 +22,283 @@ public final class PortForwardingPresenter {
         void clearInputForm();
         void showSuccess(String message);
         void showError(String message);
+        default void showLiveEngine(boolean available) {}
     }
-    public interface LiveEngine extends PortForwardingEngine {
-        void refresh() throws IOException;
-        boolean isApplied(PortForwardingRule rule);
-    }
+
+    public interface LiveEngine extends PortForwardingEngine.Live {}
+
     public static final class RuleItemModel {
         private final String id;
         private final Protocol protocol;
         private final int hostPort;
         private final int guestPort;
         private final String description;
+        private final String savedDescription;
         private final boolean enabled;
-        public RuleItemModel(String id, Protocol protocol, int hostPort, int guestPort,
-                String description, boolean enabled) {
-            this.id = id; this.protocol = protocol; this.hostPort = hostPort; this.guestPort = guestPort;
-            this.description = description != null ? description : ""; this.enabled = enabled;
+        private final boolean canToggle;
+        private final boolean canEdit;
+
+        private RuleItemModel(PortForwardingRule rule, String status, boolean enabled,
+                boolean canToggle, boolean canEdit) {
+            this.id = rule.id();
+            this.protocol = rule.protocol();
+            this.hostPort = rule.hostPort();
+            this.guestPort = rule.guestPort();
+            this.savedDescription = rule.description();
+            this.description = savedDescription.isEmpty() ? status : savedDescription + " · " + status;
+            this.enabled = enabled;
+            this.canToggle = canToggle;
+            this.canEdit = canEdit;
         }
+
         public String getId() { return id; }
         public Protocol getProtocol() { return protocol; }
         public int getHostPort() { return hostPort; }
         public int getGuestPort() { return guestPort; }
         public String getDescription() { return description; }
+        public String getSavedDescription() { return savedDescription; }
         public boolean isEnabled() { return enabled; }
+        public boolean canToggle() { return canToggle; }
+        public boolean canEdit() { return canEdit; }
     }
 
     private final String instanceId;
     private final PortForwardingManager manager;
-    private final LiveEngine engine;
-    private volatile View view;
+    private final Supplier<PortForwardingEngine.Live> engineProvider;
     private final Map<String, PortForwardingRule> disabled = new LinkedHashMap<>();
+    private volatile View view;
+
     public PortForwardingPresenter(String instanceId, PortForwardingManager manager) {
-        this(instanceId, manager, null);
+        this(instanceId, manager, () -> null);
     }
-    public PortForwardingPresenter(String instanceId, PortForwardingManager manager, LiveEngine engine) {
+
+    public PortForwardingPresenter(String instanceId, PortForwardingManager manager, PortForwardingEngine.Live engine) {
+        this(instanceId, manager, () -> engine);
+    }
+
+    private PortForwardingPresenter(String instanceId, PortForwardingManager manager,
+            Supplier<PortForwardingEngine.Live> engineProvider) {
         this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
         this.manager = Objects.requireNonNull(manager, "manager");
-        this.engine = engine;
+        this.engineProvider = engineProvider;
     }
+
+    public static PortForwardingPresenter forActiveSession(
+            String instanceId, PortForwardingManager manager) {
+        return new PortForwardingPresenter(instanceId, manager, () ->
+                forwardingFrom(ExecutionSessionRegistry.get(instanceId)));
+    }
+
+    private static PortForwardingEngine.Live forwardingFrom(ExecutionSession session) {
+        if (session == null || !session.capabilityMatrix().supports(Capability.PORT_FORWARDING)) {
+            return null;
+        }
+        return session.portForwardingEngine();
+    }
+
+    private PortForwardingEngine.Live liveEngine() {
+        PortForwardingEngine.Live engine = engineProvider.get();
+        return engine != null && engine.isRunning() ? engine : null;
+    }
+
     public String getInstanceId() { return instanceId; }
-    public boolean hasLiveEngine() { return engine != null && engine.isRunning(); }
+    public boolean hasLiveEngine() { return liveEngine() != null; }
     public void attachView(View view) { this.view = view; }
     public void detachView() { view = null; }
 
     public synchronized void loadRules() {
-        boolean live = hasLiveEngine();
+        PortForwardingEngine.Live engine = liveEngine();
+        View attached = view;
+        if (attached == null) return;
+        boolean live = engine != null;
         if (live) {
-            try { engine.refresh(); }
-            catch (IOException failure) { live = false; if (view != null) view.showError("无法确认网关映射；未标记为已启用"); }
+            try {
+                engine.refresh();
+            } catch (IOException failure) {
+                live = false;
+                attached.showError("无法确认会话转发状态");
+            }
         }
         List<RuleItemModel> items = new ArrayList<>();
         for (PortForwardingRule rule : manager.listRules()) {
-            boolean applied = live && engine.isApplied(rule);
-            boolean supported = rule.protocol() == Protocol.TCP &&
-                    PortForwardingRule.LOOPBACK_ADDRESS.equals(rule.bindAddress());
-            String status = !supported ? "当前不支持此规则；仅支持 TCP 127.0.0.1 映射"
-                    : applied ? "已应用到 QEMU 网关（服务需在 Linux 中运行）"
-                    : "已保存配置，当前未确认生效";
-            items.add(item(rule, status, applied));
+            boolean supported = supportsRule(rule, engine);
+            boolean applied = live && supported && engine.isApplied(rule);
+            boolean reservedGuestPort = !supported
+                    && PortForwardingEngine.Live.supportsIpv4LoopbackTcp(rule);
+            String status;
+            if (PortForwardingRule.isReservedHostPort(rule.hostPort())) {
+                status = "此宿主端口由编译通道保留";
+            } else if (reservedGuestPort) {
+                status = "当前运行时保留的 Guest 端口";
+            } else if (!supported) {
+                status = "仅支持 TCP 127.0.0.1";
+            } else {
+                status = applied ? "已应用到当前会话" : "已保存配置，当前未确认生效";
+            }
+            boolean canEdit = supported || reservedGuestPort;
+            items.add(new RuleItemModel(rule, status, applied, live && supported, canEdit));
         }
-        for (PortForwardingRule rule : disabled.values()) items.add(item(rule, "已关闭并从启动配置移除", false));
-        if (view != null) view.displayRules(items);
+        for (PortForwardingRule rule : disabled.values()) {
+            items.add(new RuleItemModel(rule, "已关闭并从启动配置移除", false,
+                    live && supportsRule(rule, engine), false));
+        }
+        attached.showLiveEngine(live);
+        attached.displayRules(items);
     }
-    private RuleItemModel item(PortForwardingRule rule, String status, boolean applied) {
-        String detail = rule.description().isEmpty() ? status : rule.description() + " · " + status;
-        return new RuleItemModel(rule.id(), rule.protocol(), rule.hostPort(), rule.guestPort(), detail, applied);
+
+    private static boolean supportsRule(PortForwardingRule rule, PortForwardingEngine.Live engine) {
+        return !PortForwardingRule.isReservedHostPort(rule.hostPort())
+                && (engine == null ? PortForwardingEngine.Live.supportsIpv4LoopbackTcp(rule)
+                        : engine.supportsRule(rule));
+    }
+
+    private boolean rejectReservedGuestPort(PortForwardingRule rule, PortForwardingEngine.Live engine) {
+        if (engine != null && !engine.supportsRule(rule)
+                && PortForwardingEngine.Live.supportsIpv4LoopbackTcp(rule)) {
+            View attached = view;
+            if (attached != null) {
+                attached.showValidationError(
+                        "Guest port " + rule.guestPort() + " is reserved by the active runtime.");
+            }
+            return true;
+        }
+        return false;
     }
 
     public synchronized void addRule(String hostText, String guestText, Protocol protocol, String description) {
         if (protocol != null && protocol != Protocol.TCP) {
-            if (view != null) view.showValidationError("当前网关只支持显式 TCP 本机映射");
+            View attached = view;
+            if (attached != null) attached.showValidationError("当前会话只支持本机 TCP 转发");
             return;
         }
-        PortForwardingRuleValidator.Result validation = PortForwardingRuleValidator.validateRule(
-                hostText, guestText, protocol, manager.listRules());
-        if (!validation.isValid()) {
-            if (view != null) view.showValidationError(validation.getErrorMessage());
-            return;
-        }
-        PortForwardingRule rule = PortForwardingRule.builder().hostPort(Integer.parseInt(hostText.trim()))
-                .guestPort(Integer.parseInt(guestText.trim())).protocol(Protocol.TCP)
-                .bindAddress(PortForwardingRule.LOOPBACK_ADDRESS).description(description).build();
-        boolean applied = false;
+        if (!validateInput(hostText, guestText, null)) return;
+        PortForwardingRule rule = PortForwardingRule.builder()
+                .hostPort(Integer.parseInt(hostText.trim()))
+                .guestPort(Integer.parseInt(guestText.trim()))
+                .description(description)
+                .build();
+        PortForwardingEngine.Live engine = liveEngine();
+        if (rejectReservedGuestPort(rule, engine)) return;
         try {
-            if (hasLiveEngine()) { engine.addRule(rule); applied = true; }
-            manager.addRule(rule); // No engine attached: persist only after live application succeeded.
-            if (view != null) {
-                view.clearInputForm();
-                view.showSuccess(applied ? "映射已应用到 QEMU 网关"
-                        : "配置已保存，当前未生效；QEMU 启动时加载，AVF 尚未接入端口转发");
+            manager.addRule(rule, engine);
+            View attached = view;
+            if (attached != null) {
+                attached.clearInputForm();
+                attached.showSuccess(engine != null && engine.isApplied(rule) ? "规则已启用"
+                        : "规则已保存，将在支持端口转发的会话中应用");
             }
-        } catch (Exception failure) {
-            if (applied) {
-                try { engine.removeRule(rule); }
-                catch (IOException rollback) { if (view != null) view.showError("保存失败且映射回滚未确认，请关机后检查网关"); }
-            }
-            if (view != null) view.showError("映射未完成，未声明为启用，请检查端口占用或网关状态");
+        } catch (IOException | PortConflictException failure) {
+            showChangeFailure(failure, "无法启用规则，请检查端口占用或会话状态");
         }
         loadRules();
+    }
+
+    public synchronized void updateRule(
+            String ruleId, String hostText, String guestText, String description) {
+        PortForwardingRule previous = manager.getRule(ruleId).orElse(null);
+        if (previous == null) {
+            View attached = view;
+            if (attached != null) {
+                attached.clearInputForm();
+                attached.showError("规则已变化，请重新打开");
+            }
+            loadRules();
+            return;
+        }
+        PortForwardingEngine.Live engine = liveEngine();
+        boolean editable = supportsRule(previous, engine)
+                || PortForwardingEngine.Live.supportsIpv4LoopbackTcp(previous);
+        if (!editable) {
+            View attached = view;
+            if (attached != null) attached.showValidationError("此规则当前无法编辑");
+            return;
+        }
+        if (!validateInput(hostText, guestText, ruleId)) return;
+        PortForwardingRule replacement = PortForwardingRule.builder(previous)
+                .hostPort(Integer.parseInt(hostText.trim()))
+                .guestPort(Integer.parseInt(guestText.trim()))
+                .description(description)
+                .build();
+        if (rejectReservedGuestPort(replacement, engine)) return;
+        try {
+            boolean updated = manager.updateRule(replacement, engine);
+            View attached = view;
+            if (attached != null) {
+                if (updated) {
+                    attached.clearInputForm();
+                    attached.showSuccess("规则已更新");
+                } else {
+                    attached.clearInputForm();
+                    attached.showError("规则已变化，请重新打开");
+                }
+            }
+        } catch (PortForwardingEngine.ListenerRetargetUnsupported unsupported) {
+            View attached = view;
+            if (attached != null) attached.showValidationError("更换宿主端口后才能更新当前监听的 Guest 端口");
+            return;
+        } catch (IOException | PortConflictException failure) {
+            showChangeFailure(failure, "无法更新规则，原配置已保留");
+        }
+        loadRules();
+    }
+
+    private boolean validateInput(String host, String guest, String editingRuleId) {
+        List<PortForwardingRule> others = new ArrayList<>(manager.listRules());
+        if (editingRuleId != null) others.removeIf(rule -> rule.id().equals(editingRuleId));
+        PortForwardingRuleValidator.Result validation = PortForwardingRuleValidator.validateRule(
+                host, guest, Protocol.TCP, others);
+        View attached = view;
+        if (!validation.isValid() && attached != null) {
+            attached.showValidationError(validation.getErrorMessage());
+        }
+        return validation.isValid();
     }
 
     public synchronized void toggleRule(String ruleId, boolean enabled) {
         PortForwardingRule rule = manager.getRule(ruleId).orElse(disabled.get(ruleId));
         if (rule == null) return;
-        if (!hasLiveEngine() || rule.protocol() != Protocol.TCP ||
-                !PortForwardingRule.LOOPBACK_ADDRESS.equals(rule.bindAddress())) {
-            if (view != null) view.showError("当前没有可用的 QEMU TCP 网关；保存配置不等于映射已生效");
+        PortForwardingEngine.Live engine = liveEngine();
+        if (engine == null || !supportsRule(rule, engine)) {
+            View attached = view;
+            if (attached != null) attached.showError("当前会话无法应用此规则");
             loadRules();
             return;
         }
-        boolean changed = false;
         try {
             if (enabled) {
-                engine.addRule(rule); changed = true;
-                if (!manager.getRule(ruleId).isPresent()) manager.addRule(rule);
+                if (manager.getRule(ruleId).isPresent()) {
+                    manager.applyRule(ruleId, engine);
+                } else {
+                    manager.addRule(rule, engine);
+                }
                 disabled.remove(ruleId);
             } else {
-                engine.removeRule(rule); changed = true;
-                manager.removeRule(ruleId);
+                manager.removeRule(ruleId, engine);
                 disabled.put(ruleId, rule);
             }
-        } catch (Exception failure) {
-            if (changed) {
-                try { if (enabled) engine.removeRule(rule); else engine.addRule(rule); }
-                catch (IOException rollback) { if (view != null) view.showError("映射回滚未确认，请关机后检查网关"); }
-            }
-            if (view != null) view.showError("映射切换失败，未保存新的启用状态");
+        } catch (IOException | PortConflictException failure) {
+            showChangeFailure(failure, "无法切换规则，请检查端口占用或会话状态");
         }
         loadRules();
     }
 
     public synchronized void deleteRule(String ruleId) {
-        PortForwardingRule rule = manager.getRule(ruleId).orElse(null);
-        boolean removedLive = false;
         try {
-            if (rule != null && hasLiveEngine() && engine.isApplied(rule)) {
-                engine.removeRule(rule);
-                removedLive = true;
-            }
-            boolean removed = manager.removeRule(ruleId);
+            boolean removed = manager.removeRule(ruleId, liveEngine());
             removed |= disabled.remove(ruleId) != null;
-            if (view != null) view.showSuccess(removed ? "规则已删除" : "规则不存在");
-        } catch (Exception failure) {
-            if (removedLive) {
-                try { engine.addRule(rule); }
-                catch (IOException rollback) { if (view != null) view.showError("删除回滚未确认，请关机后检查网关"); }
-            }
-            if (view != null) view.showError("规则删除失败，原配置保留");
+            View attached = view;
+            if (attached != null) attached.showSuccess(removed ? "规则已删除" : "规则不存在");
+        } catch (IOException failure) {
+            showChangeFailure(failure, "规则删除失败，原配置已保留");
         }
         loadRules();
+    }
+
+    private void showChangeFailure(Exception failure, String message) {
+        View attached = view;
+        if (attached != null) {
+            attached.showError(failure.getSuppressed().length == 0 ? message
+                    : "规则回滚未确认，请检查会话状态");
+        }
     }
 }

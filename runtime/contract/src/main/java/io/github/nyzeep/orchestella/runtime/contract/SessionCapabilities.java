@@ -37,6 +37,7 @@ public final class SessionCapabilities {
     private final boolean pointerCapture;
     private final boolean sharedDirectory;
     private final boolean serviceForward;
+    private final boolean portForwarding;
     private final boolean hardwareAcceleration;
     private final boolean gpuAcceleration;
 
@@ -51,6 +52,7 @@ public final class SessionCapabilities {
         this.pointerCapture = builder.pointerCapture;
         this.sharedDirectory = builder.sharedDirectory;
         this.serviceForward = builder.serviceForward;
+        this.portForwarding = builder.portForwarding;
         this.hardwareAcceleration = builder.hardwareAcceleration;
         this.gpuAcceleration = builder.gpuAcceleration;
         if (executionStrategy == FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION
@@ -122,6 +124,10 @@ public final class SessionCapabilities {
         return serviceForward;
     }
 
+    public boolean portForwarding() {
+        return portForwarding;
+    }
+
     public boolean hardwareAcceleration() {
         return hardwareAcceleration;
     }
@@ -146,6 +152,7 @@ public final class SessionCapabilities {
                 .pointerCapture(pointerCapture)
                 .sharedDirectory(sharedDirectory)
                 .serviceForward(serviceForward)
+                .portForwarding(portForwarding)
                 .hardwareAcceleration(hardwareAcceleration)
                 .gpuAcceleration(gpuAcceleration);
     }
@@ -162,6 +169,7 @@ public final class SessionCapabilities {
         private boolean pointerCapture;
         private boolean sharedDirectory;
         private boolean serviceForward;
+        private boolean portForwarding;
         private boolean hardwareAcceleration;
         private boolean gpuAcceleration;
 
@@ -212,6 +220,11 @@ public final class SessionCapabilities {
 
         public Builder serviceForward(boolean serviceForward) {
             this.serviceForward = serviceForward;
+            return this;
+        }
+
+        public Builder portForwarding(boolean portForwarding) {
+            this.portForwarding = portForwarding;
             return this;
         }
 

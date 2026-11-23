@@ -35,6 +35,22 @@ public final class UmlNativePtyBridge implements UmlProcessFactory {
     @Override
     public UmlProcessHandle spawn(UmlLaunchSpec spec, int initialColumns, int initialRows)
             throws IOException {
+        return spawn(spec, initialColumns, initialRows, false);
+    }
+
+    UmlProcessHandle spawnNetworked(UmlLaunchSpec spec, int initialColumns, int initialRows)
+            throws IOException {
+        return spawn(spec, initialColumns, initialRows, true);
+    }
+
+    static ParcelFileDescriptor duplicateNetworkSocket(UmlProcessHandle handle) throws IOException {
+        return handle instanceof NativeUmlProcessHandle nativeHandle
+                ? nativeHandle.duplicateNetworkSocket() : null;
+    }
+
+    private UmlProcessHandle spawn(
+            UmlLaunchSpec spec, int initialColumns, int initialRows, boolean networked)
+            throws IOException {
         List<String> argvList = spec.argv();
         String executable = argvList.get(0);
         String[] argv = argvList.toArray(new String[0]);
@@ -57,13 +73,13 @@ public final class UmlNativePtyBridge implements UmlProcessFactory {
             int pid = -1;
             try {
                 int[] fds = nativeSpawnUml(
-                        executable, argv, envp, workingDir, initialColumns, initialRows);
-                if (fds == null || fds.length < 4) {
+                        executable, argv, envp, workingDir, initialColumns, initialRows, networked);
+                if (fds == null || fds.length != 5) {
                     throw new IOException("nativeSpawnUml returned invalid descriptor tuple");
                 }
                 pid = fds[0];
                 NativeUmlProcessHandle handle = new NativeUmlProcessHandle(
-                        pid, fds[1], fds[2], fds[3], exited, exitCode, exitLatch);
+                        pid, fds[1], fds[2], fds[3], fds[4], exited, exitCode, exitLatch);
                 spawned.complete(handle);
                 if (callerAbandoned.get()) {
                     handle.destroyForcibly();
@@ -124,6 +140,7 @@ public final class UmlNativePtyBridge implements UmlProcessFactory {
         private final ParcelFileDescriptor terminalWritePfd;
         private final ParcelFileDescriptor ctrlWritePfd;
         private final ParcelFileDescriptor ctrlReadPfd;
+        private final ParcelFileDescriptor networkPfd;
         private final OutputStream terminalIn;
         private final InputStream terminalOut;
         private final OutputStream controlIn;
@@ -138,6 +155,7 @@ public final class UmlNativePtyBridge implements UmlProcessFactory {
                 int ptyMasterFd,
                 int ctrlWriteFd,
                 int ctrlReadFd,
+                int networkFd,
                 AtomicBoolean exited,
                 AtomicInteger exitCode,
                 CountDownLatch exitLatch) throws IOException {
@@ -151,6 +169,7 @@ public final class UmlNativePtyBridge implements UmlProcessFactory {
             ParcelFileDescriptor writeDup = null;
             ParcelFileDescriptor cWrite = null;
             ParcelFileDescriptor cRead = null;
+            ParcelFileDescriptor network = networkFd >= 0 ? ParcelFileDescriptor.adoptFd(networkFd) : null;
             try {
                 master = ParcelFileDescriptor.adoptFd(ptyMasterFd);
                 cWrite = ParcelFileDescriptor.adoptFd(ctrlWriteFd);
@@ -162,11 +181,13 @@ public final class UmlNativePtyBridge implements UmlProcessFactory {
                 this.terminalWritePfd = writeDup;
                 this.ctrlWritePfd = cWrite;
                 this.ctrlReadPfd = cRead;
+                this.networkPfd = network;
                 this.terminalIn = new ParcelFileDescriptor.AutoCloseOutputStream(writeDup);
                 this.terminalOut = new ParcelFileDescriptor.AutoCloseInputStream(readDup);
                 this.controlIn = new ParcelFileDescriptor.AutoCloseOutputStream(cWrite);
                 this.controlOut = new ParcelFileDescriptor.AutoCloseInputStream(cRead);
             } catch (IOException | RuntimeException failure) {
+                closeQuietly(network);
                 closeQuietly(cRead);
                 closeQuietly(cWrite);
                 closeQuietly(writeDup);
@@ -259,6 +280,13 @@ public final class UmlNativePtyBridge implements UmlProcessFactory {
                 closeQuietly(terminalReadPfd);
                 closeQuietly(terminalWritePfd);
                 closeQuietly(ptyMasterPfd);
+                closeQuietly(networkPfd);
+            }
+        }
+
+        private ParcelFileDescriptor duplicateNetworkSocket() throws IOException {
+            synchronized (fdLock) {
+                return !channelsClosed.get() && networkPfd != null ? networkPfd.dup() : null;
             }
         }
 
@@ -280,7 +308,8 @@ public final class UmlNativePtyBridge implements UmlProcessFactory {
             String[] envp,
             String workingDir,
             int columns,
-            int rows) throws IOException;
+            int rows,
+            boolean networked) throws IOException;
 
     private static native boolean nativeResizePty(int masterFd, int columns, int rows);
 

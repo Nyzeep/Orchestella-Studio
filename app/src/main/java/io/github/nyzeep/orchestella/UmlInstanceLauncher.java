@@ -1,11 +1,13 @@
 package io.github.nyzeep.orchestella;
 
 import android.content.Context;
+import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeHandshake;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.orchestella.runtime.contract.PortForwardingEngine;
 import io.github.nyzeep.orchestella.runtime.contract.SessionCapabilities;
 import io.github.nyzeep.orchestella.runtime.contract.StorageContract;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
@@ -41,7 +43,9 @@ import java.time.Clock;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -112,6 +116,19 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
     }
 
     public UmlInstanceLauncher(Context context, InstanceLifecycle.FileStore instanceStore) {
+        this(context, instanceStore, true);
+    }
+
+    /** Isolated device-smoke entry using the W3-01 disposable root and the production network. */
+    static UmlInstanceLauncher forEphemeralQa(Context context) {
+        if (!BuildConfig.IS_ISOLATED_QA_BUILD) {
+            throw new IllegalStateException("disposable UML boot requires an isolated QA build");
+        }
+        return new UmlInstanceLauncher(context, null, false);
+    }
+
+    private UmlInstanceLauncher(
+            Context context, InstanceLifecycle.FileStore instanceStore, boolean persistentVolumeMode) {
         Context appContext = Objects.requireNonNull(context, "context").getApplicationContext();
         this.context = appContext;
         this.executableResolver = soName -> NativeExecutableStore.ensure(appContext, soName);
@@ -123,7 +140,7 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
         this.stopGraceMs = DEFAULT_STOP_GRACE_MS;
         this.forceWaitMs = UmlRuntimeSupervisor.DEFAULT_FORCE_WAIT_MS;
         this.channelsCloseTimeoutMs = UmlRuntimeSupervisor.DEFAULT_CHANNELS_CLOSE_TIMEOUT_MS;
-        this.persistentVolumeMode = true;
+        this.persistentVolumeMode = persistentVolumeMode;
         this.clock = Clock.systemUTC();
         this.instanceStore = instanceStore;
         this.instanceWriteLock = instanceStore != null ? instanceStore.stateMonitor() : new Object();
@@ -282,6 +299,10 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
 
         Path ephemeralRootDir = null;
         Path bootCredsDir = null;
+        UmlProcessHandle spawnedHandle = null;
+        ParcelFileDescriptor spawnedNetworkSocket = null;
+        UmlPasstNetwork spawnedNetwork = null;
+        Session registeredSession = null;
         boolean retainReservationOnUnconfirmedStop = false;
         try {
             baseStageTrace.onGate(ProductionStageRecorder.Stage.INPUTS_BEGIN);
@@ -393,7 +414,25 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
             }
 
             baseStageTrace.onGate(ProductionStageRecorder.Stage.RUN_BEGIN);
-            UmlProcessHandle handle = processFactory.spawn(spec, INITIAL_PTY_COLUMNS, INITIAL_PTY_ROWS);
+            UmlProcessHandle handle;
+            UmlPasstNetwork network = null;
+            if (processFactory instanceof UmlNativePtyBridge androidFactory) {
+                handle = androidFactory.spawnNetworked(spec, INITIAL_PTY_COLUMNS, INITIAL_PTY_ROWS);
+                spawnedHandle = handle;
+                try {
+                    spawnedNetworkSocket = UmlNativePtyBridge.duplicateNetworkSocket(handle);
+                } catch (IOException ignored) {
+                    // The optional network owns its own diagnostic and cannot block the shell.
+                }
+                network = new UmlPasstNetwork(
+                        context, runtimeDir, parameters.instanceId, parameters.bridgeToken,
+                        spawnedNetworkSocket);
+                spawnedNetworkSocket = null;
+                spawnedNetwork = network;
+            } else {
+                handle = processFactory.spawn(spec, INITIAL_PTY_COLUMNS, INITIAL_PTY_ROWS);
+                spawnedHandle = handle;
+            }
             readinessTracker.markProcessStarted(generation, handle.pid(), monotonicNanos.getAsLong());
             timeline.mark(LaunchTimeline.Stage.UML_STARTED);
             baseStageTrace.onGate(ProductionStageRecorder.Stage.RUN_RETURNED);
@@ -403,6 +442,7 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                     parameters.instanceId,
                     generation,
                     handle,
+                    network,
                     sessionTempDir,
                     reservationRegistry,
                     reservation,
@@ -414,8 +454,10 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                     channelsCloseTimeoutMs,
                     DEFAULT_TERMINATE_GRACE_MS,
                     DEFAULT_CLOSE_GRACE_MS);
+            registeredSession = session;
 
             try {
+                if (network != null) network.restoreBeforePublish();
                 ExecutionSessionRegistry.register(parameters.instanceId, session);
                 timeline.mark(LaunchTimeline.Stage.SESSION_REGISTERED);
                 return session;
@@ -439,6 +481,34 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                 throw new IOException("UML session registration failed", registrationFailure);
             }
         } catch (IOException | RuntimeException | Error failure) {
+            if (registeredSession == null && spawnedHandle != null) {
+                if (spawnedNetworkSocket != null) {
+                    try {
+                        spawnedNetworkSocket.close();
+                    } catch (IOException ignored) {
+                        // Best-effort FD release on launch failure.
+                    }
+                }
+                if (spawnedNetwork != null) {
+                    try {
+                        spawnedNetwork.closeAfterGuestExit();
+                    } catch (RuntimeException unconfirmedNet) {
+                        retainReservationOnUnconfirmedStop = true;
+                        failure.addSuppressed(unconfirmedNet);
+                    }
+                }
+                spawnedHandle.destroyForcibly();
+                boolean reaped = false;
+                try {
+                    reaped = spawnedHandle.waitFor(forceWaitMs, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+                spawnedHandle.closeChannels();
+                if (!reaped) {
+                    retainReservationOnUnconfirmedStop = true;
+                }
+            }
             if (!LAST_FAILED_CLEANUP.containsKey(parameters.instanceId)) {
                 readinessTracker.markBridgeRejected(
                         generation,
@@ -626,6 +696,7 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
         private final String instanceId;
         private final String generation;
         private final UmlProcessHandle handle;
+        private final UmlPasstNetwork network;
         private final Path ephemeralRootDir;
         private final UmlReadinessTracker readinessTracker;
         private final LaunchTimeline timeline;
@@ -647,6 +718,7 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                 String instanceId,
                 String generation,
                 UmlProcessHandle handle,
+                UmlPasstNetwork network,
                 Path ephemeralRootDir,
                 UmlRootReservationRegistry reservationRegistry,
                 UmlRootReservationRegistry.Reservation reservation,
@@ -661,6 +733,7 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
             this.instanceId = instanceId;
             this.generation = generation;
             this.handle = handle;
+            this.network = network;
             this.ephemeralRootDir = ephemeralRootDir;
             this.readinessTracker = readinessTracker;
             this.timeline = timeline;
@@ -672,7 +745,10 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
             this.supervisor = new UmlRuntimeSupervisor(
                     handle,
                     this::closeBridgeQuietly,
-                    () -> cleanupEphemeralRoot(ephemeralRootDir),
+                    () -> {
+                        if (network != null) network.closeAfterGuestExit();
+                        cleanupEphemeralRoot(ephemeralRootDir);
+                    },
                     reservationRegistry,
                     reservation,
                     forceWaitMs,
@@ -742,12 +818,32 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
 
         @Override
         public FullLinuxContract.CapabilityMatrix capabilityMatrix() {
-            return FullLinuxContract.CapabilityMatrix.from(
+            SessionCapabilities declaration =
                     SessionCapabilities.builder(FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL)
                             .ownership(SessionCapabilities.Ownership.RUNTIME_OWNED)
                             .terminal(true)
                             .bridge(true)
-                            .build());
+                            .portForwarding(portForwardingEngine() != null)
+                            .build();
+            return FullLinuxContract.CapabilityMatrix.from(
+                    declaration, FullLinuxContract.CapabilityMatrix.USER_MODE_KERNEL_ALLOWED_CAPABILITIES);
+        }
+
+        @Override
+        public PortForwardingEngine.Live portForwardingEngine() {
+            return network != null && network.isRunning() ? network : null;
+        }
+
+        @Override
+        public String networkDiagnostic() {
+            UmlPasstNetwork.Status current = networkStatus();
+            return current == UmlPasstNetwork.Status.READY
+                    ? null
+                    : "uml-network-" + current.name().toLowerCase(Locale.ROOT);
+        }
+
+        UmlPasstNetwork.Status networkStatus() {
+            return network == null ? UmlPasstNetwork.Status.TRANSPORT_UNAVAILABLE : network.status();
         }
 
         @Override
@@ -911,9 +1007,14 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                         monotonicNanos.getAsLong());
                 return;
             }
+            if (network != null) network.start();
             if (readinessTracker.markShellReady(generation, monotonicNanos.getAsLong())) {
-                timeline.mark(LaunchTimeline.Stage.SHELL_READY);
+                publishShellReady();
             }
+        }
+
+        private void publishShellReady() {
+            timeline.mark(LaunchTimeline.Stage.SHELL_READY);
         }
 
         private final class GenerationAwareStageObserver implements LaunchStageObserver {
@@ -945,7 +1046,7 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                     if (readinessTracker.markBridgeReady(generation, monotonicNanos.getAsLong())) {
                         timeline.mark(LaunchTimeline.Stage.BRIDGE_READY);
                         if (readinessTracker.snapshot().shellReady()) {
-                            timeline.mark(LaunchTimeline.Stage.SHELL_READY);
+                            publishShellReady();
                         }
                     }
                 }
