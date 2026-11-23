@@ -1693,6 +1693,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleLaunchIntent(intent: Intent?) {
+        // W3-01 / R-01：仅 `-Porchestella.buildChannel=qa` 构建允许经独立 QA 意图拉起
+        // USER_MODE_KERNEL Alpine 临时闭环实例，不影响正式渠道与既有启动路由。
+        if (BuildConfig.IS_ISOLATED_QA_BUILD &&
+            intent?.getBooleanExtra("qa_launch_standalone_uml_alpine", false) == true &&
+            ::instanceStore.isInitialized
+        ) {
+            intent.removeExtra("qa_launch_standalone_uml_alpine")
+            val requestedId = intent.getStringExtra("action_launch_instance_id")
+            if (requestedId != null) {
+                intent.removeExtra("action_launch_instance_id")
+            }
+            val store = instanceStore
+            val qaRootsDir = filesDir.toPath().resolve("qa-uml-roots")
+            operations.execute {
+                val controller = InstanceLifecycle.Controller(store, Clock.systemUTC())
+                val prepared = try {
+                    IsolatedQaExecutionEntry().ensureEphemeralAlpineInstance(
+                        store = store,
+                        controller = controller,
+                        qaRootsDir = qaRootsDir,
+                        requestedId = requestedId,
+                    )
+                } catch (failure: Exception) {
+                    android.util.Log.w("MainActivity", "QA standalone UML preparation failed", failure)
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) toastInstanceMissing()
+                    }
+                    return@execute
+                }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    launchInstance(prepared)
+                }
+            }
+            return
+        }
         // UI3-12：Oe3 恢复 action_launch_instance_id（旧壳同语义：读实例并直接
         // 启动）；instanceStore 未初始化的守卫保留，避免装配槽未就绪时崩溃。
         val targetLaunchId = intent?.getStringExtra("action_launch_instance_id")
@@ -2027,7 +2063,8 @@ class MainActivity : AppCompatActivity() {
         copy = launchCopy,
         diagnostics = launchDiagnostics,
         cleanupBridge = InstanceLaunchCoordinator.CleanupBridge { instanceId ->
-            QemuInstanceLauncher.takeLastCleanupResult(instanceId)
+            UmlInstanceLauncher.takeLastCleanupResult(instanceId)
+                ?: QemuInstanceLauncher.takeLastCleanupResult(instanceId)
         },
         filesDir = filesDir,
         performanceBadge = { currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile())) },
@@ -2089,6 +2126,13 @@ class MainActivity : AppCompatActivity() {
         orphanReconciler = Runnable { reconcileOrphanInstances() },
         umlFaceLane = umlFaceRideAlong,
         isolatedQaEnabled = BooleanSupplier { BuildConfig.IS_ISOLATED_QA_BUILD },
+        standaloneUmlLaunch = if (BuildConfig.IS_ISOLATED_QA_BUILD) {
+            InstanceStrategyLauncher.UserModeKernelLaunch { params ->
+                UmlInstanceLauncher(this).launch(params)
+            }
+        } else {
+            null
+        },
     )
 
     private val launchSettings = object : InstanceLaunchCoordinator.LaunchSettings {

@@ -54,7 +54,9 @@ public final class LaunchTimeline {
         INITRAMFS_BUILT,
         GATEWAY_READY,
         QEMU_STARTED,
+        UML_STARTED,
         SESSION_REGISTERED,
+        BRIDGE_READY,
         /**
          * The terminal pump observed the first complete integrated shell prompt.
          * Absent when the guest does not emit the prompt markers.

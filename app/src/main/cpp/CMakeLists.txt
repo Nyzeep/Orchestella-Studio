@@ -50,3 +50,16 @@ target_link_libraries(virglrenderer
     m
 )
 
+# W3-01: Standalone UML host PTY + control-pipe spawner and reaper JNI
+add_library(orchestella_uml_pty SHARED
+    uml_pty_jni.cpp
+)
+
+target_link_options(orchestella_uml_pty PRIVATE
+    "-Wl,-z,max-page-size=16384"
+)
+
+target_link_libraries(orchestella_uml_pty
+    log
+)
+

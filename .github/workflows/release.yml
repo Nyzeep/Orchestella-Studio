@@ -121,6 +121,7 @@ jobs:
             :runtime:instance:check \
             :runtime:engine-qemu:check \
             :runtime:engine-avf:check \
+            :runtime:engine-uml:check \
             :runtime:capability:check \
             :runtime:distro:check \
             :runtime:network:check \

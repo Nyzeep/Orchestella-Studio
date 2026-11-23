@@ -123,7 +123,13 @@ public final class BridgeConnector {
             if (!client.isReady()) return "ORCHESTELLA/ERROR unauthenticated\n";
             return BridgeControl.dispatch(line, seams).wireResponse();
         });
-        boolean authenticated = client.handshake(bridgeToken).accepted();
+        boolean authenticated;
+        try {
+            authenticated = client.handshake(bridgeToken).accepted();
+        } catch (IOException | RuntimeException failure) {
+            notifyAuthenticated(trace, false);
+            throw failure;
+        }
         notifyAuthenticated(trace, authenticated);
         if (!authenticated) return new Session(3, null);
         events.onReady();

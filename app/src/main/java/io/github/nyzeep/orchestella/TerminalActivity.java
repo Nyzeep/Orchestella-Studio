@@ -1395,6 +1395,7 @@ public class TerminalActivity extends ComponentActivity {
         final int generation = bindingGeneration;
         resizeExecutor.execute(() -> {
             if (generation != bindingGeneration || target != session) return;
+            target.resizeTerminalHost(columns, rows);
             io.github.nyzeep.orchestella.runtime.contract.BridgeClient client = target.bridgeClient();
             if (client == null || !client.isReady()) {
                 android.util.Log.i("OrchestellaBridge", "resize skipped state="

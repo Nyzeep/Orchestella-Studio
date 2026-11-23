@@ -59,6 +59,14 @@ public interface ExecutionSession {
     }
 
     /**
+     * Pushes a terminal grid resize to a host-owned PTY transport when the
+     * session is backed directly by one; false otherwise.
+     */
+    default boolean resizeTerminalHost(int columns, int rows) {
+        return false;
+    }
+
+    /**
      * The terminal pump observed the first complete integrated shell prompt.
      * Engines can record this once per launch on their launch timeline.
      */

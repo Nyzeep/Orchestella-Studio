@@ -837,4 +837,18 @@ public final class TerminalScreenModelTest {
         assertFalse(model.clearVisibleHistory());
         assertEquals(onAlternate, model.snapshotVersion());
     }
+
+    @Test public void standaloneAshPromptReadinessKeepsOutputVisibleWithoutCommandBlockMode() {
+        TerminalScreenModel model = new TerminalScreenModel(40, 8);
+        model.append("\u001b]133;B;orchestella=prompt\u0007root@qa-uml-alpine:~$ id\r\n"
+                + "uid=0(root)\r\n"
+                + "root@qa-uml-alpine:~$ uname -a\r\n"
+                + "Linux qa-uml-alpine aarch64\r\n"
+                + "root@qa-uml-alpine:~$ ");
+        assertTrue(model.hasObservedShellPrompt());
+        String text = model.displaySnapshot().text();
+        assertTrue(text.contains("id"));
+        assertTrue(text.contains("uid=0(root)"));
+        assertTrue(text.contains("Linux qa-uml-alpine aarch64"));
+    }
 }

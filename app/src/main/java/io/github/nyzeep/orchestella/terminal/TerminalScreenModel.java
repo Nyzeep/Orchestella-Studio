@@ -217,9 +217,14 @@ public final class TerminalScreenModel {
                     else { commandTranscript.accept(27); commandTranscript.accept('\\'); }
                 }
                 if (oscString && !oscOverflow && commandTranscript != null && screen == primary) {
-                    // Deferred: the transcript decides whether it needs the archived
-                    // snapshot at all, so ignored OSC 0/7/52 sequences never rebuild one.
-                    shellPromptObserved |= commandTranscript.marker(osc.toString(), this::snapshot);
+                    String oscValue = osc.toString();
+                    if ("133;B;orchestella=prompt".equals(oscValue)) {
+                        shellPromptObserved = true;
+                    } else {
+                        // Deferred: the transcript decides whether it needs the archived
+                        // snapshot at all, so ignored OSC 0/7/52 sequences never rebuild one.
+                        shellPromptObserved |= commandTranscript.marker(oscValue, this::snapshot);
+                    }
                 }
                 state = 0; osc.setLength(0); oscString = oscOverflow = false;
             } else if (codePoint == 27) state = 4;

@@ -869,6 +869,7 @@ dependencies {
     implementation(project(":runtime:distro"))
     implementation(project(":runtime:engine-avf"))
     implementation(project(":runtime:engine-qemu"))
+    implementation(project(":runtime:engine-uml"))
     implementation(project(":runtime:instance"))
     // AX-08: pure-JVM accelerator fact/decision policy consumed by the assembly
     // root. It adds no Android dependency.
