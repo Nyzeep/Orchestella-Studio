@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <instrumentation
+        android:name="io.github.nyzeep.orchestella.W305PerfBenchProbe"
+        android:targetPackage="${applicationId}"
+        android:label="Orchestella W3-05 paired UML vs QEMU launch benchmark probe" />
+</manifest>

@@ -1,5 +1,7 @@
 package io.github.nyzeep.orchestella;
 
+import io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluator;
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract;
 import io.github.nyzeep.orchestella.runtime.contract.StorageContract;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest;
@@ -97,9 +99,51 @@ public class DistroInstanceCreator {
             long declaredSize,
             VmHardwareConfig hardwareConfig,
             io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig userConfig) throws IOException {
+        return create(
+                archive,
+                declaredSize,
+                hardwareConfig,
+                userConfig,
+                null,
+                ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent());
+    }
+
+    /**
+     * W3-05 (R-05) creation entrypoint with optional device support-floor gate and explicit
+     * execution identity. Refuses creation before staging any archive or creating any root volume
+     * when {@code deviceFloor} reports the device below the Full Linux support floor.
+     */
+    public InstanceLifecycle.Instance create(
+            InputStream archive,
+            long declaredSize,
+            VmHardwareConfig hardwareConfig,
+            io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig userConfig,
+            DeviceCapabilityEvaluator.Assessment deviceFloor,
+            ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity) throws IOException {
         Objects.requireNonNull(archive, "archive");
         Objects.requireNonNull(hardwareConfig, "hardwareConfig");
         Objects.requireNonNull(userConfig, "userConfig");
+        ExecutionPolicyContract.InstanceExecutionIdentity resolvedIdentity =
+                executionIdentity != null
+                        ? executionIdentity
+                        : ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent();
+        if (deviceFloor != null && !deviceFloor.canCreateFullLinuxInstance()) {
+            String reason = deviceFloor.refusalReason() != null
+                    ? deviceFloor.refusalReason()
+                    : "设备未达到 Full Linux 最低支持地板";
+            ExecutionPolicyContract.LaunchDiagnostic refusalDiagnostic =
+                    new ExecutionPolicyContract.LaunchDiagnostic(
+                            resolvedIdentity,
+                            null,
+                            new ExecutionPolicyContract.PreflightVerdict(
+                                    ExecutionPolicyContract.PreflightStatus.REFUSED,
+                                    ExecutionPolicyContract.PreflightCode.DEVICE_FLOOR_UNSUPPORTED,
+                                    reason),
+                            ExecutionPolicyContract.FallbackReason.NONE,
+                            null,
+                            System.currentTimeMillis());
+            throw new ExecutionPolicyContract.ExecutionPolicyRefusalException(refusalDiagnostic);
+        }
         manifest.requireExpectedSize(declaredSize);
         Path inputs = privateDirectory.resolve("distro-inputs");
         Files.createDirectories(inputs);
@@ -152,7 +196,8 @@ public class DistroInstanceCreator {
                     new InstanceLifecycle.DistroReference(manifest.id(), manifest.version()),
                     volume,
                     hardwareConfig,
-                    userConfig);
+                    userConfig,
+                    resolvedIdentity);
         } catch (IOException | RuntimeException failure) {
             Files.deleteIfExists(volume);
             throw failure;

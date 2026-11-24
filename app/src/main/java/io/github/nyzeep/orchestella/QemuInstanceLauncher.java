@@ -189,9 +189,11 @@ public final class QemuInstanceLauncher {
             this.handle = handle;
             this.gateway = gateway;
             this.timeline = timeline;
-            this.stageObserver = stageObserver;
+            this.stageObserver = timeline == null
+                    ? stageObserver
+                    : new TimelineBridgeStageObserver(stageObserver, timeline);
             this.supervisor = new RuntimeProcessSupervisor(handle, gateway, this::closeChannels,
-                    stageObserver == null ? null : new SupervisorStopFacts());
+                    this.stageObserver == null ? null : new SupervisorStopFacts());
             this.controlLifecycle = new ControlChannelLifecycle(controlSocketName, this::connect,
                     this::hasLiveTerminal);
             this.displayChannel = displaySocketPath == null ? null : new RfbDisplaySession(() ->
@@ -199,9 +201,56 @@ public final class QemuInstanceLauncher {
             startProxyGateway();
         }
 
+        LaunchTimeline launchTimeline() {
+            return timeline;
+        }
+
         @Override
         public LaunchStageObserver launchStageObserver() {
             return stageObserver;
+        }
+
+        private static final class TimelineBridgeStageObserver implements LaunchStageObserver {
+            private final LaunchStageObserver delegate;
+            private final LaunchTimeline timeline;
+
+            TimelineBridgeStageObserver(LaunchStageObserver delegate, LaunchTimeline timeline) {
+                this.delegate = delegate;
+                this.timeline = timeline;
+            }
+
+            @Override
+            public void onGate(ProductionStageRecorder.Stage stage) {
+                if (delegate != null) delegate.onGate(stage);
+            }
+
+            @Override
+            public void onGateAuthenticated(ProductionStageRecorder.Stage stage) {
+                if (delegate != null) delegate.onGateAuthenticated(stage);
+                if (stage == ProductionStageRecorder.Stage.AGENT_AUTHENTICATED) {
+                    timeline.mark(LaunchTimeline.Stage.BRIDGE_READY);
+                }
+            }
+
+            @Override
+            public void onFallback(ProductionStageRecorder.Failure failure) {
+                if (delegate != null) delegate.onFallback(failure);
+            }
+
+            @Override
+            public void onFailure(ProductionStageRecorder.Failure failure) {
+                if (delegate != null) delegate.onFailure(failure);
+            }
+
+            @Override
+            public void onStopFact(ProductionStageRecorder.StopFact fact) {
+                if (delegate != null) delegate.onStopFact(fact);
+            }
+
+            @Override
+            public void onFinish() {
+                if (delegate != null) delegate.onFinish();
+            }
         }
 
         /**
@@ -652,10 +701,24 @@ public final class QemuInstanceLauncher {
             new java.util.concurrent.ConcurrentHashMap<>();
 
     private final Context context;
+    private final java.util.List<io.github.nyzeep.orchestella.runtime.distro.DistroManifest> extraDistroManifests;
+    private final java.nio.file.Path instancesDirectoryOverride;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     public QemuInstanceLauncher(Context context) {
+        this(context, java.util.List.of(), null);
+    }
+
+    /** Isolated QA/benchmark constructor accepting extra pinned manifests (e.g. Alpine 3.22.2) and instance store dir. */
+    QemuInstanceLauncher(
+            Context context,
+            java.util.List<io.github.nyzeep.orchestella.runtime.distro.DistroManifest> extraDistroManifests,
+            java.nio.file.Path instancesDirectoryOverride) {
         this.context = context.getApplicationContext();
+        this.extraDistroManifests = extraDistroManifests == null
+                ? java.util.List.of()
+                : java.util.List.copyOf(extraDistroManifests);
+        this.instancesDirectoryOverride = instancesDirectoryOverride;
     }
 
     /**
@@ -674,7 +737,7 @@ public final class QemuInstanceLauncher {
                 ? parameters.hardwareConfig
                 : VmHardwareConfig.defaultConfig();
         LaunchTimeline timeline = LaunchTimeline.open(Paths.get(parameters.runtimeDirectory),
-                parameters.instanceId, resolveDistroId(parameters.rootfsFileName),
+                parameters.instanceId, QemuLaunchEvidence.resolveDistroId(parameters.rootfsFileName, extraDistroManifests),
                 config.ramMegabytes(), config.cpuCores(), SystemClock::elapsedRealtimeNanos);
         timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
         // Ticket 27: observation-only stage trace, bound to this launch's real
@@ -696,6 +759,10 @@ public final class QemuInstanceLauncher {
         }
 
         java.util.function.Consumer<String> degradations = timeline::noteDegradation;
+        java.util.List<io.github.nyzeep.orchestella.runtime.distro.DistroManifest> effectiveManifests =
+                new java.util.ArrayList<>(
+                        io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry.createDefault().listAll());
+        effectiveManifests.addAll(extraDistroManifests);
         QemuRuntimeBootstrapper bootstrapper = new QemuRuntimeBootstrapper(manifest,
                 name -> {
                     try {
@@ -713,16 +780,21 @@ public final class QemuInstanceLauncher {
                 },
                 Paths.get(parameters.runtimeDirectory),
                 Paths.get(parameters.distroInputsDirectory),
+                effectiveManifests,
+                java.nio.file.Files::newInputStream,
                 degradations);
         // Consume persisted guest evidence, not an in-memory instance: the caller may
         // hold a stale snapshot, and only the store's current record may unlock the
         // credentials-only path. Missing/ambiguous evidence stays on the full path.
         // W1-04 (R-08): the hit/miss reason is recorded on the timeline so the
         // fast-path and full-path distributions stay distinguishable per launch.
+        java.nio.file.Path instancesDir = instancesDirectoryOverride != null
+                ? instancesDirectoryOverride
+                : context.getFilesDir().toPath().resolve("instances");
         LaunchTimeline.CredentialsOnlyOutcome credentialsOutcome = QemuLaunchEvidence
                 .credentialsOnlyOutcome(
-                        context.getFilesDir().toPath().resolve("instances"),
-                        parameters.instanceId, parameters.rootfsFileName);
+                        instancesDir,
+                        parameters.instanceId, parameters.rootfsFileName, extraDistroManifests);
         boolean credentialsOnly = credentialsOutcome == LaunchTimeline.CredentialsOnlyOutcome.HIT;
         timeline.markCredentialsOnly(credentialsOutcome);
         Log.i(TAG, "credentials-only-launch outcome=" + credentialsOutcome.name()
@@ -1098,14 +1170,16 @@ public final class QemuInstanceLauncher {
 
     private PersistentTerminalSessionPool.ProvisioningListener createProvisioningRecorder(
             String instanceId, String rootfsFileName) {
-        String rootfsSha256 = resolveRootfsSha256(rootfsFileName);
+        String rootfsSha256 = QemuLaunchEvidence.resolveRootfsSha256(rootfsFileName, extraDistroManifests);
         if (rootfsSha256 == null) {
             Log.w(TAG, "provisioning-evidence-skipped reason=unresolved-rootfs");
             return null;
         }
         try {
-            InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(
-                    context.getFilesDir().toPath().resolve("instances"));
+            java.nio.file.Path instancesDir = instancesDirectoryOverride != null
+                    ? instancesDirectoryOverride
+                    : context.getFilesDir().toPath().resolve("instances");
+            InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(instancesDir);
             return provisioningRecorder(
                     new InstanceLifecycle.Controller(store, Clock.systemUTC()),
                     instanceId, rootfsSha256);

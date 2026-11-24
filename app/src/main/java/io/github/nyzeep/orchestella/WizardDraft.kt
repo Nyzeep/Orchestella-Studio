@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella
 
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 
 /**
@@ -44,7 +45,8 @@ data class WizardDraft(
     val autoUpdateOnFirstBoot: Boolean = false,
     val mountSharedDir: Boolean = false,
     val sharedDirPath: String? = null,
-    val creating: Boolean = false
+    val creating: Boolean = false,
+    val selectedExecutionStrategy: FullLinuxContract.ExecutionStrategy? = null
 ) {
 
     /**
@@ -83,6 +85,7 @@ data class WizardDraft(
         model.selectMirror(MirrorSourceValues[draft.mirrorOrdinal])
         model.setAutoUpdateOnFirstBoot(draft.autoUpdateOnFirstBoot)
         model.updateGuestIdentityDraft(draft.guestUsername, draft.guestHostname, draft.guestSudo)
+        model.selectExecutionStrategy(draft.selectedExecutionStrategy)
         model.setOptionalProfiles(draft.desktopSelected, draft.podmanSelected, draft.editorSelected)
         model.setMountHostSharedDirectory(draft.mountSharedDir)
         model.setHostSharedDirectoryPath(draft.sharedDirPath)
@@ -121,7 +124,8 @@ data class WizardDraft(
             autoUpdateOnFirstBoot = model.autoUpdateOnFirstBoot,
             mountSharedDir = model.mountHostSharedDirectory,
             sharedDirPath = model.hostSharedDirectoryPath,
-            creating = model.isCreating
+            creating = model.isCreating,
+            selectedExecutionStrategy = model.selectedExecutionStrategy
         )
     }
 }

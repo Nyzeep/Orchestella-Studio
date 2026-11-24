@@ -74,6 +74,24 @@ class WizardDraftCandidateTest {
         rejected(state + ("creating" to "TRUE"))
         rejected(state + ("step" to "UNKNOWN"))
         rejected(state + ("mirror" to "UNKNOWN"))
+        rejected(state + ("executionStrategy" to "UNKNOWN"))
+    }
+
+    @Test fun executionStrategySurvivesDraftRoundTrip() {
+        val alpine = InstanceCreationWizardModel("alpine", "3.22.2", profile()).apply {
+            selectExecutionStrategy(
+                io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL
+            )
+        }
+        val restored = restore(
+            alpine.saveDraft(),
+            versions = mapOf("alpine" to "3.22.2"),
+            minimum = 512,
+        )
+        assertEquals(
+            io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+            restored.selectedExecutionStrategy,
+        )
     }
 
     @Test fun removedOrUpdatedDistroAndChangedHostBudgetAreRevalidated() {

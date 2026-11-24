@@ -252,6 +252,12 @@ public final class InstanceStrategyLauncher {
                         ExecutionPolicyContract.FallbackReason.HARDWARE_UNSUPPORTED;
                 case AvfEngineException.CONFIG_MISMATCH ->
                         ExecutionPolicyContract.FallbackReason.HARDWARE_CONFIG_MISMATCH;
+                case "UML_PREFLIGHT_INCOMPLETE" ->
+                        ExecutionPolicyContract.FallbackReason.UML_PREFLIGHT_INCOMPLETE;
+                case "UML_PREFLIGHT_TIMEOUT" ->
+                        ExecutionPolicyContract.FallbackReason.UML_PREFLIGHT_TIMEOUT;
+                case "UML_LAUNCH_FAILED_ATOMIC_FALLBACK" ->
+                        ExecutionPolicyContract.FallbackReason.UML_LAUNCH_FAILED_ATOMIC_FALLBACK;
                 default -> ExecutionPolicyContract.FallbackReason.HARDWARE_UNAVAILABLE;
             };
         }

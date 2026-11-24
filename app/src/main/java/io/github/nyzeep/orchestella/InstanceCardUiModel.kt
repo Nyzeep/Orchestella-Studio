@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella
 
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 
 /**
@@ -33,7 +34,8 @@ data class InstanceCardUiModel(
     val canClone: Boolean = false,
     val canDelete: Boolean,
     val hasCrashDiagnostic: Boolean,
-    val crashDiagnostic: InstanceLifecycle.CrashDiagnostic?
+    val crashDiagnostic: InstanceLifecycle.CrashDiagnostic?,
+    val explicitStrategyBadge: String? = null,
 ) {
     companion object {
         @JvmOverloads
@@ -41,7 +43,8 @@ data class InstanceCardUiModel(
             instance: InstanceLifecycle.Instance,
             strategyBadge: String = "QEMU 软模拟",
             supportsDesktop: Boolean = false,
-            guestIp: String? = null
+            guestIp: String? = null,
+            capabilityMatrix: FullLinuxContract.CapabilityMatrix? = null,
         ): InstanceCardUiModel {
             val distroId = instance.distro().id()
             val distroDisplayName = distroId.replaceFirstChar { it.uppercase() }
@@ -93,6 +96,14 @@ data class InstanceCardUiModel(
                 else -> "运行中"
             }
 
+            val strategyDecl = instance.executionIdentity().strategy()
+            val explicitStrategyBadge = ExecutionStrategyPresentation.explicitStrategyBadge(strategyDecl)
+            val matrixSupportsDesktop = capabilityMatrix?.supportsRfbDisplay()
+                ?: ExecutionStrategyPresentation.strategySupportsGraphics(strategyDecl.strategy())
+            val effectiveCanLaunchDesktop =
+                DesktopEntryPolicy.canLaunchDesktop(isRunning, supportsDesktop) &&
+                    matrixSupportsDesktop
+
             return InstanceCardUiModel(
                 instanceId = instance.id(),
                 shortId = shortId,
@@ -112,13 +123,14 @@ data class InstanceCardUiModel(
                 gpuEnabled = gpuEnabled,
                 canLaunch = isStopped || isCreated || state == InstanceLifecycle.State.INTERRUPTED,
                 canOpenTerminal = isRunning,
-                // G-04：enabled 合取式收敛到 DesktopEntryPolicy（与终端抽屉 / GuestFeatures 同源）。
-                canLaunchDesktop = DesktopEntryPolicy.canLaunchDesktop(isRunning, supportsDesktop),
+                // G-04 + W3-05：桌面入口与 DesktopEntryPolicy 及策略能力矩阵同源。
+                canLaunchDesktop = effectiveCanLaunchDesktop,
                 canConfigureHardware = isStopped || isCreated,
                 canClone = isStopped || isCreated,
                 canDelete = isStopped || isCreated || isCrashed,
                 hasCrashDiagnostic = instance.crashDiagnostic() != null,
-                crashDiagnostic = instance.crashDiagnostic()
+                crashDiagnostic = instance.crashDiagnostic(),
+                explicitStrategyBadge = explicitStrategyBadge,
             )
         }
     }

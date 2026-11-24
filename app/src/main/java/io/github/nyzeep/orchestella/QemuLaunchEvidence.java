@@ -5,6 +5,8 @@ import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry;
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Launch-time provisioning evidence for one instance, extracted verbatim from
@@ -22,11 +24,26 @@ final class QemuLaunchEvidence {
     private QemuLaunchEvidence() {
     }
 
+    private static List<DistroManifest> allManifests(List<DistroManifest> extraManifests) {
+        List<DistroManifest> defaults = DistroCatalogRegistry.createDefault().listAll();
+        if (extraManifests == null || extraManifests.isEmpty()) {
+            return defaults;
+        }
+        List<DistroManifest> merged = new ArrayList<>(defaults.size() + extraManifests.size());
+        merged.addAll(defaults);
+        merged.addAll(extraManifests);
+        return merged;
+    }
+
     /** Non-secret distro id for telemetry; unknown or ambiguous filenames stay honest. */
     static String resolveDistroId(String rootfsFileName) {
+        return resolveDistroId(rootfsFileName, List.of());
+    }
+
+    static String resolveDistroId(String rootfsFileName, List<DistroManifest> extraManifests) {
         if (rootfsFileName == null || rootfsFileName.isEmpty()) return "unknown";
         String matched = null;
-        for (DistroManifest manifest : DistroCatalogRegistry.createDefault().listAll()) {
+        for (DistroManifest manifest : allManifests(extraManifests)) {
             if (!rootfsFileName.equals(manifest.rootfsFileName())) continue;
             if (matched != null && !matched.equals(manifest.id())) return "unknown";
             matched = manifest.id();
@@ -41,11 +58,15 @@ final class QemuLaunchEvidence {
      * rather than guess a digest.
      */
     static String resolveRootfsSha256(String rootfsFileName) {
+        return resolveRootfsSha256(rootfsFileName, List.of());
+    }
+
+    static String resolveRootfsSha256(String rootfsFileName, List<DistroManifest> extraManifests) {
         if (rootfsFileName == null || rootfsFileName.isEmpty()) {
             return null;
         }
         String resolved = null;
-        for (DistroManifest manifest : DistroCatalogRegistry.createDefault().listAll()) {
+        for (DistroManifest manifest : allManifests(extraManifests)) {
             if (rootfsFileName.equals(manifest.rootfsFileName())) {
                 if (resolved != null && !resolved.equals(manifest.sha256())) {
                     return null;
@@ -85,7 +106,15 @@ final class QemuLaunchEvidence {
      */
     static LaunchTimeline.CredentialsOnlyOutcome credentialsOnlyOutcome(
             java.nio.file.Path instancesDirectory, String instanceId, String rootfsFileName) {
-        String rootfsSha256 = resolveRootfsSha256(rootfsFileName);
+        return credentialsOnlyOutcome(instancesDirectory, instanceId, rootfsFileName, List.of());
+    }
+
+    static LaunchTimeline.CredentialsOnlyOutcome credentialsOnlyOutcome(
+            java.nio.file.Path instancesDirectory,
+            String instanceId,
+            String rootfsFileName,
+            List<DistroManifest> extraManifests) {
+        String rootfsSha256 = resolveRootfsSha256(rootfsFileName, extraManifests);
         if (rootfsSha256 == null) {
             return LaunchTimeline.CredentialsOnlyOutcome.CATALOG_UNRESOLVED;
         }

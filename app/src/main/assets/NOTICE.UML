@@ -114,23 +114,46 @@ the same public repository as the rest of the corresponding source. The
 inbound forward of the umnet compile helper binds 127.0.0.1:3632 and
 serves the guest's distccd compile route.
 
+  - Fork/source pin: passt-android fork commits 25f9c1f+1a0c657
+    (passt-android v0.2.0 baseline + umnet harness with loopback-only
+    `-t 127.0.0.1/3632` inbound forward patch; pinned in
+    app/build.gradle.kts `umlNetHelperPins`).
+  - Product pins (ARM64 static bionic, 16 KB page aligned):
+      libuml_net.so    (umnet_bionic)  858efb9b9e5ae6ba17207b93079bf7794283c954aa5d95e7ec458fc87d6367ae
+      libuml_passt.so  (passt_bionic)  f42171416bc1e0d78029fd16cf3ec3cff53b642a62246b4507c1464fabf6f9f9
+
 The isolated standalone UML runtime uses the same passt binary for IPv4
 egress and DNS. Its App-owned user listeners bind IPv4 loopback for
 explicit TCP forwards. A private loopback transport authenticates the
 launch before relaying to the guest's local TCP service. This path does
 not use the compile lane's ports.
 
+UML host PTY and control-pipe JNI bridge
+----------------------------------------
+liborchestella_uml_pty.so is this project's own JNI PTY bridge, compiled
+from app/src/main/cpp/uml_pty_jni.cpp (via app/src/main/cpp/CMakeLists.txt
+with `-Wl,-z,max-page-size=16384`, 16 KB PT_LOAD aligned). It provides
+host-side PTY allocation, control-pipe wiring, process-group reaping, and
+passt frame-pumping for standalone UML launches, and is distributed under
+this project's root LICENSE (GPL-3.0-or-later).
+
 Corresponding source and written offer
 --------------------------------------
 The corresponding source for every GPL component above is public: the
 modified UML kernel at the fixed tag, the build and configuration scripts
-under research/uml-fastboot/, and the project-owned scripts named here. The
-written-offer text for the guest-runtime assets is guest-assets/SOURCE-OFFER.txt
-(the template this project distributes with the QEMU lane); the UML
-components ride the same written-offer channel. OPEN: a UML-specific
-BUILD-INPUTS identifier and the ADR-style one-to-one release source package
-are process items that ride the release flow; the pin registry in this
-repository is the binding identity record in the meantime.
+under research/uml-fastboot/ and research/uml-kernel-build/, the project's
+JNI PTY bridge under app/src/main/cpp/uml_pty_jni.cpp, and the
+project-owned scripts named here. The machine-readable build-input pin
+record and corresponding-source inventory are packaged alongside this
+notice as app/src/main/assets/UML-BUILD-INPUTS and
+app/src/main/assets/UML-GPL-SOURCES.md. The written-offer text for the
+guest-runtime assets is guest-assets/SOURCE-OFFER.txt (the template this
+project distributes with the QEMU lane); the UML components ride the same
+written-offer channel. OPEN: one-to-one release corresponding-source
+tarball packaging and public release-tag source publication remain process
+items owned by the Release Maintainer before any public binary release; the
+pin registries in this repository and UML-BUILD-INPUTS are the binding
+identity record in the meantime.
 
 Upgrade discipline
 ------------------

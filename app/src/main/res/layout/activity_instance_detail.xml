@@ -449,28 +449,40 @@
                             android:textColor="?attr/colorOnSurface" />
 
                         <TextView
+                            android:id="@+id/tv_detail_strategy_line"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/oe_space_sm"
-                            android:text="• 内核架构：Linux 6.x aarch64 / arm64 架构隔离运行"
+                            android:text="@string/detail_strategy_default_placeholder"
                             android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                             android:textColor="?attr/colorOutline" />
 
                         <TextView
+                            android:id="@+id/tv_detail_capability_line"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/oe_space_xs"
-                            android:text="• 网络通道：用户态 GVProxy SLIRP NAT / 双向端口转发"
+                            android:text="@string/detail_capability_default_placeholder"
                             android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                             android:textColor="?attr/colorOutline" />
 
                         <TextView
+                            android:id="@+id/tv_detail_volume_line"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/oe_space_xs"
-                            android:text="• 磁盘驱动：virtio-blk 硬件增量稀疏镜像"
+                            android:text="@string/detail_volume_default_placeholder"
                             android:textAppearance="@style/TextAppearance.Orchestella.Caption"
                             android:textColor="?attr/colorOutline" />
+
+                        <TextView
+                            android:id="@+id/tv_detail_diagnostic_line"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/oe_space_xs"
+                            android:textAppearance="@style/TextAppearance.Orchestella.Caption"
+                            android:textColor="@color/status_crashed"
+                            android:visibility="gone" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 

@@ -1,8 +1,14 @@
 package io.github.nyzeep.orchestella.ui
 
 import io.github.nyzeep.orchestella.HostHardwareProfile
+import io.github.nyzeep.orchestella.LaunchDiagnosticStore
 import io.github.nyzeep.orchestella.NetworkGatewayDaemon
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
+import io.github.nyzeep.orchestella.runtime.contract.StorageContract
+import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
+import io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -265,5 +271,82 @@ class InstanceDetailViewModelTest {
         )
         unknownIpViewModel.loadInstance(instance.id())
         assertEquals("运行中", unknownIpViewModel.uiState!!.ipAddress)
+    }
+
+    @Test
+    fun umlInstanceReusesCapabilityMatrixDisablesDesktopAndSurfacesRecoveryGuidance() {
+        val rootVol = tempDir.resolve("alpine-uml.raw")
+        Files.createFile(rootVol)
+
+        val instance = controller.create(
+            InstanceLifecycle.DistroReference("alpine", "3.22.2"),
+            rootVol,
+            VmHardwareConfig.builder().cpuCores(1).ramMegabytes(512).build(),
+            InstanceUserConfig.defaultRoot(),
+            ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                StorageContract.RootVolumeFormat.RAW_SPARSE,
+            ),
+        )
+        controller.beginProvisioning(instance.id())
+        controller.completeProvisioning(instance.id())
+        controller.start(instance.id())
+
+        val diagnostic = ExecutionPolicyContract.LaunchDiagnostic(
+            instance.executionIdentity(),
+            null,
+            ExecutionPolicyContract.PreflightVerdict(
+                ExecutionPolicyContract.PreflightStatus.REFUSED,
+                ExecutionPolicyContract.PreflightCode.STRATEGY_NOT_AVAILABLE,
+                "dirty disk",
+            ),
+            ExecutionPolicyContract.FallbackReason.NONE,
+            null,
+            1000L,
+            "用户盘已写入：已保留用户盘与原记录策略，请先导出备份。",
+        )
+        LaunchDiagnosticStore.record(instance.id(), diagnostic)
+        try {
+            viewModel.loadInstance(instance.id())
+            val state = viewModel.uiState!!
+            assertEquals(FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL, state.effectiveStrategy)
+            assertTrue(state.executionStrategyLabel.contains("完整 Linux · 用户态内核（实验）"))
+            assertTrue(state.executionStrategyLabel.contains("显式指定"))
+            assertFalse(state.executionStrategyLabel.contains("USER_MODE_KERNEL"))
+            assertTrue(state.rootVolumeFormatLabel.contains("稀疏原始盘"))
+            assertFalse(state.rootVolumeFormatLabel.contains("RAW_SPARSE"))
+            assertFalse(state.rootVolumeFormatLabel.contains("卷"))
+            assertTrue(state.unsupportedCapabilitiesSummary.contains("systemd"))
+            // Even when host supportsDesktop=true, UML CLI-only strategy keeps desktop disabled.
+            assertFalse(state.canLaunchDesktop)
+            assertFalse(state.allowsDesktopEntry)
+            assertEquals("用户盘已写入：已保留用户盘与原记录策略，请先导出备份。", state.recoveryGuidance)
+        } finally {
+            LaunchDiagnosticStore.clear(instance.id())
+        }
+
+        val fallbackDiagnostic = ExecutionPolicyContract.LaunchDiagnostic(
+            instance.executionIdentity(),
+            FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
+            ExecutionPolicyContract.PreflightVerdict(
+                ExecutionPolicyContract.PreflightStatus.FALLBACK_ALLOWED,
+                ExecutionPolicyContract.PreflightCode.READY,
+                "fallback",
+            ),
+            ExecutionPolicyContract.FallbackReason.UML_LAUNCH_FAILED_ATOMIC_FALLBACK,
+            null,
+            2000L,
+            "",
+        )
+        LaunchDiagnosticStore.record(instance.id(), fallbackDiagnostic)
+        try {
+            viewModel.loadInstance(instance.id())
+            val state = viewModel.uiState!!
+            assertNotNull(state.recoveryGuidance)
+            assertTrue(state.recoveryGuidance!!.contains("原子回退"))
+            assertFalse(state.recoveryGuidance!!.contains("UML_LAUNCH_FAILED_ATOMIC_FALLBACK"))
+        } finally {
+            LaunchDiagnosticStore.clear(instance.id())
+        }
     }
 }

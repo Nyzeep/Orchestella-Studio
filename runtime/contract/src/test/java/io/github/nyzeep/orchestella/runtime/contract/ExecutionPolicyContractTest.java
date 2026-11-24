@@ -201,6 +201,77 @@ public final class ExecutionPolicyContractTest {
         assertEquals(identity, fallback.persistedIdentity());
     }
 
+    @Test
+    public void evaluatesAtomicFallbackOnlyWhenAllFourPreconditionsHold() {
+        ExecutionPolicyContract.AtomicFallbackDecision allowed =
+                ExecutionPolicyContract.evaluateAtomicFallback(
+                        new ExecutionPolicyContract.AtomicFallbackPreconditions(
+                                true, true, true, true, "uml boot timed out before mount"));
+        assertTrue(allowed.allowed());
+        assertEquals(ExecutionPolicyContract.FallbackReason.UML_LAUNCH_FAILED_ATOMIC_FALLBACK,
+                allowed.fallbackReason());
+        assertTrue(allowed.blockers().isEmpty());
+        assertTrue(allowed.preserveUserData());
+        assertTrue(allowed.summary().contains("uml boot timed out"));
+        assertEquals("", allowed.recoveryGuidance());
+
+        ExecutionPolicyContract.AtomicFallbackDecision unconfirmedStop =
+                ExecutionPolicyContract.evaluateAtomicFallback(
+                        new ExecutionPolicyContract.AtomicFallbackPreconditions(
+                                false, true, true, true, "reap timeout"));
+        assertFalse(unconfirmedStop.allowed());
+        assertEquals(ExecutionPolicyContract.FallbackReason.NONE, unconfirmedStop.fallbackReason());
+        assertTrue(unconfirmedStop.blockers().contains(
+                ExecutionPolicyContract.AtomicFallbackBlocker.OLD_PROCESS_EXIT_UNCONFIRMED));
+        assertTrue(unconfirmedStop.preserveUserData());
+        assertFalse(unconfirmedStop.recoveryGuidance().isBlank());
+
+        ExecutionPolicyContract.AtomicFallbackDecision dirtyDisk =
+                ExecutionPolicyContract.evaluateAtomicFallback(
+                        new ExecutionPolicyContract.AtomicFallbackPreconditions(
+                                true, true, false, true, "guest crashed after ext4 write"));
+        assertFalse(dirtyDisk.allowed());
+        assertTrue(dirtyDisk.blockers().contains(
+                ExecutionPolicyContract.AtomicFallbackBlocker.USER_DISK_ALREADY_WRITTEN));
+        assertTrue(dirtyDisk.preserveUserData());
+        assertFalse(dirtyDisk.recoveryGuidance().isBlank());
+
+        ExecutionPolicyContract.AtomicFallbackDecision multiBlocker =
+                ExecutionPolicyContract.evaluateAtomicFallback(
+                        new ExecutionPolicyContract.AtomicFallbackPreconditions(
+                                false, false, false, false, "multiple failures"));
+        assertFalse(multiBlocker.allowed());
+        assertEquals(4, multiBlocker.blockers().size());
+        assertTrue(multiBlocker.blockers().contains(
+                ExecutionPolicyContract.AtomicFallbackBlocker.LEASES_NOT_RELEASED));
+        assertTrue(multiBlocker.blockers().contains(
+                ExecutionPolicyContract.AtomicFallbackBlocker.VOLUME_FORMAT_INCOMPATIBLE));
+
+        // Verify W3-05 preflight and fallback reason codes are present and distinct.
+        assertNotNull(ExecutionPolicyContract.PreflightCode.DEVICE_FLOOR_UNSUPPORTED);
+        assertNotNull(ExecutionPolicyContract.PreflightCode.UML_PREFLIGHT_INCOMPLETE);
+        assertNotNull(ExecutionPolicyContract.PreflightCode.UML_PREFLIGHT_TIMEOUT);
+        assertNotNull(ExecutionPolicyContract.PreflightCode.CAPABILITY_INTERSECTION_UNSATISFIED);
+        assertNotNull(ExecutionPolicyContract.PreflightCode.PROMOTION_GATE_LOCKED);
+        assertNotNull(ExecutionPolicyContract.FallbackReason.UML_PREFLIGHT_INCOMPLETE);
+        assertNotNull(ExecutionPolicyContract.FallbackReason.UML_PREFLIGHT_TIMEOUT);
+        assertNotNull(ExecutionPolicyContract.FallbackReason.UML_LAUNCH_FAILED_ATOMIC_FALLBACK);
+    }
+
+    @Test
+    public void launchDiagnosticCarriesRecoveryGuidanceWithoutMutatingIdentity() {
+        ExecutionPolicyContract.InstanceExecutionIdentity umlIdentity =
+                ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        StorageContract.RootVolumeFormat.RAW_SPARSE);
+        ExecutionPolicyContract.LaunchDiagnostic base = ExecutionPolicyContract.evaluateLaunch(
+                umlIdentity, null, ALL_STRATEGIES, 12_000L);
+        assertNull(base.recoveryGuidance());
+        ExecutionPolicyContract.LaunchDiagnostic guided = base.withRecoveryGuidance("保留原盘并通过导出备份");
+        assertEquals("保留原盘并通过导出备份", guided.recoveryGuidance());
+        assertEquals(umlIdentity, guided.persistedIdentity());
+    }
+
     private static void assertThrows(Class<? extends Throwable> type, Runnable action) {
         try {
             action.run();

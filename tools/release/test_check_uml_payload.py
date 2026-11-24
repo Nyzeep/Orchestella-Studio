@@ -21,7 +21,9 @@ case names it mirrors).
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import sys
 import tempfile
@@ -45,6 +47,8 @@ PASST_ENTRY = LIB + "libuml_passt.so"
 ROOTFS_ENTRY = gate.FULLPKG_ROOTFS_TAR
 QEMU_LIB_ENTRY = LIB + "libdroidlayer_qemu.so"
 NOTICE_UML_ENTRY = "assets/NOTICE.UML"
+UML_BUILD_INPUTS_ENTRY = "assets/UML-BUILD-INPUTS"
+UML_GPL_SOURCES_ENTRY = "assets/UML-GPL-SOURCES.md"
 # The verified packaging path of the notice is `assets/NOTICE.UML` (AGP ships
 # app/src/main/assets/** at assets/**; the gate itself requires that entry),
 # so the fullpkg fixture carries the repo asset's real bytes: the fixture APK
@@ -52,6 +56,15 @@ NOTICE_UML_ENTRY = "assets/NOTICE.UML"
 # that drifts from the payload fails here instead of at release time.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NOTICE_UML_ASSET = REPO_ROOT / "app" / "src" / "main" / "assets" / "NOTICE.UML"
+UML_BUILD_INPUTS_ASSET = REPO_ROOT / "app" / "src" / "main" / "assets" / "UML-BUILD-INPUTS"
+UML_GPL_SOURCES_ASSET = REPO_ROOT / "app" / "src" / "main" / "assets" / "UML-GPL-SOURCES.md"
+CLOSED_NOTICE_UML = (
+    "NOTICE — UML engine components shipped in this application\n"
+    f"the pinned fast-profile kernel pair ({KERNEL_ENTRY} and {STUB_ENTRY}), "
+    f"the umnet/passt network helper pair ({NET_ENTRY} and {PASST_ENTRY}) "
+    f"and the Alpine minirootfs baseline tar ({ROOTFS_ENTRY}).\n"
+    "liborchestella_uml_pty.so is GPL-3.0-or-later.\n"
+).encode("utf-8")
 
 
 def _sha(data: bytes) -> str:
@@ -468,9 +481,117 @@ class FullpkgSmokeTest(unittest.TestCase):
         self.assertEqual("fail", result.status)
         self.assertTrue(any(PASST_ENTRY in p.entry for p in result.problems))
 
+    # --- W3-05 (R-05) release attribution closure gate -------------------------
+
+    def test_fullpkg_passes_and_surfaces_open_items_from_real_notice(self) -> None:
+        apk = self._apk(self._fullpkg_entries())
+        result = gate.check_apk(apk, False, True)
+        self.assertEqual("ok", result.status)
+        self.assertEqual([], result.problems)
+        self.assertEqual(3, len(result.notice_open_items))
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gate.main(["--apk", str(apk), "--fullpkg"])
+        output = buf.getvalue()
+        self.assertEqual(0, code)
+        self.assertIn("FULLPKG_GATE_OK", output)
+        self.assertEqual(3, output.count("UML_NOTICE_OPEN_ITEM "))
+
+    def test_require_attribution_closed_passes_with_closed_notice_and_companion_records(self) -> None:
+        entries = self._fullpkg_entries()
+        entries[NOTICE_UML_ENTRY] = CLOSED_NOTICE_UML
+        entries[UML_BUILD_INPUTS_ENTRY] = UML_BUILD_INPUTS_ASSET.read_bytes()
+        entries[UML_GPL_SOURCES_ENTRY] = UML_GPL_SOURCES_ASSET.read_bytes()
+        apk = self._apk(entries)
+
+        result = gate.check_apk(apk, False, True, require_attribution_closed=True)
+        self.assertEqual("ok", result.status)
+        self.assertEqual([], result.problems)
+        self.assertEqual([], result.notice_open_items)
+
+        out_json = self.root / "closed.json"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gate.main([
+                "--apk", str(apk), "--fullpkg",
+                "--require-release-attribution-closed",
+                "--json", str(out_json),
+            ])
+        output = buf.getvalue()
+        self.assertEqual(0, code)
+        self.assertIn("FULLPKG_GATE_OK", output)
+        self.assertNotIn("UML_NOTICE_OPEN_ITEM", output)
+        payload = json.loads(out_json.read_text(encoding="utf-8"))
+        self.assertTrue(payload["require_release_attribution_closed"])
+        self.assertEqual([], payload["notice_open_items"])
+
+    def test_require_attribution_closed_fails_on_real_notice_open_items(self) -> None:
+        entries = self._fullpkg_entries()
+        entries[UML_BUILD_INPUTS_ENTRY] = UML_BUILD_INPUTS_ASSET.read_bytes()
+        entries[UML_GPL_SOURCES_ENTRY] = UML_GPL_SOURCES_ASSET.read_bytes()
+        apk = self._apk(entries)
+
+        result = gate.check_apk(apk, False, True, require_attribution_closed=True)
+        self.assertEqual("fail", result.status)
+        self.assertEqual(3, len(result.notice_open_items))
+        notice_problems = [p for p in result.problems if p.entry == NOTICE_UML_ENTRY]
+        self.assertEqual(3, len(notice_problems))
+
+        buf = io.StringIO()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+            code = gate.main([
+                "--apk", str(apk), "--fullpkg",
+                "--require-release-attribution-closed",
+            ])
+        output = buf.getvalue()
+        self.assertEqual(1, code)
+        self.assertIn("FULLPKG_GATE_FAIL", output)
+        self.assertEqual(3, output.count("UML_NOTICE_OPEN_ITEM "))
+
+    def test_require_attribution_closed_fails_when_uml_build_inputs_missing(self) -> None:
+        entries = self._fullpkg_entries()
+        entries[NOTICE_UML_ENTRY] = CLOSED_NOTICE_UML
+        entries[UML_GPL_SOURCES_ENTRY] = UML_GPL_SOURCES_ASSET.read_bytes()
+        apk = self._apk(entries)
+
+        result = gate.check_apk(apk, False, True, require_attribution_closed=True)
+        self.assertEqual("fail", result.status)
+        self.assertEqual([UML_BUILD_INPUTS_ENTRY], [p.entry for p in result.problems])
+
+    def test_require_attribution_closed_fails_when_uml_gpl_sources_missing(self) -> None:
+        entries = self._fullpkg_entries()
+        entries[NOTICE_UML_ENTRY] = CLOSED_NOTICE_UML
+        entries[UML_BUILD_INPUTS_ENTRY] = UML_BUILD_INPUTS_ASSET.read_bytes()
+        apk = self._apk(entries)
+
+        result = gate.check_apk(apk, False, True, require_attribution_closed=True)
+        self.assertEqual("fail", result.status)
+        self.assertEqual([UML_GPL_SOURCES_ENTRY], [p.entry for p in result.problems])
+
+    def test_require_attribution_closed_fails_when_companion_asset_is_empty(self) -> None:
+        entries = self._fullpkg_entries()
+        entries[NOTICE_UML_ENTRY] = CLOSED_NOTICE_UML
+        entries[UML_BUILD_INPUTS_ENTRY] = b"   \n"
+        entries[UML_GPL_SOURCES_ENTRY] = UML_GPL_SOURCES_ASSET.read_bytes()
+        apk = self._apk(entries)
+
+        result = gate.check_apk(apk, False, True, require_attribution_closed=True)
+        self.assertEqual("fail", result.status)
+        self.assertEqual([UML_BUILD_INPUTS_ENTRY], [p.entry for p in result.problems])
+
+    def test_require_attribution_closed_cli_requires_fullpkg(self) -> None:
+        apk = self._apk(self._fullpkg_entries())
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            with self.assertRaises(SystemExit) as ctx:
+                gate.main(["--apk", str(apk), "--require-release-attribution-closed"])
+        self.assertEqual(2, ctx.exception.code)
+
 
 class NoticeUmlDeclarationTest(unittest.TestCase):
-    """The NOTICE.UML text parser (W1-04, R-08).
+    """The NOTICE.UML text parser (W1-04, R-08) and OPEN: extractor (W3-05, R-05).
 
     The gate carries no copy of the notice's contents — the packaged notice
     text is the one declaration source, and this parser only recognizes the
@@ -485,6 +606,27 @@ class NoticeUmlDeclarationTest(unittest.TestCase):
         self.assertEqual(
             {KERNEL_ENTRY, STUB_ENTRY, NET_ENTRY, PASST_ENTRY}, declared_libs)
         self.assertEqual({ROOTFS_ENTRY}, declared_tars)
+
+    def test_real_repo_notice_surfaces_expected_open_items_without_spillover(self) -> None:
+        text = NOTICE_UML_ASSET.read_text(encoding="utf-8")
+        items = gate.find_notice_uml_open_items(text)
+        self.assertEqual(3, len(items))
+        self.assertIn("linux-fast", items[0])
+        self.assertNotIn("Configuration delivery", items[0])
+        self.assertIn("licensing-attribution", items[1])
+        self.assertIn("corresponding-source", items[2])
+        self.assertNotIn("Upgrade discipline", items[2])
+
+    def test_find_notice_uml_open_items_handles_closed_consecutive_and_bare_markers(self) -> None:
+        self.assertEqual([], gate.find_notice_uml_open_items(CLOSED_NOTICE_UML.decode("utf-8")))
+        self.assertEqual([], gate.find_notice_uml_open_items("REOPEN: ignored\nopen: lowercase\n"))
+        items = gate.find_notice_uml_open_items(
+            "Intro.\nOPEN: first item\ncontinues here.\nOPEN: second item\n\nOPEN:\n"
+        )
+        self.assertEqual(
+            ["OPEN: first item continues here.", "OPEN: second item", "OPEN:"],
+            items,
+        )
 
     def test_bare_names_map_to_the_arm64_lib_entries(self) -> None:
         # The real notice also names components in bare form ("libuml_net.so

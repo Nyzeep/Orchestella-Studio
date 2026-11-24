@@ -177,11 +177,30 @@ class WizardDraftContractTest {
 
     @Test
     fun registryNamesCoverEveryDraftProperty() {
-        assertEquals(listOf(
-            "distroId", "diskSizeGb", "cpuCores", "ramMb", "mirrorOrdinal",
-            "guestUsername", "guestHostname", "guestSudo", "desktopSelected",
-            "podmanSelected", "editorSelected", "autoUpdateOnFirstBoot",
-            "mountSharedDir", "sharedDirPath"),
-            WizardDraftFields.all.map { it.name })
+        assertEquals(
+            listOf(
+                "distroId", "diskSizeGb", "cpuCores", "ramMb", "mirrorOrdinal",
+                "guestUsername", "guestHostname", "guestSudo", "desktopSelected",
+                "podmanSelected", "editorSelected", "autoUpdateOnFirstBoot",
+                "mountSharedDir", "sharedDirPath"
+            ),
+            WizardDraftFields.all.map { it.name }
+        )
+    }
+
+    @Test
+    fun selectedExecutionStrategyRoundTripsThroughWizardDraft() {
+        val alpine = InstanceCreationWizardModel("alpine", "3.22.2", profile()).apply {
+            selectExecutionStrategy(
+                io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL
+            )
+        }
+        val draft = WizardDraft.fromModel(alpine)
+        val restored = InstanceCreationWizardModel("alpine", "3.22.2", profile())
+        draft.applyTo(restored)
+        assertEquals(
+            io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+            restored.selectedExecutionStrategy,
+        )
     }
 }

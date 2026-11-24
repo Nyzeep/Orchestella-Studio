@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella.ui.screens.wizard
 
 import android.net.Uri
 import androidx.compose.runtime.State
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 
 /**
  * 向导界面的宿主接缝（UI-12）：[WizardScreen] 只依赖本接口——真实引擎
@@ -41,6 +42,7 @@ interface WizardScreenModel {
 
     fun onCpuCoresChange(cores: Int)
     fun onRamMbChange(mb: Int)
+    fun selectExecutionStrategy(strategy: FullLinuxContract.ExecutionStrategy?) = Unit
     fun toggleAvfDetails()
     fun openAvfAuthorization()
 

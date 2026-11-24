@@ -1,8 +1,12 @@
 package io.github.nyzeep.orchestella.ui.screens.instances
 
 import io.github.nyzeep.orchestella.InstanceCardUiModel
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
+import io.github.nyzeep.orchestella.runtime.contract.StorageContract
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
+import io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -371,5 +375,55 @@ class InstancesUiStateTest {
 
         assertEquals(progress, state.progress)
         assertTrue(state.isRefreshing)
+    }
+
+    @Test
+    fun runningInstancePrefersLiveEngineLabelOverPersistedExplicitStrategyBadge() {
+        val disk = tempDir.resolve("uml-fallback-alpine.raw")
+        Files.createFile(disk)
+        val hardware = VmHardwareConfig.builder()
+            .cpuCores(1)
+            .ramMegabytes(512)
+            .diskCapacityBytes(8L * GB)
+            .gpuAccelerationEnabled(false)
+            .build()
+        val created = controller.create(
+            InstanceLifecycle.DistroReference("alpine", "3.22.2"),
+            disk,
+            hardware,
+            InstanceUserConfig.defaultRoot(),
+            ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                StorageContract.RootVolumeFormat.RAW_SPARSE,
+            ),
+        )
+        controller.beginProvisioning(created.id())
+        val stoppedInstance = controller.completeProvisioning(created.id())
+
+        // Stopped keeps explicit strategy badge even if global fallback badge is passed.
+        val stoppedRow = InstancesUiState.from(
+            cards = listOf(InstanceCardUiModel.from(stoppedInstance, "QEMU 软件模拟")),
+            engineLabel = "QEMU 软件模拟",
+        ).groups.single().items.single()
+        assertEquals(
+            FullLinuxContract.CapabilityMatrix.userModeKernelBaseline().performanceBadge(),
+            stoppedRow.engineLabel,
+        )
+
+        // Running (e.g., atomic QEMU fallback) must display the live session badge, not persisted UML.
+        val liveQemuMatrix = FullLinuxContract.CapabilityMatrix.softwareVirtualizationWithGraphics()
+        val runningInstance = controller.start(stoppedInstance.id())
+        val runningCard = InstanceCardUiModel.from(
+            instance = runningInstance,
+            strategyBadge = "QEMU 软件模拟",
+            supportsDesktop = true,
+            capabilityMatrix = liveQemuMatrix,
+        )
+        val runningRow = InstancesUiState.from(
+            cards = listOf(runningCard),
+            engineLabel = "QEMU 软件模拟",
+        ).groups.single().items.single()
+        assertEquals("QEMU 软件模拟", runningRow.engineLabel)
+        assertTrue(runningCard.canLaunchDesktop)
     }
 }

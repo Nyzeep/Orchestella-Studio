@@ -51,7 +51,9 @@ import java.util.Locale
 import io.github.nyzeep.orchestella.GpuDeviceModelProbeOwner
 import io.github.nyzeep.orchestella.InstanceCreationWizardModel
 import io.github.nyzeep.orchestella.R
+import io.github.nyzeep.orchestella.runtime.capability.ExecutionStrategyAdmissionEvaluator
 import io.github.nyzeep.orchestella.runtime.capability.GpuCapabilityEvaluator
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.engineqemu.VirglJniBridge
 import io.github.nyzeep.orchestella.ui.design.components.OeSlider
 import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
@@ -699,6 +701,101 @@ fun HardwareStepContent(state: WizardUiState, controller: WizardScreenModel) {
                 modifier = Modifier.testTag("wizard:avf-auth"),
             )
         }
+    }
+
+    state.hardware.executionStrategy?.takeIf { it.shouldShowCard }?.let { strategyUi ->
+        ExecutionStrategyCard(
+            strategyUi = strategyUi,
+            isCreating = state.isCreating,
+            onSelect = controller::selectExecutionStrategy,
+        )
+    }
+}
+
+/**
+ * W3-05 (R-05) 执行策略与能力矩阵卡：复用 [FullLinuxContract.CapabilityMatrix] 单源，
+ * 仅在准入门禁与 CLI 能力交集全过时开放独立 UML 选择，其余情形诚实保留既有策略并写明原因。
+ */
+@Composable
+private fun ExecutionStrategyCard(
+    strategyUi: ExecutionStrategyUi,
+    isCreating: Boolean,
+    onSelect: (FullLinuxContract.ExecutionStrategy?) -> Unit,
+) {
+    val colors = Oe3ThemeValues.colors
+    Oe3Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("wizard:execution-strategy-card"),
+    ) {
+        Text(
+            text = stringResource(R.string.wizard_strategy_card_title),
+            style = oeCardTitleStyle(),
+            color = colors.onSurface.oe3Color(),
+        )
+        Spacer(Modifier.height(Oe3Spacing.xxs))
+        Text(
+            text = stringResource(R.string.wizard_strategy_active_prefix, strategyUi.activeStrategyBadge),
+            style = Oe3Typography.style(Oe3TextRole.BodyStrong),
+            color = colors.primary.oe3Color(),
+            modifier = Modifier.testTag("wizard:execution-strategy-badge"),
+        )
+        if (strategyUi.selectableStrategies.size > 1) {
+            Spacer(Modifier.height(Oe3Spacing.xs))
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+            ) {
+                strategyUi.selectableStrategies.forEach { strategy ->
+                    val label = when (strategy) {
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL ->
+                            if (strategyUi.offerMode == ExecutionStrategyAdmissionEvaluator.OfferMode.CONDITIONAL_RECOMMENDED) {
+                                stringResource(R.string.strategy_uml_cli_recommended)
+                            } else {
+                                stringResource(R.string.strategy_uml_cli_optin)
+                            }
+                        FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION ->
+                            stringResource(R.string.strategy_avf_label)
+                        FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION ->
+                            stringResource(R.string.strategy_qemu_label)
+                    }
+                    Oe3Chip(
+                        label = label,
+                        selected = strategyUi.selectedStrategy == strategy,
+                        onClick = { onSelect(strategy) },
+                        enabled = !isCreating,
+                    )
+                }
+            }
+        }
+        if (strategyUi.notice.isNotBlank()) {
+            Spacer(Modifier.height(Oe3Spacing.xs))
+            Text(
+                text = strategyUi.notice,
+                style = Oe3Typography.style(Oe3TextRole.Caption),
+                color = colors.onSurfaceVariant.oe3Color(),
+                modifier = Modifier.testTag("wizard:execution-strategy-notice"),
+            )
+        }
+        Spacer(Modifier.height(Oe3Spacing.xs))
+        Text(
+            text = stringResource(
+                R.string.wizard_strategy_capabilities_prefix,
+                "${strategyUi.activeCapabilityMatrix.graphicsBadge()} · ${strategyUi.activeCapabilityMatrix.gpuBadge()}",
+            ),
+            style = Oe3Typography.style(Oe3TextRole.Caption),
+            color = colors.onSurfaceVariant.oe3Color(),
+        )
+        Text(
+            text = stringResource(
+                R.string.wizard_strategy_unverified_prefix,
+                strategyUi.unsupportedUmlCapabilities.joinToString("、"),
+            ),
+            style = Oe3Typography.style(Oe3TextRole.Caption),
+            color = colors.onSurfaceVariant.oe3Color(),
+            modifier = Modifier.testTag("wizard:execution-strategy-unsupported"),
+        )
     }
 }
 

@@ -321,6 +321,16 @@ public final class UmlInstanceBudget {
         }
     }
 
+    public boolean hasActiveLease(String instanceId) {
+        if (instanceId == null) {
+            return false;
+        }
+        synchronized (lock) {
+            MemoryLease lease = activeLeases.get(instanceId);
+            return lease != null && !lease.isReleased();
+        }
+    }
+
     public boolean hasActiveLease(String instanceId, String generation) {
         if (instanceId == null || generation == null) {
             return false;

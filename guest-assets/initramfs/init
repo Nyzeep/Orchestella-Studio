@@ -5035,9 +5035,14 @@ __orchestella_build_prompt() {
         _arrow_color="$_c_magenta"
     fi
 
-    printf '%s%s%s%s%s\n%s❯%s ' \
+    _prompt_marker=""
+    if [ "$_mode" != "bash" ] && [ -n "${TERM:-}" ] && [ "${TERM:-}" != "dumb" ]; then
+        _prompt_marker="${_esc}]133;B;orchestella=prompt$(printf '\007')"
+    fi
+
+    printf '%s%s%s%s%s\n%s❯%s %s' \
         "$_c_cyan" "$_dir_str" "$_c_reset" "$_git_part" "$_err_part" \
-        "$_arrow_color" "$_c_reset"
+        "$_arrow_color" "$_c_reset" "$_prompt_marker"
 }
 
 if [ -n "${BASH_VERSION:-}" ]; then

@@ -52,13 +52,18 @@ data class InstancesUiState(
 
         private fun InstanceCardUiModel.toRow(engineLabel: String?): InstanceRowUi {
             val status = InstanceStatus.of(state)
+            val resolvedEngineLabel = if (status == InstanceStatus.Running) {
+                engineLabel ?: explicitStrategyBadge
+            } else {
+                explicitStrategyBadge ?: engineLabel
+            }
             return InstanceRowUi(
                 id = instanceId,
                 shortId = shortId,
                 distroId = distroId,
                 name = displayName(),
                 status = status,
-                engineLabel = engineLabel,
+                engineLabel = resolvedEngineLabel,
                 specsText = hardwareSpecsText,
                 ipAddress = realIpOrNull(ipAddress),
                 canOpenTerminal = canOpenTerminal,

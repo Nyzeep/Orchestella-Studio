@@ -1395,9 +1395,19 @@ class MainActivity : AppCompatActivity() {
             is AvfInstanceLauncher.AvfSession -> "AVF 硬件虚拟化"
             else -> session?.capabilityMatrix()?.performanceBadge() ?: strategyBadge
         }
-        val guestIp = (session as? QemuInstanceLauncher.Session)?.let { NetworkGatewayDaemon.GUEST_IP }
+        val guestIp = when (session) {
+            is QemuInstanceLauncher.Session -> NetworkGatewayDaemon.GUEST_IP
+            is UmlInstanceLauncher.Session -> io.github.nyzeep.orchestella.runtime.engineuml.UmlNetworkProfile.GUEST_ADDRESS
+            else -> null
+        }
         // G-04：卡片/sheet 的桌面能力位与三档入口共用 DesktopEntryPolicy 单源判定。
-        return InstanceCardUiModel.from(instance, runningStrategy, supportsDesktop = DesktopEntryPolicy.supportsDesktop(), guestIp)
+        return InstanceCardUiModel.from(
+            instance,
+            runningStrategy,
+            supportsDesktop = DesktopEntryPolicy.supportsDesktop(),
+            guestIp = guestIp,
+            capabilityMatrix = session?.capabilityMatrix(),
+        )
     }
 
     // ==================== 电源 / 终端 / 删除（既有对话框链） ====================
@@ -2126,12 +2136,18 @@ class MainActivity : AppCompatActivity() {
         orphanReconciler = Runnable { reconcileOrphanInstances() },
         umlFaceLane = umlFaceRideAlong,
         isolatedQaEnabled = BooleanSupplier { BuildConfig.IS_ISOLATED_QA_BUILD },
-        standaloneUmlLaunch = if (BuildConfig.IS_ISOLATED_QA_BUILD) {
-            InstanceStrategyLauncher.UserModeKernelLaunch { params ->
-                UmlInstanceLauncher(this, instanceStore).launch(params)
-            }
-        } else {
-            null
+        standaloneUmlLaunch = InstanceStrategyLauncher.UserModeKernelLaunch { params ->
+            UmlInstanceLauncher(this, instanceStore).launch(params)
+        },
+        explicitUmlLaunchAllowed = BooleanSupplier {
+            BuildConfig.IS_ISOLATED_QA_BUILD || (
+                NativeExecutableStore.isAvailable(this, UmlInstanceLauncher.KERNEL_LIBRARY_NAME) &&
+                    NativeExecutableStore.isAvailable(this, UmlInstanceLauncher.STUB_LIBRARY_NAME)
+                )
+        },
+        umlAtomicFallbackEnabled = BooleanSupplier {
+            BuildConfig.IS_ISOLATED_QA_BUILD ||
+                NativeExecutableStore.isAvailable(this, UmlInstanceLauncher.KERNEL_LIBRARY_NAME)
         },
     )
 

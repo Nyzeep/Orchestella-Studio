@@ -1,9 +1,15 @@
 package io.github.nyzeep.orchestella.ui
 
+import io.github.nyzeep.orchestella.DesktopEntryPolicy
+import io.github.nyzeep.orchestella.ExecutionStrategyPresentation
 import io.github.nyzeep.orchestella.HostHardwareProfile
 import io.github.nyzeep.orchestella.InstanceActionSafety
 import io.github.nyzeep.orchestella.InstanceHardwareConfigEditor
+import io.github.nyzeep.orchestella.LaunchDiagnosticStore
 import io.github.nyzeep.orchestella.R
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
+import io.github.nyzeep.orchestella.runtime.contract.StorageContract
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import java.io.IOException
@@ -21,7 +27,11 @@ class InstanceDetailViewModel(
     val controller: InstanceLifecycle.Controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC()),
     val hostProfile: HostHardwareProfile? = null,
     val supportsDesktop: Boolean = false,
-    val runningGuestIpProvider: (String) -> String? = { null }
+    val runningGuestIpProvider: (String) -> String? = { null },
+    val activeCapabilityMatrixProvider: (String) -> FullLinuxContract.CapabilityMatrix? = { null },
+    val launchDiagnosticProvider: (String) -> ExecutionPolicyContract.LaunchDiagnostic? = {
+        LaunchDiagnosticStore.latest(it)
+    },
 ) {
 
     sealed class UpdateHardwareResult {
@@ -50,6 +60,7 @@ class InstanceDetailViewModel(
         val gpuAccelerationEnabled: Boolean,
         val canOpenTerminal: Boolean,
         val canLaunchDesktop: Boolean,
+        val allowsDesktopEntry: Boolean = true,
         val canPowerOn: Boolean,
         val canPowerOff: Boolean,
         val canModifyHardware: Boolean,
@@ -58,7 +69,18 @@ class InstanceDetailViewModel(
         val canResetState: Boolean,
         val canDelete: Boolean,
         val hasCrashDiagnostic: Boolean,
-        val crashDiagnostic: InstanceLifecycle.CrashDiagnostic?
+        val crashDiagnostic: InstanceLifecycle.CrashDiagnostic?,
+        val executionIdentity: ExecutionPolicyContract.InstanceExecutionIdentity =
+            ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent(),
+        val effectiveStrategy: FullLinuxContract.ExecutionStrategy? = null,
+        val executionStrategyLabel: String = "",
+        val rootVolumeFormatLabel: String = "",
+        val capabilityMatrix: FullLinuxContract.CapabilityMatrix =
+            FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline(),
+        val capabilitySummary: String = "",
+        val unsupportedCapabilitiesSummary: String = "",
+        val launchDiagnostic: ExecutionPolicyContract.LaunchDiagnostic? = null,
+        val recoveryGuidance: String? = null,
     )
 
     var uiState: InstanceDetailUiState? = null
@@ -213,6 +235,33 @@ class InstanceDetailViewModel(
             else -> runningGuestIpProvider(instance.id()) ?: "运行中"
         }
 
+        val identity = instance.executionIdentity()
+        val liveMatrix = if (isRunning) activeCapabilityMatrixProvider(instance.id()) else null
+        val launchDiagnostic = launchDiagnosticProvider(instance.id())
+        val effectiveStrategy = liveMatrix?.executionStrategy()
+            ?: launchDiagnostic?.resolvedStrategy()
+            ?: identity.strategy().strategy()
+        val capabilityMatrix = liveMatrix ?: ExecutionStrategyPresentation.baselineMatrixFor(effectiveStrategy)
+        val executionStrategyLabel = ExecutionStrategyPresentation.strategyBindingLabel(identity, capabilityMatrix)
+        val rootVolumeFormatLabel = ExecutionStrategyPresentation.rootVolumeFormatLabel(identity.volumeFormat())
+        val capabilitySummary = buildCapabilitySummary(capabilityMatrix)
+        val unverified = ExecutionStrategyPresentation.unverifiedCapabilities(capabilityMatrix)
+        val allowsDesktopEntry = liveMatrix?.supportsRfbDisplay()
+            ?: ExecutionStrategyPresentation.strategySupportsGraphics(capabilityMatrix.executionStrategy())
+        val unsupportedSummary = if (unverified.isNotEmpty() && !allowsDesktopEntry) {
+            "当前策略未声明能力：${unverified.joinToString("、")}"
+        } else {
+            "${capabilityMatrix.graphicsBadge()} · ${capabilityMatrix.gpuBadge()}"
+        }
+        val recoveryGuidance = launchDiagnostic?.recoveryGuidance()?.takeIf { it.isNotBlank() }
+            ?: launchDiagnostic?.takeIf {
+                it.fallbackReason() != ExecutionPolicyContract.FallbackReason.NONE
+            }?.let { diag ->
+                val reasonLabel = ExecutionStrategyPresentation.fallbackReasonLabel(diag.fallbackReason())
+                val detail = diag.fallbackDetail()?.takeIf { it.isNotBlank() }?.let { "（$it）" } ?: ""
+                "最近启动已回退（$reasonLabel）$detail，实例记录策略未改写。"
+            }
+
         return InstanceDetailUiState(
             instance = instance,
             instanceId = instance.id(),
@@ -232,8 +281,10 @@ class InstanceDetailViewModel(
             diskPhysicalBytes = diskPhysicalBytes,
             gpuAccelerationEnabled = hw.gpuAccelerationEnabled(),
             canOpenTerminal = isRunning,
-            // G-04：enabled 合取式收敛到 DesktopEntryPolicy（与 instances sheet / 终端抽屉同源）。
-            canLaunchDesktop = io.github.nyzeep.orchestella.DesktopEntryPolicy.canLaunchDesktop(isRunning, supportsDesktop),
+            // G-04 + W3-05：桌面入口与 DesktopEntryPolicy 及 CapabilityMatrix 同源。
+            canLaunchDesktop = DesktopEntryPolicy.canLaunchDesktop(isRunning, supportsDesktop) &&
+                allowsDesktopEntry,
+            allowsDesktopEntry = allowsDesktopEntry,
             canPowerOn = isStopped || isCreated || isInterrupted || state == InstanceLifecycle.State.SUSPENDED,
             canPowerOff = isRunning || state == InstanceLifecycle.State.SUSPENDED,
             canModifyHardware = canModifyHw,
@@ -242,7 +293,35 @@ class InstanceDetailViewModel(
             canResetState = isRunning || isInterrupted || isCrashed || state == InstanceLifecycle.State.SUSPENDED,
             canDelete = InstanceActionSafety.canDelete(state),
             hasCrashDiagnostic = instance.crashDiagnostic() != null,
-            crashDiagnostic = instance.crashDiagnostic()
+            crashDiagnostic = instance.crashDiagnostic(),
+            executionIdentity = identity,
+            effectiveStrategy = effectiveStrategy,
+            executionStrategyLabel = executionStrategyLabel,
+            rootVolumeFormatLabel = rootVolumeFormatLabel,
+            capabilityMatrix = capabilityMatrix,
+            capabilitySummary = capabilitySummary,
+            unsupportedCapabilitiesSummary = unsupportedSummary,
+            launchDiagnostic = launchDiagnostic,
+            recoveryGuidance = recoveryGuidance,
         )
+    }
+
+    private fun buildCapabilitySummary(matrix: FullLinuxContract.CapabilityMatrix): String {
+        val items = buildList {
+            if (matrix.supports(FullLinuxContract.Capability.TERMINAL)) add("终端")
+            if (matrix.supports(FullLinuxContract.Capability.BRIDGE_HANDSHAKE)) add("Bridge 控制面")
+            if (matrix.supports(FullLinuxContract.Capability.PORT_FORWARDING)) add("回环端口转发")
+            if (matrix.supports(FullLinuxContract.Capability.HARDWARE_ACCELERATION)) add("硬件虚拟化")
+            if (matrix.supportsSharedDirectory()) add("共享目录")
+            if (matrix.supportsGpuAcceleration()) add("GPU 加速")
+            if (matrix.supportsRfbDisplay() || matrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND)) {
+                add("图形显示")
+            }
+        }
+        return if (items.isEmpty()) {
+            "当前策略尚未声明已验证实时能力（CLI 隔离基线）"
+        } else {
+            "已声明能力：${items.joinToString(" · ")}"
+        }
     }
 }

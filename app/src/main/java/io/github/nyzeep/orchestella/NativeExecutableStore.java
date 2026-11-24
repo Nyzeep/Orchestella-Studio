@@ -31,6 +31,22 @@ public final class NativeExecutableStore {
 
     private NativeExecutableStore() { }
 
+    /** Returns {@code true} when {@code soName} is present in nativeLibraryDir or the APK. */
+    public static boolean isAvailable(Context context, String soName) {
+        if (context == null || soName == null || soName.isBlank()) {
+            return false;
+        }
+        File packaged = new File(context.getApplicationInfo().nativeLibraryDir, soName);
+        if (packaged.isFile()) {
+            return true;
+        }
+        try {
+            return apkEntrySize(context, APK_LIB_PREFIX + soName) >= 0L;
+        } catch (IOException ignored) {
+            return false;
+        }
+    }
+
     /** Returns an executable path for the packaged {@code lib<name>.so}. */
     public static String ensure(Context context, String soName) throws IOException {
         File packaged = new File(context.getApplicationInfo().nativeLibraryDir, soName);

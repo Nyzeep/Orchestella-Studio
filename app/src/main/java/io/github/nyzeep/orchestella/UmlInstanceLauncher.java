@@ -338,6 +338,20 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
         return instanceId == null ? null : LAST_FAILED_CLEANUP.remove(instanceId);
     }
 
+    /**
+     * Verifies that all process-wide standalone UML leases (root reservation, host RAM budget,
+     * and loopback forwarding endpoints) have been released for {@code instanceId}.
+     */
+    public static boolean areLeasesReleased(String instanceId, Path rootVolume) {
+        boolean rootBusy = rootVolume != null
+                && UmlRootReservationRegistry.defaultRegistry().isReserved(rootVolume);
+        boolean memBusy = instanceId != null
+                && UmlInstanceBudget.defaultBudget().hasActiveLease(instanceId);
+        boolean portBusy = instanceId != null
+                && LoopbackEndpointRegistry.defaultRegistry().hasActiveEndpointForInstance(instanceId);
+        return !rootBusy && !memBusy && !portBusy;
+    }
+
     @Override
     public ExecutionSession launch(InstanceStrategyLauncher.LaunchParameters parameters)
             throws IOException, InterruptedException {
@@ -424,6 +438,8 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                 UmlVolumeInspector.VolumeInspection volInspection =
                         UmlVolumeInspector.inspect(rootVolumePath);
                 if (volInspection.isReadyToProvision()) {
+                    timeline.markCredentialsOnly(LaunchTimeline.CredentialsOnlyOutcome.FIRST_PROVISION);
+                    long provisionStartNanos = monotonicNanos.getAsLong();
                     UmlInstanceRootfsProvisioner.SeedInput seedInput =
                             seedInputSupplier.supply(parameters, distroId);
                     long requestedBytes = Math.max(
@@ -468,6 +484,9 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                                     channelsCloseTimeoutMs);
                     try {
                         instanceProvisioner.provisionWithHeldReservation(provRequest, reservation);
+                        timeline.notePhase(
+                                "uml-provision",
+                                Math.max(0L, (monotonicNanos.getAsLong() - provisionStartNanos) / 1_000_000L));
                     } catch (UmlInstanceRootfsProvisioner.ProvisionException provFailure) {
                         if (UmlInstanceRootfsProvisioner.REASON_GUEST_STOP_UNCONFIRMED.equals(
                                 provFailure.reason())) {
@@ -483,6 +502,8 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                     throw new IOException(
                             "refusing launch over invalid root volume ("
                                     + volInspection.state() + "): " + volInspection.detail());
+                } else {
+                    timeline.markCredentialsOnly(LaunchTimeline.CredentialsOnlyOutcome.HIT);
                 }
 
                 bootCredsDir = prepareBootCredsDir(
@@ -1154,6 +1175,10 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
             return bridgeServing.compareAndSet(false, true);
         }
 
+        LaunchTimeline launchTimeline() {
+            return timeline;
+        }
+
         @Override
         public LaunchStageObserver launchStageObserver() {
             return stageObserver;
@@ -1169,7 +1194,19 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                 return;
             }
             if (network != null) network.start();
-            if (readinessTracker.markShellReady(generation, monotonicNanos.getAsLong())) {
+            long nowNanos = monotonicNanos.getAsLong();
+            boolean firstPrompt = !readinessTracker.snapshot().shellPromptObserved();
+            boolean promoted = readinessTracker.markShellReady(generation, nowNanos);
+            if (firstPrompt && readinessTracker.snapshot().shellPromptObserved()) {
+                long startedMs = timeline.elapsedMs(LaunchTimeline.Stage.UML_STARTED);
+                if (startedMs >= 0L) {
+                    long deltaSinceProcess = Math.max(
+                            0L,
+                            (nowNanos - readinessTracker.snapshot().processStartedNanos()) / 1_000_000L);
+                    timeline.notePhase("shell-prompt-observed", startedMs + deltaSinceProcess);
+                }
+            }
+            if (promoted) {
                 publishShellReady();
             }
         }

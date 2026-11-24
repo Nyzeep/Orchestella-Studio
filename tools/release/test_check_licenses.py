@@ -49,6 +49,8 @@ MANIFEST_FILES = [
     "LICENSE",
     "app/src/main/assets/NOTICE.QEMU",
     "app/src/main/assets/NOTICE.UML",
+    "app/src/main/assets/UML-BUILD-INPUTS",
+    "app/src/main/assets/UML-GPL-SOURCES.md",
     "app/src/main/assets/NOTICE.GUEST-RUNTIME",
     "app/src/main/assets/QEMU-GPL-SOURCES.md",
     "app/src/main/assets/QEMU-BUILD-INPUTS",
@@ -80,6 +82,8 @@ class LicenseCheckTests(unittest.TestCase):
         )
         write(self.root, "app/src/main/assets/NOTICE.QEMU", NOTICE_QEMU)
         write(self.root, "app/src/main/assets/NOTICE.UML", NOTICE_UML)
+        write(self.root, "app/src/main/assets/UML-BUILD-INPUTS", "schema=1\n")
+        write(self.root, "app/src/main/assets/UML-GPL-SOURCES.md", NOTICE_UML)
         write(self.root, "app/src/main/assets/NOTICE.GUEST-RUNTIME", NOTICE_GUEST)
         write(self.root, "app/src/main/assets/QEMU-GPL-SOURCES.md", NOTICE_QEMU)
         write(

@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella
 
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import java.io.IOException
 import java.util.Locale
@@ -47,7 +48,8 @@ class InstanceCreationWizardModel(
         val DISK_PRESET_GBS = listOf(4, 8, 16, 32)
         const val DRAFT_SCHEMA = "1"
         private val DRAFT_KEYS = setOf("schema", "step", "distro", "version", "diskGb", "cpu", "ram",
-            "mirror", "autoUpdate", "username", "hostname", "sudo", "desktop", "podman", "editor", "creating")
+            "mirror", "autoUpdate", "username", "hostname", "sudo", "desktop", "podman", "editor",
+            "creating", "executionStrategy")
 
         /** Restores safe choices only, against today's catalog and host budgets. Never starts work. */
         @JvmStatic
@@ -73,6 +75,10 @@ class InstanceCreationWizardModel(
             val username = text("username")
             val hostname = text("hostname")
             require(username.length <= 64 && hostname.length <= 253) { "草稿身份字段过长，请重新填写。" }
+            val strategyRaw = text("executionStrategy")
+            val executionStrategy = if (strategyRaw.isEmpty()) null else {
+                FullLinuxContract.ExecutionStrategy.valueOf(strategyRaw)
+            }
             val model = InstanceCreationWizardModel(distro, text("version"), profile,
                 CreationStep.valueOf(text("step")))
             model.setCustomDiskSizeGb(disk)
@@ -81,6 +87,7 @@ class InstanceCreationWizardModel(
             model.selectMirror(DistroMirrorProvisioner.MirrorSource.valueOf(text("mirror")))
             model.setAutoUpdateOnFirstBoot(flag("autoUpdate"))
             model.updateGuestIdentityDraft(username, hostname, flag("sudo"))
+            model.selectExecutionStrategy(executionStrategy)
             model.setOptionalProfiles(flag("desktop"), flag("podman"), flag("editor"))
             model.setCreating(flag("creating"))
             return model
@@ -160,6 +167,17 @@ class InstanceCreationWizardModel(
     var editorSelected: Boolean = false
         private set
 
+    /**
+     * Explicit execution strategy selected by the user during creation (W3-05 / R-05).
+     * Null keeps the existing applicable strategy (persisted as legacy absent default).
+     */
+    var selectedExecutionStrategy: FullLinuxContract.ExecutionStrategy? = null
+        private set
+
+    fun selectExecutionStrategy(strategy: FullLinuxContract.ExecutionStrategy?) {
+        selectedExecutionStrategy = strategy
+    }
+
     fun setUserConfig(config: io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig) {
         this.userConfig = config
         updateGuestIdentityDraft(config.username(), config.hostname(), config.hasSudo())
@@ -182,6 +200,11 @@ class InstanceCreationWizardModel(
         val supported = distroId in setOf("debian", "ubuntu")
         podmanSelected = podman && supported
         editorSelected = editor && supported
+        if ((desktopSelected || podmanSelected || editorSelected) &&
+            selectedExecutionStrategy == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL
+        ) {
+            selectedExecutionStrategy = null
+        }
     }
 
     /** Versioned whitelist. Never serialize userConfig, which contains the generated password. */
@@ -192,7 +215,8 @@ class InstanceCreationWizardModel(
         "mirror" to selectedMirror.name, "autoUpdate" to autoUpdateOnFirstBoot.toString(),
         "username" to guestUsernameDraft, "hostname" to guestHostnameDraft, "sudo" to guestSudoDraft.toString(),
         "desktop" to desktopSelected.toString(), "podman" to podmanSelected.toString(),
-        "editor" to editorSelected.toString(), "creating" to isCreating.toString()
+        "editor" to editorSelected.toString(), "creating" to isCreating.toString(),
+        "executionStrategy" to (selectedExecutionStrategy?.name ?: "")
     )
 
     var isCreating: Boolean = false
@@ -257,6 +281,9 @@ class InstanceCreationWizardModel(
 
     fun setMountHostSharedDirectory(enabled: Boolean) {
         mountHostSharedDirectory = enabled
+        if (enabled && selectedExecutionStrategy == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL) {
+            selectedExecutionStrategy = null
+        }
     }
 
     fun setHostSharedDirectoryPath(path: String?) {

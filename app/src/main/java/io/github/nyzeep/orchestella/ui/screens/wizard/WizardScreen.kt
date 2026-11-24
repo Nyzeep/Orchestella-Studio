@@ -50,6 +50,7 @@ import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3BackButton
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
@@ -191,6 +192,25 @@ fun WizardScreen(
                             ),
                         verticalArrangement = Arrangement.spacedBy(Oe3Spacing.md),
                     ) {
+                        state.deviceFloorRefusal?.let { refusal ->
+                            Oe3Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("wizard:device-floor-refusal"),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.error_device_floor_unsupported),
+                                    style = Oe3Typography.style(Oe3TextRole.BodyStrong),
+                                    color = androidx.compose.ui.res.colorResource(R.color.zone_red),
+                                )
+                                Spacer(Modifier.height(Oe3Spacing.xxs))
+                                Text(
+                                    text = refusal,
+                                    style = Oe3Typography.style(Oe3TextRole.Caption),
+                                    color = Oe3ThemeValues.colors.onSurfaceVariant.oe3Color(),
+                                )
+                            }
+                        }
                         when (step) {
                             InstanceCreationWizardModel.CreationStep.STEP_STORAGE ->
                                 StorageStepContent(

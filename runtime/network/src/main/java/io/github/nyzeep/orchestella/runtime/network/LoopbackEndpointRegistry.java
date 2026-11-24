@@ -157,4 +157,18 @@ public final class LoopbackEndpointRegistry {
             return leases.size();
         }
     }
+
+    public boolean hasActiveEndpointForInstance(String instanceId) {
+        if (instanceId == null) {
+            return false;
+        }
+        synchronized (lock) {
+            for (EndpointLease lease : leases.values()) {
+                if (instanceId.equals(lease.instanceId()) && !lease.isReleased()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
 }

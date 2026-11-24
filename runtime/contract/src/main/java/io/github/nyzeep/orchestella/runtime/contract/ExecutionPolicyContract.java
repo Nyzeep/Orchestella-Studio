@@ -4,6 +4,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
@@ -324,7 +327,12 @@ public final class ExecutionPolicyContract {
         UNKNOWN_EXECUTION_STRATEGY,
         UNRECOGNIZED_VOLUME_FORMAT,
         VOLUME_FORMAT_CONFLICT,
-        STRATEGY_NOT_AVAILABLE
+        STRATEGY_NOT_AVAILABLE,
+        DEVICE_FLOOR_UNSUPPORTED,
+        UML_PREFLIGHT_INCOMPLETE,
+        UML_PREFLIGHT_TIMEOUT,
+        CAPABILITY_INTERSECTION_UNSATISFIED,
+        PROMOTION_GATE_LOCKED
     }
 
     /** Ephemeral preflight verdict for a single launch attempt. */
@@ -383,7 +391,110 @@ public final class ExecutionPolicyContract {
         HARDWARE_PERMISSION_DENIED,
         HARDWARE_UNSUPPORTED,
         HARDWARE_CONFIG_MISMATCH,
-        HARDWARE_UNAVAILABLE
+        HARDWARE_UNAVAILABLE,
+        UML_PREFLIGHT_INCOMPLETE,
+        UML_PREFLIGHT_TIMEOUT,
+        UML_LAUNCH_FAILED_ATOMIC_FALLBACK
+    }
+
+    /** Unsatisfied invariant blocking atomic launch-failure fallback (W3-05 / R-05). */
+    public enum AtomicFallbackBlocker {
+        OLD_PROCESS_EXIT_UNCONFIRMED,
+        LEASES_NOT_RELEASED,
+        USER_DISK_ALREADY_WRITTEN,
+        VOLUME_FORMAT_INCOMPATIBLE
+    }
+
+    /**
+     * Four mandatory, independently verified preconditions before a failed launch may
+     * atomically fall back to another execution strategy (W3-05 / R-05).
+     */
+    public record AtomicFallbackPreconditions(
+            boolean oldProcessExitConfirmed,
+            boolean leasesReleased,
+            boolean userDiskUnwritten,
+            boolean volumeFormatCompatible,
+            String failureDetail) {
+        public AtomicFallbackPreconditions {
+            failureDetail = failureDetail == null ? "" : failureDetail;
+        }
+    }
+
+    /** Fail-closed decision returned by {@link #evaluateAtomicFallback(AtomicFallbackPreconditions)}. */
+    public record AtomicFallbackDecision(
+            boolean allowed,
+            FallbackReason fallbackReason,
+            List<AtomicFallbackBlocker> blockers,
+            boolean preserveUserData,
+            String summary,
+            String recoveryGuidance) {
+        public AtomicFallbackDecision {
+            Objects.requireNonNull(fallbackReason, "fallbackReason");
+            blockers = List.copyOf(Objects.requireNonNull(blockers, "blockers"));
+            summary = summary == null ? "" : summary;
+            recoveryGuidance = recoveryGuidance == null ? "" : recoveryGuidance;
+        }
+    }
+
+    /**
+     * Evaluates whether a launch failure satisfies every atomic fallback precondition:
+     * confirmed old-process exit, released leases, unwritten user disk, and verified
+     * compatible volume format. Any unsatisfied precondition refuses fallback, preserves
+     * user data, and supplies actionable recovery guidance.
+     */
+    public static AtomicFallbackDecision evaluateAtomicFallback(
+            AtomicFallbackPreconditions preconditions) {
+        Objects.requireNonNull(preconditions, "preconditions");
+        List<AtomicFallbackBlocker> blockers = new ArrayList<>(4);
+        if (!preconditions.oldProcessExitConfirmed()) {
+            blockers.add(AtomicFallbackBlocker.OLD_PROCESS_EXIT_UNCONFIRMED);
+        }
+        if (!preconditions.leasesReleased()) {
+            blockers.add(AtomicFallbackBlocker.LEASES_NOT_RELEASED);
+        }
+        if (!preconditions.userDiskUnwritten()) {
+            blockers.add(AtomicFallbackBlocker.USER_DISK_ALREADY_WRITTEN);
+        }
+        if (!preconditions.volumeFormatCompatible()) {
+            blockers.add(AtomicFallbackBlocker.VOLUME_FORMAT_INCOMPATIBLE);
+        }
+        if (blockers.isEmpty()) {
+            String detail = preconditions.failureDetail().isBlank()
+                    ? "启动失败且已确认旧进程退出、租约释放、用户盘未写入且格式兼容，允许原子回退至既有策略。"
+                    : "启动失败（" + preconditions.failureDetail()
+                            + "），已确认旧进程退出、租约释放、用户盘未写入且格式兼容，允许原子回退。";
+            return new AtomicFallbackDecision(
+                    true,
+                    FallbackReason.UML_LAUNCH_FAILED_ATOMIC_FALLBACK,
+                    Collections.emptyList(),
+                    true,
+                    detail,
+                    "");
+        }
+        StringBuilder guidance = new StringBuilder();
+        if (blockers.contains(AtomicFallbackBlocker.OLD_PROCESS_EXIT_UNCONFIRMED)) {
+            guidance.append("旧进程停止未确认，已保留运行状态与根盘数据，禁止自动回退或重复启动；请检查运行日志确认进程退出后再操作，必要时先导出备份。");
+        }
+        if (blockers.contains(AtomicFallbackBlocker.LEASES_NOT_RELEASED)) {
+            if (guidance.length() > 0) guidance.append(' ');
+            guidance.append("根盘、内存或端口租约尚未完全释放，已保留现场并拒绝回退；请等待资源回收完成后重试。");
+        }
+        if (blockers.contains(AtomicFallbackBlocker.USER_DISK_ALREADY_WRITTEN)) {
+            if (guidance.length() > 0) guidance.append(' ');
+            guidance.append("用户盘已写入数据，已拒绝跨策略回退并保留原盘与元数据；请继续使用已记录策略启动，或通过冷备份导出保护用户数据。");
+        }
+        if (blockers.contains(AtomicFallbackBlocker.VOLUME_FORMAT_INCOMPATIBLE)) {
+            if (guidance.length() > 0) guidance.append(' ');
+            guidance.append("当前根盘格式或发行版根盘尚未验证与回退策略兼容，已保留原盘；请使用原策略或导出备份后通过显式迁移入口处理。");
+        }
+        String summary = "原子回退被拒绝（阻断项：" + blockers + "）";
+        return new AtomicFallbackDecision(
+                false,
+                FallbackReason.NONE,
+                blockers,
+                true,
+                summary,
+                guidance.toString());
     }
 
     /** Ephemeral per-launch diagnostic snapshot; never persisted into instance metadata. */
@@ -394,6 +505,7 @@ public final class ExecutionPolicyContract {
         private final FallbackReason fallbackReason;
         private final String fallbackDetail;
         private final long evaluatedAtMillis;
+        private final String recoveryGuidance;
 
         public LaunchDiagnostic(
                 InstanceExecutionIdentity persistedIdentity,
@@ -402,12 +514,31 @@ public final class ExecutionPolicyContract {
                 FallbackReason fallbackReason,
                 String fallbackDetail,
                 long evaluatedAtMillis) {
+            this(
+                    persistedIdentity,
+                    resolvedStrategy,
+                    preflightVerdict,
+                    fallbackReason,
+                    fallbackDetail,
+                    evaluatedAtMillis,
+                    null);
+        }
+
+        public LaunchDiagnostic(
+                InstanceExecutionIdentity persistedIdentity,
+                FullLinuxContract.ExecutionStrategy resolvedStrategy,
+                PreflightVerdict preflightVerdict,
+                FallbackReason fallbackReason,
+                String fallbackDetail,
+                long evaluatedAtMillis,
+                String recoveryGuidance) {
             this.persistedIdentity = Objects.requireNonNull(persistedIdentity, "persistedIdentity");
             this.resolvedStrategy = resolvedStrategy;
             this.preflightVerdict = Objects.requireNonNull(preflightVerdict, "preflightVerdict");
             this.fallbackReason = Objects.requireNonNull(fallbackReason, "fallbackReason");
             this.fallbackDetail = fallbackDetail;
             this.evaluatedAtMillis = evaluatedAtMillis;
+            this.recoveryGuidance = recoveryGuidance;
         }
 
         public InstanceExecutionIdentity persistedIdentity() {
@@ -434,6 +565,10 @@ public final class ExecutionPolicyContract {
             return evaluatedAtMillis;
         }
 
+        public String recoveryGuidance() {
+            return recoveryGuidance;
+        }
+
         public LaunchDiagnostic withFallback(
                 FullLinuxContract.ExecutionStrategy nextResolvedStrategy,
                 FallbackReason reason,
@@ -447,7 +582,19 @@ public final class ExecutionPolicyContract {
                             preflightVerdict.detail()),
                     Objects.requireNonNull(reason, "reason"),
                     detail,
-                    evaluatedAtMillis);
+                    evaluatedAtMillis,
+                    recoveryGuidance);
+        }
+
+        public LaunchDiagnostic withRecoveryGuidance(String guidance) {
+            return new LaunchDiagnostic(
+                    persistedIdentity,
+                    resolvedStrategy,
+                    preflightVerdict,
+                    fallbackReason,
+                    fallbackDetail,
+                    evaluatedAtMillis,
+                    guidance);
         }
 
         @Override
@@ -459,7 +606,8 @@ public final class ExecutionPolicyContract {
                     && resolvedStrategy == that.resolvedStrategy
                     && Objects.equals(preflightVerdict, that.preflightVerdict)
                     && fallbackReason == that.fallbackReason
-                    && Objects.equals(fallbackDetail, that.fallbackDetail);
+                    && Objects.equals(fallbackDetail, that.fallbackDetail)
+                    && Objects.equals(recoveryGuidance, that.recoveryGuidance);
         }
 
         @Override
@@ -470,7 +618,8 @@ public final class ExecutionPolicyContract {
                     preflightVerdict,
                     fallbackReason,
                     fallbackDetail,
-                    evaluatedAtMillis);
+                    evaluatedAtMillis,
+                    recoveryGuidance);
         }
     }
 

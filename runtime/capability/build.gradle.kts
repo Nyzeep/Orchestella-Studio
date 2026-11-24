@@ -42,6 +42,11 @@ tasks.register<JavaExec>("gpuCapabilityEvaluatorTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.capability.GpuCapabilityEvaluatorTest")
 }
 
+tasks.register<JavaExec>("executionStrategyAdmissionEvaluatorTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.capability.ExecutionStrategyAdmissionEvaluatorTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "deviceCapabilityEvaluatorTest",
@@ -50,5 +55,6 @@ tasks.named("check") {
         "shizukuClientControllerTest",
         "networkCapabilityDeclarationTest",
         "gpuCapabilityEvaluatorTest",
+        "executionStrategyAdmissionEvaluatorTest",
     )
 }

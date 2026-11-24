@@ -130,6 +130,10 @@ class InstanceDetailActivity : AppCompatActivity() {
     private lateinit var tvDetailSshCmd: TextView
     private lateinit var btnDetailSshCopy: MaterialButton
     private lateinit var btnDetailSshManage: MaterialButton
+    private lateinit var tvDetailStrategyLine: TextView
+    private lateinit var tvDetailCapabilityLine: TextView
+    private lateinit var tvDetailVolumeLine: TextView
+    private lateinit var tvDetailDiagnosticLine: TextView
 
     // Slider mutable state
     private var selectedVcpu: Int = 2
@@ -251,9 +255,14 @@ class InstanceDetailActivity : AppCompatActivity() {
             runningGuestIpProvider = { id ->
                 when (ExecutionSessionRegistry.get(id)) {
                     is QemuInstanceLauncher.Session -> NetworkGatewayDaemon.GUEST_IP
+                    is UmlInstanceLauncher.Session ->
+                        io.github.nyzeep.orchestella.runtime.engineuml.UmlNetworkProfile.GUEST_ADDRESS
                     else -> null
                 }
-            }
+            },
+            activeCapabilityMatrixProvider = { id ->
+                ExecutionSessionRegistry.get(id)?.capabilityMatrix()
+            },
         )
 
         viewModel.onStateChanged = { state ->
@@ -372,6 +381,10 @@ class InstanceDetailActivity : AppCompatActivity() {
         tvDetailSshCmd = findViewById(R.id.tv_detail_ssh_cmd)
         btnDetailSshCopy = findViewById(R.id.btn_detail_ssh_copy)
         btnDetailSshManage = findViewById(R.id.btn_detail_ssh_manage)
+        tvDetailStrategyLine = findViewById(R.id.tv_detail_strategy_line)
+        tvDetailCapabilityLine = findViewById(R.id.tv_detail_capability_line)
+        tvDetailVolumeLine = findViewById(R.id.tv_detail_volume_line)
+        tvDetailDiagnosticLine = findViewById(R.id.tv_detail_diagnostic_line)
     }
 
     private fun initHardwareSliders(state: InstanceDetailUiState) {
@@ -472,9 +485,13 @@ class InstanceDetailActivity : AppCompatActivity() {
         ipAddressText.text = "IP: ${state.ipAddress}"
 
         btnTerminal.isEnabled = state.canOpenTerminal && hasSession && !busy
-        btnDesktop.isEnabled = hasSession && !busy
-        btnDesktop.text = "桌面与开发工具"
-        btnDesktop.contentDescription = "查看当前实例的可选功能安装、启动与真实状态"
+        btnDesktop.isEnabled = hasSession && !busy && state.allowsDesktopEntry
+        btnDesktop.text = getString(
+            if (state.allowsDesktopEntry) R.string.detail_btn_desktop_tools else R.string.detail_btn_cli_only,
+        )
+        btnDesktop.contentDescription = getString(
+            if (state.allowsDesktopEntry) R.string.detail_cd_desktop_tools else R.string.detail_cd_no_graphics,
+        )
         btnPower.isEnabled = !busy && (hasSession || (state.canPowerOn && !launching))
         if (powerOperationPending.get()) {
             statusBadge.text = "正在等待虚拟机退出"
@@ -523,6 +540,19 @@ class InstanceDetailActivity : AppCompatActivity() {
         btnDangerDelete.isEnabled = state.canDelete && inactive
         btnDangerReset.isEnabled = state.canResetState && inactive
         renderDeleteGuardHint(state)
+
+        tvDetailStrategyLine.text = getString(R.string.detail_strategy_line, state.executionStrategyLabel)
+        tvDetailCapabilityLine.text = getString(
+            R.string.detail_capability_line,
+            "${state.capabilitySummary}（${state.unsupportedCapabilitiesSummary}）",
+        )
+        tvDetailVolumeLine.text = getString(R.string.detail_root_volume_line, state.rootVolumeFormatLabel)
+        if (!state.recoveryGuidance.isNullOrBlank()) {
+            tvDetailDiagnosticLine.text = getString(R.string.detail_diagnostic_line, state.recoveryGuidance)
+            tvDetailDiagnosticLine.visibility = View.VISIBLE
+        } else {
+            tvDetailDiagnosticLine.visibility = View.GONE
+        }
 
         renderSshConnection(state)
     }

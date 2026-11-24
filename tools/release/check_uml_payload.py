@@ -55,6 +55,11 @@ payload at the artifact level, from the APK alone:
     `libuml_*` entry must be declared. Missing notice, missing entries or
     undeclared entries all fail the gate. The declaration set is read from
     the shipped notice text; this script pins no notice content of its own.
+    W3-05 (R-05, 2026-11-24) surfaces any unresolved `OPEN:` markers in
+    `assets/NOTICE.UML` as informational `UML_NOTICE_OPEN_ITEM` lines during
+    `--fullpkg`, and adds `--require-release-attribution-closed` to fail
+    closed whenever any `OPEN:` item remains or `assets/UML-BUILD-INPUTS` /
+    `assets/UML-GPL-SOURCES.md` is missing from the APK.
 
 Standard library only; no network.
 """
@@ -112,6 +117,14 @@ QEMU_ENTRY_FOR_KEY: dict[str, str] = {
 # app/src/main/assets/NOTICE.UML at assets/NOTICE.UML, and the fullpkg smoke
 # reconciles its declarations against the shipped entries.
 NOTICE_UML_ENTRY = "assets/NOTICE.UML"
+# W3-05 (R-05): UML corresponding-source companion records required when
+# --require-release-attribution-closed is asserted on a release fullpkg APK.
+UML_BUILD_INPUTS_ENTRY = "assets/UML-BUILD-INPUTS"
+UML_GPL_SOURCES_ENTRY = "assets/UML-GPL-SOURCES.md"
+UML_RELEASE_ATTRIBUTION_ENTRIES: tuple[str, ...] = (
+    UML_BUILD_INPUTS_ENTRY,
+    UML_GPL_SOURCES_ENTRY,
+)
 # Shipped UML native libraries are exactly the APK entries matching
 # lib/<abi>/libuml_*; every one of them must be declared by the notice.
 _APK_UML_LIB_ENTRY = re.compile(r"lib/[^/]+/libuml_")
@@ -121,6 +134,9 @@ _APK_UML_LIB_ENTRY = re.compile(r"lib/[^/]+/libuml_")
 _NOTICE_LIB_PATH_TOKEN = re.compile(r"lib/[^/\s]+/libuml_[A-Za-z0-9._+-]+\.so")
 _NOTICE_LIB_NAME_TOKEN = re.compile(r"libuml_[A-Za-z0-9._+-]+\.so")
 _NOTICE_TAR_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\.tar\.gz")
+_NOTICE_OPEN_MARKER = re.compile(r"\bOPEN:")
+_NOTICE_LIST_ITEM_RE = re.compile(r"^\s*-\s+")
+_NOTICE_HEADING_RULE_RE = re.compile(r"^\s*[-=]{3,}\s*$")
 
 
 @dataclass(frozen=True)
@@ -141,6 +157,7 @@ class Result:
     problems: list[Problem] = field(default_factory=list)
     verified: list[Verified] = field(default_factory=list)
     reason: str = ""
+    notice_open_items: list[str] = field(default_factory=list)
 
 
 def parse_manifest(text: str, manifest_entry: str) -> tuple[dict[str, str], list[Problem]]:
@@ -382,10 +399,105 @@ def check_notice_uml_consistency(archive: zipfile.ZipFile) -> list[Problem]:
     return problems
 
 
-def check_apk(apk: Path, require_payload: bool, fullpkg: bool) -> Result:
+def find_notice_uml_open_items(text: str) -> list[str]:
+    """Extract unresolved `OPEN:` items from NOTICE.UML text.
+
+    Items may begin mid-paragraph and wrap across subsequent lines until a
+    blank line, a new list item, a section underline, or another `OPEN:`
+    marker. Each returned item is normalized to single-line whitespace and
+    retains its `OPEN:` prefix.
+    """
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or _NOTICE_HEADING_RULE_RE.match(raw_line):
+            if current:
+                blocks.append(current)
+                current = []
+            continue
+        if _NOTICE_LIST_ITEM_RE.match(raw_line) and current:
+            blocks.append(current)
+            current = [stripped]
+            continue
+        current.append(stripped)
+    if current:
+        blocks.append(current)
+
+    items: list[str] = []
+    for block in blocks:
+        paragraph = " ".join(block)
+        matches = list(_NOTICE_OPEN_MARKER.finditer(paragraph))
+        for index, match in enumerate(matches):
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(paragraph)
+            items.append(paragraph[match.start():end].strip())
+    return items
+
+
+def _read_notice_uml_open_items(archive: zipfile.ZipFile) -> list[str]:
+    if NOTICE_UML_ENTRY not in archive.namelist():
+        return []
+    try:
+        text = archive.read(NOTICE_UML_ENTRY).decode("utf-8")
+    except UnicodeDecodeError:
+        return []
+    return find_notice_uml_open_items(text)
+
+
+def check_release_attribution_closed(
+    archive: zipfile.ZipFile,
+    notice_open_items: Sequence[str],
+    *,
+    notice_already_checked: bool = True,
+) -> list[Problem]:
+    """W3-05 (R-05): fail closed until UML release attribution is complete.
+
+    Requires assets/UML-BUILD-INPUTS and assets/UML-GPL-SOURCES.md to ship
+    non-empty in the APK, and refuses any remaining `OPEN:` item in
+    assets/NOTICE.UML.
+    """
+    problems: list[Problem] = []
+    names = set(archive.namelist())
+    if not notice_already_checked:
+        if NOTICE_UML_ENTRY not in names:
+            problems.append(Problem(
+                NOTICE_UML_ENTRY,
+                "required for --require-release-attribution-closed but missing from the APK",
+            ))
+        else:
+            try:
+                archive.read(NOTICE_UML_ENTRY).decode("utf-8")
+            except UnicodeDecodeError as exc:
+                problems.append(Problem(NOTICE_UML_ENTRY, f"unreadable notice text: {exc}"))
+    for entry in UML_RELEASE_ATTRIBUTION_ENTRIES:
+        if entry not in names:
+            problems.append(Problem(
+                entry,
+                "required for --require-release-attribution-closed but missing from the APK",
+            ))
+        elif not archive.read(entry).strip():
+            problems.append(Problem(
+                entry,
+                "required for --require-release-attribution-closed but empty in the APK",
+            ))
+    for item in notice_open_items:
+        problems.append(Problem(
+            NOTICE_UML_ENTRY,
+            f"unresolved attribution open item blocks --require-release-attribution-closed: {item}",
+        ))
+    return problems
+
+
+def check_apk(
+    apk: Path,
+    require_payload: bool,
+    fullpkg: bool,
+    require_attribution_closed: bool = False,
+) -> Result:
     """The artifact-level verdict: ok / skip / fail (error is the caller's)."""
     problems: list[Problem] = []
     verified: list[Verified] = []
+    notice_open_items: list[str] = []
     with zipfile.ZipFile(apk) as archive:
         fast_problems, fast_verified, fast_present = reconcile_manifest(
             archive, FAST_MANIFEST_ENTRY, REQUIRED_FAST_NAMES)
@@ -431,6 +543,16 @@ def check_apk(apk: Path, require_payload: bool, fullpkg: bool) -> Result:
             # lane in both directions (declared-but-missing and
             # shipped-but-undeclared both fail; missing notice fails too).
             problems.extend(check_notice_uml_consistency(archive))
+            # W3-05 (R-05): always surface unresolved OPEN: markers in fullpkg
+            # output; fail closed when --require-release-attribution-closed is set.
+            notice_open_items = _read_notice_uml_open_items(archive)
+            if require_attribution_closed:
+                problems.extend(check_release_attribution_closed(
+                    archive, notice_open_items, notice_already_checked=True))
+        elif require_attribution_closed:
+            notice_open_items = _read_notice_uml_open_items(archive)
+            problems.extend(check_release_attribution_closed(
+                archive, notice_open_items, notice_already_checked=False))
 
     if require_payload or fullpkg:
         # Single-package discipline (review fix, 2026-11-14): BOTH UML
@@ -456,8 +578,9 @@ def check_apk(apk: Path, require_payload: bool, fullpkg: bool) -> Result:
                     + "; were -Porchestella.uml.fastProfileDir and "
                     "-Porchestella.uml.netHelperDir actually passed?)",
                 )],
+                notice_open_items=notice_open_items,
             )
-    if not fast_present and not net_present:
+    if not fast_present and not net_present and not require_attribution_closed:
         return Result(
             status="skip",
             reason=(
@@ -470,10 +593,17 @@ def check_apk(apk: Path, require_payload: bool, fullpkg: bool) -> Result:
         )
 
     if problems:
-        return Result(status="fail", problems=problems, verified=verified)
-    if fullpkg:
-        return Result(status="ok", verified=verified)
-    return Result(status="ok", verified=verified)
+        return Result(
+            status="fail",
+            problems=problems,
+            verified=verified,
+            notice_open_items=notice_open_items,
+        )
+    return Result(
+        status="ok",
+        verified=verified,
+        notice_open_items=notice_open_items,
+    )
 
 
 def _write_zip(path: Path, entries: dict[str, bytes]) -> None:
@@ -561,6 +691,8 @@ def _fullpkg_entries(kernel, stub, rootfs, umnet, passt, llvm, cppshared, clang,
         "assets/Image": b"qemu-image-bytes",
         "initramfs.cpio.gz": b"qemu-initramfs-bytes",
         NOTICE_UML_ENTRY: _SELFTEST_NOTICE_UML,
+        UML_BUILD_INPUTS_ENTRY: b"schema=uml-build-inputs-1\n",
+        UML_GPL_SOURCES_ENTRY: b"# UML GPL Sources\n",
         "assets/QEMU-BUILD-INPUTS": b"qemu-build-inputs",
         "assets/QEMU-GPL-SOURCES.md": b"qemu-gpl-sources",
         "assets/LICENSE.GPL-2.0": b"qemu-license",
@@ -838,6 +970,53 @@ def run_selftest() -> int:
             ["--apk", apk("fullpkg_nonotice.apk", no_notice_entries), "--fullpkg"],
             "1", "FULLPKG_GATE_FAIL",
         ))
+        # Fullpkg W3-05 (R-05) attribution closure cases:
+        # 1. Informational open item in plain --fullpkg passes and logs UML_NOTICE_OPEN_ITEM.
+        open_notice_entries = _fullpkg_entries(kernel, stub, rootfs, umnet, passt, llvm,
+                                               cppshared, clang, payload, compiler, qemu_lib)
+        open_notice_entries[NOTICE_UML_ENTRY] = (
+            _SELFTEST_NOTICE_UML + b"OPEN: pending release source packaging.\n"
+        )
+        cases.append((
+            "ok-fullpkg-open-item-info",
+            ["--apk", apk("fullpkg_open.apk", open_notice_entries), "--fullpkg"],
+            "0", "UML_NOTICE_OPEN_ITEM",
+        ))
+        # 2. Closed notice + companion records passes --require-release-attribution-closed.
+        cases.append((
+            "ok-fullpkg-attribution-closed",
+            ["--apk", apk("fullpkg_closed.apk", _fullpkg_entries(
+                kernel, stub, rootfs, umnet, passt, llvm, cppshared, clang,
+                payload, compiler, qemu_lib)),
+             "--fullpkg", "--require-release-attribution-closed"],
+            "0", "FULLPKG_GATE_OK",
+        ))
+        # 3. Any OPEN: marker in NOTICE.UML fails --require-release-attribution-closed.
+        cases.append((
+            "fail-fullpkg-attribution-open-item",
+            ["--apk", apk("fullpkg_open_fail.apk", open_notice_entries),
+             "--fullpkg", "--require-release-attribution-closed"],
+            "1", "FULLPKG_GATE_FAIL",
+        ))
+        # 4. Missing UML-BUILD-INPUTS or UML-GPL-SOURCES.md fails --require-release-attribution-closed.
+        no_uml_inputs = _fullpkg_entries(kernel, stub, rootfs, umnet, passt, llvm,
+                                         cppshared, clang, payload, compiler, qemu_lib)
+        del no_uml_inputs[UML_BUILD_INPUTS_ENTRY]
+        cases.append((
+            "fail-fullpkg-attribution-no-build-inputs",
+            ["--apk", apk("fullpkg_noumlinputs.apk", no_uml_inputs),
+             "--fullpkg", "--require-release-attribution-closed"],
+            "1", "FULLPKG_GATE_FAIL",
+        ))
+        no_uml_sources = _fullpkg_entries(kernel, stub, rootfs, umnet, passt, llvm,
+                                          cppshared, clang, payload, compiler, qemu_lib)
+        del no_uml_sources[UML_GPL_SOURCES_ENTRY]
+        cases.append((
+            "fail-fullpkg-attribution-no-gpl-sources",
+            ["--apk", apk("fullpkg_noumlsources.apk", no_uml_sources),
+             "--fullpkg", "--require-release-attribution-closed"],
+            "1", "FULLPKG_GATE_FAIL",
+        ))
         # Fullpkg require shape: neither manifest fails even without --fullpkg.
         cases.append((
             "fail-fullpkg-no-manifests",
@@ -899,6 +1078,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                              "embedded rootfs tar, the pVM compiler manifest pins, the "
                              "QEMU manifest and the NOTICE.UML declaration "
                              "reconciliation, all in one pass (implies --require-payload)")
+    parser.add_argument("--require-release-attribution-closed", action="store_true",
+                        help="when enabled alongside --fullpkg, fail closed if "
+                             "assets/NOTICE.UML still contains any OPEN: marker or if "
+                             "assets/UML-BUILD-INPUTS / assets/UML-GPL-SOURCES.md is "
+                             "missing from the APK")
     parser.add_argument("--json", type=Path, help="write a machine-readable result")
     parser.add_argument("--selftest", action="store_true",
                         help="run the built-in synthetic fixture cases and exit")
@@ -908,6 +1092,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_selftest()
     if args.apk is None:
         parser.error("--apk is required (or use --selftest)")
+    if args.require_release_attribution_closed and not args.fullpkg:
+        parser.error("--require-release-attribution-closed requires --fullpkg")
     require_payload = args.require_payload or args.fullpkg
 
     if not args.apk.is_file():
@@ -915,7 +1101,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     try:
-        result = check_apk(args.apk, require_payload, args.fullpkg)
+        result = check_apk(
+            args.apk,
+            require_payload,
+            args.fullpkg,
+            require_attribution_closed=args.require_release_attribution_closed,
+        )
     except zipfile.BadZipFile as exc:
         result = Result(status="error", reason=f"not a zip/apk: {exc}")
         print(f"UML_PAYLOAD_GATE_ERROR {result.reason}", file=sys.stderr)
@@ -926,6 +1117,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"UML_PAYLOAD_GATE_FAIL {problem.entry}: {problem.reason}")
     for item in result.verified:
         print(f"UML_PAYLOAD_GATE_VERIFIED {item.entry}: sha256 {item.digest}")
+    for open_item in result.notice_open_items:
+        print(f"UML_NOTICE_OPEN_ITEM {NOTICE_UML_ENTRY}: {open_item}")
 
     if result.status == "skip":
         print(f"UML_PAYLOAD_GATE_SKIP {result.reason}")
@@ -974,10 +1167,12 @@ def _write_json(path: Path | None, args: argparse.Namespace, result: Result) -> 
                 "apk": str(args.apk) if args.apk else None,
                 "require_payload": args.require_payload,
                 "fullpkg": args.fullpkg,
+                "require_release_attribution_closed": args.require_release_attribution_closed,
                 "status": result.status,
                 "reason": result.reason,
                 "verified": [{"entry": v.entry, "sha256": v.digest} for v in result.verified],
                 "problems": [{"entry": p.entry, "reason": p.reason} for p in result.problems],
+                "notice_open_items": list(result.notice_open_items),
             },
             ensure_ascii=False,
             indent=2,

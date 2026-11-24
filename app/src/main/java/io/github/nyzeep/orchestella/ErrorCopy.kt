@@ -59,6 +59,27 @@ object ErrorCopy {
             // above, which is a subclass of it).
             is java.io.InterruptedIOException, is InterruptedException -> Entry(
                 R.string.error_interrupted, CODE_INTERRUPTED, R.string.error_hint_retry)
+            is InstanceLaunchCoordinator.AtomicFallbackRefusedException -> when {
+                error.decision.blockers().contains(
+                    ExecutionPolicyContract.AtomicFallbackBlocker.OLD_PROCESS_EXIT_UNCONFIRMED,
+                ) -> Entry(
+                    R.string.error_uml_fallback_unconfirmed_stop,
+                    CODE_UML_FALLBACK_UNCONFIRMED_STOP,
+                    R.string.error_hint_uml_unconfirmed_stop,
+                )
+                error.decision.blockers().contains(
+                    ExecutionPolicyContract.AtomicFallbackBlocker.USER_DISK_ALREADY_WRITTEN,
+                ) -> Entry(
+                    R.string.error_uml_fallback_dirty_disk,
+                    CODE_UML_FALLBACK_DIRTY_DISK,
+                    R.string.error_hint_uml_dirty_disk,
+                )
+                else -> Entry(
+                    R.string.error_uml_fallback_blocked,
+                    CODE_UML_FALLBACK_BLOCKED,
+                    R.string.error_hint_export_or_upgrade,
+                )
+            }
             is java.io.IOException -> when {
                 looksLikeDiskFull(error) -> Entry(
                     R.string.error_storage_full, CODE_STORAGE_FULL, R.string.error_hint_check_storage)
@@ -100,6 +121,10 @@ object ErrorCopy {
                     R.string.error_volume_format_conflict,
                     CODE_VOLUME_FORMAT_CONFLICT,
                     R.string.error_hint_export_or_upgrade)
+                ExecutionPolicyContract.PreflightCode.DEVICE_FLOOR_UNSUPPORTED -> Entry(
+                    R.string.error_device_floor_unsupported,
+                    CODE_DEVICE_FLOOR_UNSUPPORTED,
+                    R.string.error_hint_device_floor)
                 else -> Entry(
                     R.string.error_exec_strategy_unavailable,
                     CODE_EXEC_STRATEGY_UNAVAILABLE,
@@ -155,5 +180,9 @@ object ErrorCopy {
     const val CODE_EXEC_STRATEGY_UNKNOWN = "E-EXEC-STRATEGY"
     const val CODE_VOLUME_FORMAT_CONFLICT = "E-VOL-FORMAT"
     const val CODE_EXEC_STRATEGY_UNAVAILABLE = "E-EXEC-UNAVAILABLE"
+    const val CODE_DEVICE_FLOOR_UNSUPPORTED = "E-DEVICE-FLOOR"
+    const val CODE_UML_FALLBACK_UNCONFIRMED_STOP = "E-UML-STOP-UNCONFIRMED"
+    const val CODE_UML_FALLBACK_DIRTY_DISK = "E-UML-DISK-WRITTEN"
+    const val CODE_UML_FALLBACK_BLOCKED = "E-UML-FALLBACK-BLOCKED"
     const val CODE_UNKNOWN = "E-UNKNOWN"
 }

@@ -4,13 +4,19 @@ import androidx.annotation.DrawableRes
 import io.github.nyzeep.orchestella.DistroMirrorProvisioner
 import io.github.nyzeep.orchestella.DistroResourceRequirements
 import io.github.nyzeep.orchestella.ErrorCopy
+import io.github.nyzeep.orchestella.ExecutionStrategyPresentation
 import io.github.nyzeep.orchestella.HostHardwareProfile
 import io.github.nyzeep.orchestella.InstanceCreationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
+import io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluator
+import io.github.nyzeep.orchestella.runtime.capability.ExecutionStrategyAdmissionEvaluator
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchAdmission
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroCapabilityCatalog
 
 /**
  * UI-12 步骤 0：四步创建向导的**只读投影**。
@@ -40,12 +46,14 @@ data class WizardUiState(
     val shouldConfirmExit: Boolean,
     /** 键入防抖预检未落（旧按钮禁用语义）；上一次判定仍留在屏上。 */
     val storageCheckPending: Boolean,
+    /** 设备低于 Full Linux 最低支持地板时的显式拒绝说明（W3-05 / R-05）。 */
+    val deviceFloorRefusal: String? = null,
 ) {
 
     /**
      * 每步的通行门（旧 Activity 的按钮 isEnabled 语义）：
      * 存储步要求预检通过（防抖检查未落时门保持关闭），硬件步要求分配安全，
-     * 其余步无额外门槛；创建进行中一律阻断。
+     * 其余步无额外门槛；创建进行中或设备低于支持地板一律阻断。
      */
     val canProceed: Boolean
         get() = when (step) {
@@ -53,7 +61,7 @@ data class WizardUiState(
                 storage.gate == StorageGate.Ready && !storageCheckPending
             InstanceCreationWizardModel.CreationStep.STEP_NETWORK_MIRROR -> true
             InstanceCreationWizardModel.CreationStep.STEP_HARDWARE -> hardware.badge !is HardwareBadge.Error
-            InstanceCreationWizardModel.CreationStep.STEP_STARTUP_TASKS -> true
+            InstanceCreationWizardModel.CreationStep.STEP_STARTUP_TASKS -> deviceFloorRefusal == null
         } && !isCreating
 
     companion object {
@@ -70,7 +78,8 @@ data class WizardUiState(
         ): WizardUiState {
             val storageUi = storageUi(model, facts)
             val avfUi = avfUi(model, facts)
-            val hardwareUi = hardwareUi(model, facts, avfUi)
+            val strategyProjection = executionStrategyProjection(model, facts, avfUi)
+            val hardwareUi = hardwareUi(model, facts, avfUi, strategyProjection.strategyUi)
             return WizardUiState(
                 step = model.currentStep,
                 stepIndex = model.stepIndex,
@@ -85,6 +94,7 @@ data class WizardUiState(
                 canGoBack = model.canGoBack(),
                 shouldConfirmExit = model.shouldConfirmExit(),
                 storageCheckPending = facts.storageCheckPending,
+                deviceFloorRefusal = strategyProjection.deviceFloorRefusal,
             )
         }
 
@@ -221,6 +231,7 @@ data class WizardUiState(
             model: InstanceCreationWizardModel,
             facts: WizardFacts,
             avfUi: AvfCardUi,
+            executionStrategy: ExecutionStrategyUi?,
         ): HardwareUi {
             val ram = ramRange(model)
             val manifest = manifestOrNull(model)
@@ -241,8 +252,102 @@ data class WizardUiState(
                 cpuAvfNotice = cpuAvfNotice,
                 badge = badge,
                 needsAuthEntry = avfUi.needsAuthEntry,
+                executionStrategy = executionStrategy,
             )
         }
+
+        private data class StrategyProjection(
+            val deviceFloorRefusal: String?,
+            val strategyUi: ExecutionStrategyUi?,
+        )
+
+        private fun executionStrategyProjection(
+            model: InstanceCreationWizardModel,
+            facts: WizardFacts,
+            avfUi: AvfCardUi,
+        ): StrategyProjection {
+            if (facts.deviceFloor == null && facts.promotionEvidence == null && facts.umlPreflight == null) {
+                return StrategyProjection(deviceFloorRefusal = null, strategyUi = null)
+            }
+            val floor = facts.deviceFloor ?: DeviceCapabilityEvaluator.evaluate(
+                DeviceCapabilityEvaluator.DeviceProfile(
+                    DeviceCapabilityEvaluator.MINIMUM_SDK,
+                    listOf("arm64-v8a"),
+                    DeviceCapabilityEvaluator.MINIMUM_MEMORY_BYTES,
+                    false,
+                ),
+            )
+            val existingStrategy = if (
+                avfUi.severity == AvfSeverity.Green &&
+                AvfLaunchAdmission.cpuSupport(model.hardwareConfig.cpuCores()) ==
+                AvfLaunchAdmission.CpuSupport.SUPPORTED
+            ) {
+                FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION
+            } else {
+                FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION
+            }
+            val distroVerdict = UmlDistroCapabilityCatalog.evaluate(
+                model.distroId,
+                UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64,
+            )
+            val requiresSystemd = facts.requiresSystemdOverride
+                ?: (model.distroId.lowercase() in SYSTEMD_DISTROS)
+            val requiresGpu = facts.requiresGpuOverride ?: false
+            val workload = ExecutionStrategyAdmissionEvaluator.WorkloadRequirements(
+                model.distroId,
+                distroVerdict.isCreatable(),
+                requiresSystemd,
+                model.podmanSelected,
+                requiresGpu,
+                model.desktopSelected,
+                model.mountHostSharedDirectory,
+                model.editorSelected,
+            )
+            val verdict = ExecutionStrategyAdmissionEvaluator.evaluate(
+                floor,
+                existingStrategy,
+                facts.promotionEvidence,
+                facts.umlPreflight,
+                workload,
+                facts.allowConditionalRecommendation,
+                facts.recommendationRevoked,
+            )
+            val selected = if (model.selectedExecutionStrategy != null &&
+                verdict.selectableStrategies().contains(model.selectedExecutionStrategy)
+            ) {
+                model.selectedExecutionStrategy!!
+            } else {
+                verdict.defaultStrategy()
+            }
+            val activeMatrix = if (selected == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL) {
+                verdict.umlCapabilityMatrix()
+            } else {
+                verdict.existingStrategyCapabilities()
+            }
+            val strategyUi = ExecutionStrategyUi(
+                offerMode = verdict.offerMode(),
+                defaultStrategy = verdict.defaultStrategy(),
+                selectedStrategy = selected,
+                selectableStrategies = verdict.selectableStrategies(),
+                activeCapabilityMatrix = activeMatrix,
+                umlCapabilityMatrix = verdict.umlCapabilityMatrix(),
+                preflightCode = verdict.preflightVerdict().code(),
+                fallbackReason = verdict.fallbackReason(),
+                notice = verdict.userVisibleNotice(),
+                unsupportedUmlCapabilities = ExecutionStrategyPresentation.unverifiedCapabilities(
+                    verdict.umlCapabilityMatrix(),
+                ),
+                shouldShowCard = true,
+            )
+            return StrategyProjection(
+                deviceFloorRefusal = if (verdict.canCreateInstance()) null else verdict.userVisibleNotice(),
+                strategyUi = strategyUi,
+            )
+        }
+
+        private val SYSTEMD_DISTROS = setOf(
+            "ubuntu", "debian", "fedora", "arch", "opensuse", "almalinux", "rocky",
+        )
 
         /**
          * 硬件徽标 = 旧 hardwareValidationMessage 的三段拒绝（清单缺失 → 最低
@@ -462,6 +567,14 @@ data class WizardFacts(
     /** 控制器持有的活相位；null 表示无活工作（恢复出 creating → KeptRunning）。 */
     val creationPhase: CreationPhase? = null,
     val creationStatus: CreationStatusFacts? = null,
+    /** W3-05 (R-05) 设备支持地板、独立 UML 预检与准入门禁证据（缺席时隐藏新卡，保持既有预览截图零漂移）。 */
+    val deviceFloor: DeviceCapabilityEvaluator.Assessment? = null,
+    val umlPreflight: ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight? = null,
+    val promotionEvidence: ExecutionStrategyAdmissionEvaluator.PromotionEvidence? = null,
+    val allowConditionalRecommendation: Boolean = false,
+    val recommendationRevoked: Boolean = false,
+    val requiresSystemdOverride: Boolean? = null,
+    val requiresGpuOverride: Boolean? = null,
 )
 
 data class StorageUi(
@@ -503,7 +616,33 @@ data class HardwareUi(
     val badge: HardwareBadge,
     /** AVF 尚未授权时的「获取授权指引」入口可见性。 */
     val needsAuthEntry: Boolean,
+    /** W3-05 (R-05) 执行策略准入与能力矩阵只读投影；缺席时不在硬件步渲染。 */
+    val executionStrategy: ExecutionStrategyUi? = null,
 )
+
+/**
+ * 新建实例向导硬件步的执行策略与能力矩阵投影（W3-05 / R-05）。
+ * 策略与能力文案单源复用 [FullLinuxContract.CapabilityMatrix]。
+ */
+data class ExecutionStrategyUi(
+    val offerMode: ExecutionStrategyAdmissionEvaluator.OfferMode,
+    val defaultStrategy: FullLinuxContract.ExecutionStrategy,
+    val selectedStrategy: FullLinuxContract.ExecutionStrategy,
+    val selectableStrategies: List<FullLinuxContract.ExecutionStrategy>,
+    val activeCapabilityMatrix: FullLinuxContract.CapabilityMatrix,
+    val umlCapabilityMatrix: FullLinuxContract.CapabilityMatrix,
+    val preflightCode: ExecutionPolicyContract.PreflightCode,
+    val fallbackReason: ExecutionPolicyContract.FallbackReason,
+    val notice: String,
+    val unsupportedUmlCapabilities: List<String>,
+    val shouldShowCard: Boolean,
+) {
+    val activeStrategyBadge: String
+        get() = activeCapabilityMatrix.performanceBadge()
+
+    val umlSelectable: Boolean
+        get() = selectableStrategies.contains(FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL)
+}
 
 data class StartupUi(
     val username: String,

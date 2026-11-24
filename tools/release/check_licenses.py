@@ -31,6 +31,9 @@ REQUIRED_FILES = (
     # Single-package round (2026-11-14): the UML engine ships in the main APK,
     # so its notice ships with it (the formalized NOTICE.UML asset).
     "app/src/main/assets/NOTICE.UML",
+    # W3-05 (R-05): UML corresponding-source manifest and build-input pin record.
+    "app/src/main/assets/UML-BUILD-INPUTS",
+    "app/src/main/assets/UML-GPL-SOURCES.md",
 )
 
 REFERENCE_DOCS = (
@@ -38,6 +41,8 @@ REFERENCE_DOCS = (
     "app/src/main/assets/NOTICE.GUEST-RUNTIME",
     "app/src/main/assets/NOTICE.PHASE5",
     "app/src/main/assets/NOTICE.UML",
+    "app/src/main/assets/UML-BUILD-INPUTS",
+    "app/src/main/assets/UML-GPL-SOURCES.md",
     "app/src/main/assets/QEMU-GPL-SOURCES.md",
     "guest-assets/GPL-SOURCES.md",
     "guest-assets/SOURCE-OFFER.txt",
@@ -46,8 +51,14 @@ REFERENCE_DOCS = (
 )
 
 REFERENCE_RE = re.compile(
-    r"(?<![\w/.\-])((?:app/src/main/assets|guest-assets|tools|docs)/[A-Za-z0-9._/\-]+)"
+    r"(?<![\w/.\-])((?:app/src/main/(?:assets|cpp|java)|guest-assets|tools|docs|research)/[A-Za-z0-9._/\-]+)"
 )
+# Internal ADR retired from the public tree in commit 9bef053a; its text stays
+# in git history while legacy QEMU/Phase-5/guest-runtime records still cite the
+# historical path. Every other cited repository path must exist in the checkout.
+RETIRED_HISTORICAL_REFS = frozenset({
+    "docs/adr/0014-licensing.md",
+})
 MUSL_MENTION_RE = re.compile(r"\bmusl\s+(\d+\.\d+\.\d+)(?:-r(\d+))?", re.IGNORECASE)
 VERSION_RE = re.compile(r"^(\d+\.\d+\.\d+)(?:-r(\d+))?$")
 
@@ -61,6 +72,9 @@ MANIFEST_REQUIRED_BASENAMES = (
     "NOTICE.GUEST-RUNTIME",
     # Single-package round (2026-11-14): the UML notice rides the bundle too.
     "NOTICE.UML",
+    # W3-05 (R-05): UML build inputs and corresponding-source manifest.
+    "UML-BUILD-INPUTS",
+    "UML-GPL-SOURCES.md",
 )
 
 
@@ -300,6 +314,8 @@ def check_references(checker: Checker) -> None:
         if not checker.exists(rel):
             continue
         for reference in sorted(extract_references(checker.read(rel))):
+            if reference in RETIRED_HISTORICAL_REFS:
+                continue
             if not checker.exists(reference):
                 missing.setdefault(rel, []).append(reference)
     detail = "; ".join(

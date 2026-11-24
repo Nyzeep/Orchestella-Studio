@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.ui.screens.wizard
 
+import android.app.ActivityManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -30,11 +31,18 @@ import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.MirrorSpeedTester
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.SettingsManager
+import io.github.nyzeep.orchestella.StandaloneUmlPreflightProbe
+import io.github.nyzeep.orchestella.UmlReleaseEvidenceCatalog
 import io.github.nyzeep.orchestella.WizardAvfDiagnostics
 import io.github.nyzeep.orchestella.WizardDraft
 import io.github.nyzeep.orchestella.WizardDraftFields
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
+import io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluator
+import io.github.nyzeep.orchestella.runtime.capability.ExecutionStrategyAdmissionEvaluator
+import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
+import io.github.nyzeep.orchestella.runtime.contract.StorageContract
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
@@ -109,6 +117,8 @@ class WizardController(
 
     private val settingsManager = SettingsManager(context)
     private val hostProfile: HostHardwareProfile = HostHardwareDetector.detect(context)
+    private val deviceFloorAssessment: DeviceCapabilityEvaluator.Assessment =
+        DeviceCapabilityEvaluator.evaluate(hostDeviceProfile())
 
     // ---------------- 事实（快照状态；下载回调线程可写） ----------------
 
@@ -121,6 +131,14 @@ class WizardController(
     private var liveCreationPhase by mutableStateOf<CreationPhase?>(null)
     private var liveCreationStatus by mutableStateOf<CreationStatusFacts?>(null)
     private var avfFacts by mutableStateOf<WizardAvfFacts?>(null)
+    private var umlPreflightFacts by mutableStateOf(
+        ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
+            ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.INCOMPLETE,
+            -1,
+            0L,
+            "独立 UML 预检尚未完成",
+        ),
+    )
     private var draftNotice by mutableStateOf<String?>(null)
 
     /** 创建门禁的身份校验结论（视图按字段渲染行内错误）。 */
@@ -160,6 +178,7 @@ class WizardController(
         refreshAvfCard()
         refreshRamSuggestion()
         probeNetwork()
+        probeStandaloneUmlPreflight()
         revalidateStorage()
         render()
     }
@@ -186,6 +205,9 @@ class WizardController(
         avf = avfFacts,
         creationPhase = liveCreationPhase,
         creationStatus = liveCreationStatus,
+        deviceFloor = deviceFloorAssessment,
+        umlPreflight = umlPreflightFacts,
+        promotionEvidence = UmlReleaseEvidenceCatalog.current(),
     )
 
     // ------------------------------------------------------------------
@@ -346,6 +368,19 @@ class WizardController(
         render()
     }
 
+    override fun selectExecutionStrategy(strategy: FullLinuxContract.ExecutionStrategy?) {
+        if (model.isCreating) return
+        if (strategy == null) {
+            model.selectExecutionStrategy(null)
+            render()
+            return
+        }
+        val selectable = state.value.hardware.executionStrategy?.selectableStrategies.orEmpty()
+        if (strategy !in selectable) return
+        model.selectExecutionStrategy(strategy)
+        render()
+    }
+
     override fun toggleAvfDetails() {
         avfDetailExpanded = !avfDetailExpanded
         render()
@@ -437,6 +472,14 @@ class WizardController(
      */
     override fun startCreation() {
         if (model.isCreating) return
+        if (!deviceFloorAssessment.canCreateFullLinuxInstance()) {
+            toast(
+                state.value.deviceFloorRefusal
+                    ?: deviceFloorAssessment.refusalReason()
+                    ?: context.getString(R.string.error_device_floor_unsupported),
+            )
+            return
+        }
         val username = model.guestUsernameDraft.trim()
         val hostname = model.guestHostnameDraft.trim()
         if (!InstanceUserConfig.isValidUsername(username)) {
@@ -629,8 +672,41 @@ class WizardController(
             context.filesDir.toPath(),
             model.requestedDiskBytes,
         )
+        val strategyUi = state.value.hardware.executionStrategy
+        val executionIdentity = if (
+            strategyUi != null &&
+            strategyUi.selectedStrategy == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL &&
+            strategyUi.umlSelectable
+        ) {
+            ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                StorageContract.RootVolumeFormat.RAW_SPARSE,
+            )
+        } else {
+            ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent()
+        }
+        val effectiveHardware = if (
+            executionIdentity.strategy().strategy() == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL
+        ) {
+            VmHardwareConfig.builder()
+                .cpuCores(model.hardwareConfig.cpuCores())
+                .ramMegabytes(model.hardwareConfig.ramMegabytes())
+                .diskCapacityBytes(model.hardwareConfig.diskCapacityBytes())
+                .gpuAccelerationEnabled(false)
+                .extraKernelArguments(model.hardwareConfig.extraKernelArguments())
+                .build()
+        } else {
+            model.hardwareConfig
+        }
         val createdInstance = Files.newInputStream(targetPath).use { input ->
-            creator.create(input, manifest.sizeBytes(), model.hardwareConfig, model.userConfig)
+            creator.create(
+                input,
+                manifest.sizeBytes(),
+                effectiveHardware,
+                model.userConfig,
+                deviceFloorAssessment,
+                executionIdentity,
+            )
         }
         GuestFeatureSelections.save(context, createdInstance.id(), selectedProfiles)
         val payload = FirstBootProvisionPipeline.create(
@@ -766,6 +842,45 @@ class WizardController(
             storageCheckPending = false
             render()
         }
+    }
+
+    /**
+     * W3-05 (R-05) 独立 UML 预检：在后台 IO 线程探测宿主页尺寸、原生库与 rootfs 种子，
+     * 与编译伴跑面（UmlFaceStatusRegistry）完全解耦。
+     */
+    private fun probeStandaloneUmlPreflight() {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                StandaloneUmlPreflightProbe.forAndroid(context).probe()
+            }
+            umlPreflightFacts = result
+            render()
+        }
+    }
+
+    private fun hostDeviceProfile(): DeviceCapabilityEvaluator.DeviceProfile {
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager?.getMemoryInfo(memoryInfo)
+        val totalMem = if (memoryInfo.totalMem > 0L) {
+            memoryInfo.totalMem
+        } else {
+            hostProfile.totalRamMb().toLong() * 1024L * 1024L
+        }
+        val emulator = Build.FINGERPRINT.startsWith("generic") ||
+            Build.FINGERPRINT.startsWith("unknown") ||
+            Build.MODEL.contains("google_sdk", ignoreCase = true) ||
+            Build.MODEL.contains("Emulator", ignoreCase = true) ||
+            Build.MANUFACTURER.contains("Genymotion", ignoreCase = true) ||
+            Build.BRAND.startsWith("generic") ||
+            Build.DEVICE.startsWith("generic") ||
+            "google_sdk" == Build.PRODUCT
+        return DeviceCapabilityEvaluator.DeviceProfile(
+            Build.VERSION.SDK_INT,
+            Build.SUPPORTED_ABIS.toList(),
+            totalMem,
+            emulator,
+        )
     }
 
     /** 旧 bindStep2Network：连接方式 / IP / 网关 / DNS 探测（启动时一次）。 */

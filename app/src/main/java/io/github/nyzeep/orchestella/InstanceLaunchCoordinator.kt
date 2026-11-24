@@ -73,6 +73,14 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
     private val isolatedQaEnabled: BooleanSupplier = BooleanSupplier { false },
     private val standaloneUmlLaunch: InstanceStrategyLauncher.UserModeKernelLaunch? = null,
     private val launchDiagnosticSink: LaunchDiagnosticSink = LaunchDiagnosticSink { },
+    private val explicitUmlLaunchAllowed: BooleanSupplier = isolatedQaEnabled,
+    private val umlAtomicFallbackEnabled: BooleanSupplier = BooleanSupplier { false },
+    private val umlLeaseVerifier: UmlLeaseVerifier = UmlLeaseVerifier { id, rootVolume ->
+        UmlInstanceLauncher.areLeasesReleased(id, rootVolume)
+    },
+    private val qemuFallbackDistroSupport: QemuFallbackDistroSupport = QemuFallbackDistroSupport { distroId ->
+        DistroCatalogRegistry.getInstance().get(distroId) != null
+    },
 ) {
 
     /** Settings values the orchestration consumes (SettingsManager handle). */
@@ -196,6 +204,33 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
         fun onDiagnostic(diagnostic: ExecutionPolicyContract.LaunchDiagnostic)
     }
 
+    /** Verifies whether standalone UML leases (root, RAM budget, loopback ports) are all released. */
+    fun interface UmlLeaseVerifier {
+        fun areLeasesReleased(instanceId: String, rootVolume: java.nio.file.Path?): Boolean
+    }
+
+    /** Reports whether the fallback QEMU path supports the instance's distribution manifest. */
+    fun interface QemuFallbackDistroSupport {
+        fun supportsDistro(distroId: String): Boolean
+    }
+
+    /**
+     * Raised when standalone UML fails to launch and atomic fallback to QEMU is refused
+     * because at least one mandatory precondition (confirmed exit, released leases, unwritten
+     * user disk, or compatible format) is not proven. User disk and metadata are preserved.
+     */
+    class AtomicFallbackRefusedException(
+        val decision: ExecutionPolicyContract.AtomicFallbackDecision,
+        cause: Throwable,
+    ) : IOException(
+        if (decision.recoveryGuidance().isNotBlank()) {
+            decision.summary() + "：" + decision.recoveryGuidance()
+        } else {
+            decision.summary()
+        },
+        cause,
+    )
+
     /** Fixed terminal states of one coordinated launch attempt. */
     sealed interface LaunchOutcome {
         /** A live session already owns the instance; the UI was pointed at it. */
@@ -240,12 +275,13 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
         var running = false
         var launchGeneration: String? = null
         var acceleratorCoordinator: DualLaneCoordinator? = null
+        var consumedCleanupResult: RuntimeProcessSupervisor.StopResult? = null
         try {
             val availableStrategies = java.util.EnumSet.of(
                 FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
                 FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION,
             ).apply {
-                if (isolatedQaEnabled.asBoolean && standaloneUmlLaunch != null) {
+                if (explicitUmlLaunchAllowed.asBoolean && standaloneUmlLaunch != null) {
                     add(FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL)
                 }
             }
@@ -255,7 +291,7 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
                 availableStrategies,
                 clock.millis(),
             )
-            launchDiagnosticSink.onDiagnostic(preflight)
+            recordDiagnostic(instance.id(), preflight)
             if (preflight.preflightVerdict().isRefused) {
                 throw ExecutionPolicyContract.ExecutionPolicyRefusalException(preflight)
             }
@@ -345,10 +381,11 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
             val laneGate = settings.isAcceleratorLaneEnabled() && BuildConfig.ACCELERATOR_LANE_ENABLED
             val dispatchResult = dispatchByExecutionPolicy(
                 instance,
+                preflight,
                 laneGate,
                 parameters,
                 strategyLauncher,
-            )
+            ) { consumed -> consumedCleanupResult = consumed }
             acceleratorCoordinator = dispatchResult.coordinator
             if (dispatchResult.coordinator != null) {
                 diagnostics.logAcceleratorSnapshot(
@@ -375,7 +412,8 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
             }
             val outcome = dispatchResult.outcome
             if (outcome.degradationReason != null) {
-                launchDiagnosticSink.onDiagnostic(
+                recordDiagnostic(
+                    instance.id(),
                     preflight.withFallback(
                         outcome.strategy,
                         outcome.fallbackReason(),
@@ -453,7 +491,7 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
             // confirmed; keep RUNNING metadata and the foreground binding in
             // that case instead of pretending the instance crashed.
             closeAndDisarmAccelerator(acceleratorCoordinator, instance.id())
-            val cleanupResult = cleanupBridge.takeLastCleanupResult(instance.id())
+            val cleanupResult = consumedCleanupResult ?: cleanupBridge.takeLastCleanupResult(instance.id())
             try {
                 if (failure is io.github.nyzeep.orchestella.runtime.engineuml.UmlInstanceBudget.BudgetRefusalException) {
                     InstanceLaunchSequence.afterPrelaunchRefusal(
@@ -538,9 +576,11 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
 
     private fun dispatchByExecutionPolicy(
         instance: InstanceLifecycle.Instance,
+        preflight: ExecutionPolicyContract.LaunchDiagnostic,
         laneGate: Boolean,
         parameters: InstanceStrategyLauncher.LaunchParameters,
         strategyLauncher: InstanceStrategyLauncher,
+        onCleanupConsumed: (RuntimeProcessSupervisor.StopResult?) -> Unit,
     ): AcceleratorLaunchDispatcher.Dispatch {
         val strategyDecl = instance.executionIdentity().strategy()
         if (strategyDecl.isAbsent) {
@@ -571,18 +611,107 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
                 val umlLauncher = checkNotNull(standaloneUmlLaunch) {
                     "standalone UML launcher missing after preflight"
                 }
-                val session = umlLauncher.launch(parameters)
-                AcceleratorLaunchDispatcher.Dispatch(
-                    InstanceStrategyLauncher.Outcome(
-                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
-                        session,
-                        null,
-                        null,
-                    ),
-                    null,
-                    "",
-                    CompileBackend.NONE,
+                val preLaunchDisk = UmlDiskWriteProbe.captureBeforeLaunch(
+                    instance.rootVolume(),
+                    instance.provisioningEvidence(),
                 )
+                try {
+                    val session = umlLauncher.launch(parameters)
+                    AcceleratorLaunchDispatcher.Dispatch(
+                        InstanceStrategyLauncher.Outcome(
+                            FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                            session,
+                            null,
+                            null,
+                        ),
+                        null,
+                        "",
+                        CompileBackend.NONE,
+                    )
+                } catch (umlFailure: Throwable) {
+                    if (umlFailure is io.github.nyzeep.orchestella.runtime.engineuml.UmlInstanceBudget.BudgetRefusalException ||
+                        !umlAtomicFallbackEnabled.asBoolean
+                    ) {
+                        throw umlFailure
+                    }
+                    val cleanupResult = cleanupBridge.takeLastCleanupResult(instance.id())
+                    onCleanupConsumed(cleanupResult)
+                    val oldProcessExitConfirmed =
+                        cleanupResult == RuntimeProcessSupervisor.StopResult.CONFIRMED ||
+                            cleanupResult == RuntimeProcessSupervisor.StopResult.ALREADY_STOPPED
+                    val anotherInstanceActive = try {
+                        store.list().any { other ->
+                            other.id() != instance.id() && (
+                                other.state() == InstanceLifecycle.State.RUNNING ||
+                                    other.state() == InstanceLifecycle.State.PROVISIONING ||
+                                    ExecutionSessionRegistry.get(other.id()) != null
+                                )
+                        }
+                    } catch (_: Exception) {
+                        true
+                    }
+                    val leasesReleased = !anotherInstanceActive &&
+                        umlLeaseVerifier.areLeasesReleased(
+                            instance.id(),
+                            instance.rootVolume(),
+                        )
+                    val latestEvidence = try {
+                        store.load(instance.id()).provisioningEvidence()
+                    } catch (_: Exception) {
+                        instance.provisioningEvidence()
+                    }
+                    val userDiskUnwritten = UmlDiskWriteProbe.isUserDiskUnwritten(
+                        preLaunchDisk,
+                        instance.rootVolume(),
+                        latestEvidence,
+                    )
+                    val volumeFormatCompatible = UmlDiskWriteProbe.isVolumeFormatCompatibleForQemuFallback(
+                        instance.rootVolume(),
+                        instance.executionIdentity().volumeFormat(),
+                        qemuFallbackDistroSupport.supportsDistro(instance.distro().id()),
+                    )
+                    val failureDetail = umlFailure.message?.takeIf { it.isNotBlank() }
+                        ?: umlFailure.javaClass.simpleName
+                    val decision = ExecutionPolicyContract.evaluateAtomicFallback(
+                        ExecutionPolicyContract.AtomicFallbackPreconditions(
+                            oldProcessExitConfirmed,
+                            leasesReleased,
+                            userDiskUnwritten,
+                            volumeFormatCompatible,
+                            failureDetail,
+                        ),
+                    )
+                    if (!decision.allowed()) {
+                        recordDiagnostic(
+                            instance.id(),
+                            preflight.withRecoveryGuidance(decision.recoveryGuidance()),
+                        )
+                        throw AtomicFallbackRefusedException(decision, umlFailure)
+                    }
+                    // Clear the consumed UML cleanup result before launching QEMU so a subsequent
+                    // QEMU launch failure reads QEMU's own StopResult (ADR-0020).
+                    onCleanupConsumed(null)
+                    // Atomic fallback to QEMU: persisted executionIdentity stays untouched,
+                    // and the fallback reason is explicitly surfaced in the outcome and diagnostics.
+                    val fallbackDispatch = dispatchWithAcceleratorGate(laneGate, instance.id(), parameters) {
+                        strategyLauncher.launch(parameters, false)
+                    }
+                    val fallbackOutcome = InstanceStrategyLauncher.Outcome(
+                        fallbackDispatch.outcome.strategy,
+                        fallbackDispatch.outcome.session,
+                        ExecutionPolicyContract.FallbackReason.UML_LAUNCH_FAILED_ATOMIC_FALLBACK.name,
+                        decision.summary(),
+                    )
+                    AcceleratorLaunchDispatcher.Dispatch(
+                        fallbackOutcome,
+                        fallbackDispatch.coordinator,
+                        fallbackDispatch.decisionJson,
+                        fallbackDispatch.backend,
+                        fallbackDispatch.assemblyResult,
+                        fallbackDispatch.qemuFaceWidth,
+                        fallbackDispatch.nativeFaceWidth,
+                    )
+                }
             }
             null -> throw IllegalStateException("unexpected null execution strategy")
         }
@@ -618,6 +747,14 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
         if (coord != null) {
             umlFaceLane.disarm(instanceId)
         }
+    }
+
+    private fun recordDiagnostic(
+        instanceId: String,
+        diagnostic: ExecutionPolicyContract.LaunchDiagnostic,
+    ) {
+        LaunchDiagnosticStore.record(instanceId, diagnostic)
+        launchDiagnosticSink.onDiagnostic(diagnostic)
     }
 
     private fun launchNavigation(instance: InstanceLifecycle.Instance) = LaunchNavigation(
