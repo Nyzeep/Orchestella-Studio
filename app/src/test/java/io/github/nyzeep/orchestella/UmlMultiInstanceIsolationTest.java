@@ -405,6 +405,178 @@ public final class UmlMultiInstanceIsolationTest {
         assertEquals(0, endpoints.activeEndpointCount());
     }
 
+    @Test(timeout = 15_000)
+    public void passtRelayPortReservationRegistersAndReleasesLoopbackEndpoint() throws Exception {
+        Path rtA = tmp.newFolder("relay-net-a").toPath();
+        Path rtB = tmp.newFolder("relay-net-b").toPath();
+        Path storeRoot = tmp.newFolder("relay-store").toPath();
+        LoopbackEndpointRegistry endpoints = new LoopbackEndpointRegistry();
+
+        int rulePort = freePort();
+        PortForwardingRule ruleA = PortForwardingRule.defaultRule(
+                "rule-keep", Protocol.TCP, rulePort, 18090);
+        UmlPasstNetwork netRule = new UmlPasstNetwork(
+                rtA, storeRoot, "inst-rule", "gen-rule", TOKEN,
+                () -> "/fake/libuml_passt.so", 10, () -> {},
+                (argv, pidFile) -> null, new StaticOfflineMonitor(), endpoints);
+        netRule.restoreBeforePublish();
+        netRule.addRule(ruleA);
+
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch releasePump = new CountDownLatch(1);
+        AtomicInteger capturedRelayPort = new AtomicInteger(-1);
+        UmlPasstNetwork.PasstProcess fakePasst = new UmlPasstNetwork.PasstProcess() {
+            final AtomicBoolean closed = new AtomicBoolean(false);
+            @Override public int pid() { return 4242; }
+            @Override public void pump(int guestFd) {
+                try {
+                    releasePump.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            @Override public void stopPump() { releasePump.countDown(); }
+            @Override public boolean reap(boolean force) { return closed.get(); }
+            @Override public void close() {
+                closed.set(true);
+                releasePump.countDown();
+            }
+        };
+        UmlPasstNetwork netRelay = new UmlPasstNetwork(
+                rtB, storeRoot, "inst-relay", "gen-relay", TOKEN,
+                () -> "/fake/libuml_passt.so", 11, () -> {},
+                (argv, pidFile) -> {
+                    for (int i = 0; i < argv.length - 1; i++) {
+                        if ("-t".equals(argv[i])) {
+                            String spec = argv[i + 1];
+                            int slash = spec.indexOf('/');
+                            int colon = spec.indexOf(':');
+                            if (slash >= 0 && colon > slash) {
+                                capturedRelayPort.set(Integer.parseInt(spec.substring(slash + 1, colon)));
+                            }
+                        }
+                    }
+                    started.countDown();
+                    return fakePasst;
+                },
+                new StaticOfflineMonitor(),
+                endpoints);
+
+        netRelay.restoreBeforePublish();
+        try {
+            netRelay.start();
+            assertTrue("passt launcher should execute", started.await(5, TimeUnit.SECONDS));
+            int relayPort = capturedRelayPort.get();
+            assertTrue("valid relay port", relayPort > 0 && relayPort != rulePort);
+            LoopbackEndpointRegistry.EndpointLease relayLease = endpoints.ownerOf("127.0.0.1", relayPort);
+            assertNotNull("relay port must be owned in LoopbackEndpointRegistry", relayLease);
+            assertEquals("inst-relay", relayLease.instanceId());
+            assertEquals("gen-relay", relayLease.generation());
+            assertEquals("inst-rule", endpoints.ownerOf("127.0.0.1", rulePort).instanceId());
+
+            netRelay.closeAfterGuestExit();
+            assertNull("relay endpoint lease must release on exit",
+                    endpoints.ownerOf("127.0.0.1", relayPort));
+            assertEquals("inst-rule", endpoints.ownerOf("127.0.0.1", rulePort).instanceId());
+        } finally {
+            releasePump.countDown();
+            netRelay.closeAfterGuestExit();
+            netRule.closeAfterGuestExit();
+        }
+        assertEquals(0, endpoints.activeEndpointCount());
+    }
+
+    @Test(timeout = 15_000)
+    public void hostBudgetLeaseIsReleasedEvenWhenEphemeralCleanupThrows() throws Exception {
+        Path root = tmp.newFolder("budget-cleanup-fail").toPath();
+        Path nativeDir = root.resolve("native");
+        Files.createDirectories(nativeDir);
+        createExecutableFile(nativeDir.resolve("libuml_kernel.so"));
+        createExecutableFile(nativeDir.resolve("libuml_stub.so"));
+        byte[] tarBytes = buildMinimalAlpineTarGz();
+
+        String id = "inst-cleanup-fail";
+        String gen = InstanceLaunchGuard.begin(id);
+        FakeUmlProcessHandle handle = new FakeUmlProcessHandle(5050L, 0);
+        UmlRootReservationRegistry reservationRegistry = new UmlRootReservationRegistry();
+        UmlInstanceBudget budget = new UmlInstanceBudget(
+                () -> new UmlInstanceBudget.HostMemorySnapshot(8192, 6144, false),
+                () -> 0,
+                new UmlInstanceBudget.BudgetPolicy(1024, 512, 4096));
+        UmlInstanceLauncher launcher = new UmlInstanceLauncher(
+                nativeDir.toFile(),
+                root.toFile(),
+                (spec, cols, rows) -> handle,
+                reservationRegistry,
+                budget,
+                new LoopbackEndpointRegistry(),
+                () -> new ByteArrayInputStream(tarBytes),
+                System::nanoTime,
+                50L, 50L, 50L);
+
+        InstanceStrategyLauncher.LaunchParameters params = new InstanceStrategyLauncher.LaunchParameters(
+                id,
+                TOKEN,
+                "alpine-minirootfs.tar.gz",
+                root.resolve("unused.raw").toString(),
+                root.resolve("rt").toString(),
+                root.toString(),
+                "orchestellaqa",
+                VmHardwareConfig.builder().cpuCores(1).ramMegabytes(512).build());
+        UmlInstanceLauncher.Session session = (UmlInstanceLauncher.Session) launcher.launch(params);
+        assertEquals(512, budget.committedStandaloneMb());
+
+        // Pin the ephemeral root directory (excluding rt/tmp) against deletion on Windows and POSIX.
+        Path ephDir;
+        try (var list = Files.list(root.resolve("rt"))) {
+            ephDir = list
+                    .filter(p -> Files.isDirectory(p) && !"tmp".equals(p.getFileName().toString()))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("ephemeral root directory missing under rt/"));
+        }
+        Path pinFile = ephDir.resolve("cleanup-pin.lock");
+        java.nio.channels.FileChannel pinChannel = null;
+        try {
+            Files.createDirectories(ephDir);
+            pinChannel = java.nio.channels.FileChannel.open(
+                    pinFile,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.WRITE);
+            try {
+                Files.setPosixFilePermissions(
+                        ephDir,
+                        java.util.EnumSet.of(
+                                java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                                java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE));
+            } catch (UnsupportedOperationException | IOException ignored) {
+            }
+            handle.alive.set(false);
+            handle.exitGate.countDown();
+            try {
+                session.stopRuntime(100L);
+            } catch (RuntimeException expectedOnPinnedDir) {
+            }
+            assertEquals("host RAM budget must still be released when root cleanup fails",
+                    0, budget.committedStandaloneMb());
+            assertFalse(budget.hasActiveLease(id, gen));
+        } finally {
+            try {
+                Files.setPosixFilePermissions(
+                        ephDir,
+                        java.util.EnumSet.of(
+                                java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                                java.nio.file.attribute.PosixFilePermission.OWNER_WRITE,
+                                java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE));
+            } catch (UnsupportedOperationException | IOException ignored) {
+            }
+            if (pinChannel != null) {
+                try { pinChannel.close(); } catch (IOException ignored) {}
+            }
+            ExecutionSessionRegistry.unregister(id, session);
+            InstanceLaunchGuard.end(id, gen);
+        }
+    }
+
     private static InstanceLaunchCoordinator createCoordinator(
             InstanceLifecycle.FileStore store,
             File filesDir,

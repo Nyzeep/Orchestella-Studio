@@ -383,6 +383,47 @@ class TestIncrementalLedgerAndSummary(unittest.TestCase):
         self.assertEqual(phys["verdict"], "PASS")
         self.assertTrue(phys["signoff_allowed"])
 
+    def test_validate_device_alias_and_clean_uninstall(self) -> None:
+        self.assertEqual(run_uml_matrix.validate_device_alias(" device-4k-api37 "), "device-4k-api37")
+        for bad in ("", "   ", "../escape", "device with spaces", "a" * 49):
+            with self.assertRaises(ValueError):
+                run_uml_matrix.validate_device_alias(bad)
+
+        class _FakeResult:
+            def __init__(self, stdout: str) -> None:
+                self.stdout = stdout
+
+        class _FakeAdb:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, ...]] = []
+
+            def run(self, *args: str, timeout: int = 120, check: bool = True) -> _FakeResult:
+                self.calls.append(args)
+                if args[:3] == ("shell", "pm", "list"):
+                    return _FakeResult(
+                        "package:io.github.nyzeep.orchestella.qa.fullpkg\n"
+                        "package:io.github.nyzeep.orchestella.qa.w304\n"
+                        "package:com.unrelated.other\n"
+                    )
+                return _FakeResult("Success\n")
+
+        fake_adb = _FakeAdb()
+        removed = run_uml_matrix.clean_uninstall_orchestella_packages(fake_adb)
+        self.assertEqual(
+            removed,
+            [
+                "io.github.nyzeep.orchestella.qa.fullpkg",
+                "io.github.nyzeep.orchestella.qa.w304",
+            ],
+        )
+        self.assertEqual(
+            fake_adb.calls[1:],
+            [
+                ("uninstall", "io.github.nyzeep.orchestella.qa.fullpkg"),
+                ("uninstall", "io.github.nyzeep.orchestella.qa.w304"),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -58,4 +58,17 @@ public final class ForegroundSessionBindingTest {
         assertEquals(0, binding.activeCount());
         assertFalse(binding.isActive());
     }
+
+    @Test public void wakeLockEligibilityDropsWhenOnlyLegacyRecoveryLeaseRemains() {
+        ForegroundSessionBinding binding = new ForegroundSessionBinding();
+        assertTrue(binding.start("legacy-recovery", null));
+        assertTrue(binding.start("inst-real", "gen-real", "Alpine 3.22", "UML", BatteryPolicy.PERFORMANCE));
+        assertTrue(binding.hasAnyNonNullGenerationLease());
+
+        assertEquals(
+                ForegroundSessionBinding.StopOutcome.LEASE_RELEASED_OTHERS_ACTIVE,
+                binding.stopLease("inst-real", "gen-real"));
+        assertTrue(binding.isActive());
+        assertFalse(binding.hasAnyNonNullGenerationLease());
+    }
 }

@@ -128,6 +128,7 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
     private String executable;
     private HostRoute route;
     private int attemptCount;
+    private int relayLeaseSeq;
     private Thread worker;
     private Attempt attempt;
     private boolean closed;
@@ -293,10 +294,12 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
     private boolean runAttempt(String executable, HostRoute next) {
         Path pidFile = null;
         Integer reservedPort = null;
+        LoopbackEndpointRegistry.EndpointLease relayLease = null;
         Attempt candidate = null;
         Thread readiness = null;
         try {
-            int port = pickRelayPort();
+            relayLease = acquireRelayPortLease();
+            int port = relayLease.hostPort();
             reservedPort = port;
             pidFile = Files.createTempFile(runtimeDir, "passt-", ".pid");
             PasstProcess process = passtLauncher.spawn(argv(executable, pidFile, port, next.dns()), pidFile);
@@ -344,6 +347,9 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
                     }
                 }
             }
+            if (relayLease != null) {
+                endpointRegistry.release(relayLease);
+            }
             if (reservedPort != null) {
                 RESERVED_RELAY_PORTS.remove(reservedPort);
             }
@@ -358,7 +364,12 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
         return candidate != null && candidate.ready;
     }
 
-    private static int pickRelayPort() throws IOException {
+    private LoopbackEndpointRegistry.EndpointLease acquireRelayPortLease() throws IOException {
+        final int ordinal;
+        synchronized (lock) {
+            ordinal = ++relayLeaseSeq;
+        }
+        String relayRuleId = "passt-relay-" + ordinal;
         for (int attempt = 0; attempt < 16; attempt++) {
             int port;
             try (ServerSocket pickPort = new ServerSocket()) {
@@ -369,7 +380,12 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
                     && (port < GatewaySlotArbiter.PORT_BASE
                             || port >= GatewaySlotArbiter.PORT_BASE + GatewaySlotArbiter.PORT_SLOTS)
                     && RESERVED_RELAY_PORTS.add(port)) {
-                return port;
+                try {
+                    return endpointRegistry.acquire(
+                            LOOPBACK, port, instanceId, generation, relayRuleId);
+                } catch (IOException ownedElsewhere) {
+                    RESERVED_RELAY_PORTS.remove(port);
+                }
             }
         }
         throw new IOException("no unreserved local relay port available");

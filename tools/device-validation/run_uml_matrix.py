@@ -56,6 +56,33 @@ _COMPAT_PROP_KEYS: tuple[str, ...] = (
 )
 _PT_LOAD_RE = re.compile(r"^\s*LOAD\b.*?\s(0x[0-9a-fA-F]+|\d+)\s*$")
 _RUN_ID_RE = re.compile(r"^run-(\d+)$")
+_DEVICE_ALIAS_RE = re.compile(r"^[A-Za-z0-9._-]{1,48}$")
+
+
+def validate_device_alias(alias: str) -> str:
+    cleaned = alias.strip()
+    if not _DEVICE_ALIAS_RE.match(cleaned):
+        raise ValueError(
+            f"Unsafe device alias {alias!r}; expected 1..48 chars matching [A-Za-z0-9._-]"
+        )
+    return cleaned
+
+
+def clean_uninstall_orchestella_packages(
+    adb: Any,
+    package_prefix: str = "io.github.nyzeep.orchestella",
+) -> list[str]:
+    listed = adb.run("shell", "pm", "list", "packages", package_prefix, check=False).stdout
+    removed: list[str] = []
+    for raw in listed.splitlines():
+        line = raw.strip()
+        if not line.startswith("package:"):
+            continue
+        pkg = line[len("package:"):].strip()
+        if pkg and pkg.startswith(package_prefix):
+            adb.run("uninstall", pkg, timeout=60, check=False)
+            removed.append(pkg)
+    return removed
 
 
 def utc_now_iso() -> str:
@@ -705,9 +732,15 @@ def probe_device_metadata(
     package_name: str,
     assets_dir: Path | None = None,
     apk_path: Path | None = None,
+    device_alias: str | None = None,
 ) -> dict[str, Any]:
     page_raw = adb.run("shell", "getconf", "PAGE_SIZE").stdout
     host_page_size = validate_host_page_size(page_raw)
+    effective_alias = (
+        validate_device_alias(device_alias)
+        if device_alias is not None
+        else PAGE_SIZE_ALIASES[host_page_size]
+    )
     sdk_int = int(adb.run("shell", "getprop", "ro.build.version.sdk").stdout.strip())
     android_release = adb.run("shell", "getprop", "ro.build.version.release").stdout.strip()
     abi = adb.run("shell", "getprop", "ro.product.cpu.abi").stdout.strip()
@@ -727,7 +760,7 @@ def probe_device_metadata(
 
     return {
         "probed_at_utc": utc_now_iso(),
-        "device_alias": PAGE_SIZE_ALIASES[host_page_size],
+        "device_alias": effective_alias,
         "device_kind": "emulator" if is_emulator else "physical",
         "is_emulator": is_emulator,
         "host_page_size": host_page_size,
@@ -888,6 +921,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--apk", default=None, help="Path to QA app debug APK")
     parser.add_argument("--test-apk", default=None, help="Path to QA androidTest APK")
     parser.add_argument("--skip-install", action="store_true")
+    parser.add_argument("--clean-install", action="store_true",
+                        help="Uninstall any existing io.github.nyzeep.orchestella* packages before installing APKs")
+    parser.add_argument("--device-alias", default=None,
+                        help="Override stable non-identifying device alias recorded in metadata and ledger")
     parser.add_argument("--readelf", default=None, help="Path to llvm-readelf")
     parser.add_argument("--zipalign", default=None, help="Path to zipalign")
     parser.add_argument("--assets-dir", default=None, help="Path to staged assets directory with .sha256 manifests")
@@ -909,6 +946,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-pending-16k", action="store_true",
                         help="Return exit code 0 when verdict is BLOCKED_PENDING_16K_DEVICE")
     args = parser.parse_args(argv)
+    if args.device_alias is not None:
+        validate_device_alias(args.device_alias)
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -936,6 +975,9 @@ def main(argv: list[str] | None = None) -> int:
     adb = AdbClient(adb_path, args.serial)
     adb.discover_device()
 
+    if args.clean_install and not args.skip_install:
+        clean_uninstall_orchestella_packages(adb)
+
     if not args.skip_install:
         if args.apk:
             adb.run("install", "-r", "-t", args.apk, timeout=300)
@@ -944,7 +986,13 @@ def main(argv: list[str] | None = None) -> int:
 
     assets_dir = Path(args.assets_dir) if args.assets_dir else None
     apk_path = Path(args.apk) if args.apk else None
-    meta = probe_device_metadata(adb, args.package, assets_dir=assets_dir, apk_path=apk_path)
+    meta = probe_device_metadata(
+        adb,
+        args.package,
+        assets_dir=assets_dir,
+        apk_path=apk_path,
+        device_alias=args.device_alias,
+    )
     (out_dir / "device-meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
 
     host_ps = meta["host_page_size"]

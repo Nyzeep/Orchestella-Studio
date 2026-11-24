@@ -128,6 +128,9 @@ public class OrchestellaForegroundService extends Service {
             if (outcome == ForegroundSessionBinding.StopOutcome.LAST_LEASE_RELEASED) {
                 stopRunning();
             } else if (outcome == ForegroundSessionBinding.StopOutcome.LEASE_RELEASED_OTHERS_ACTIVE) {
+                if (!binding.hasAnyNonNullGenerationLease()) {
+                    releaseWakeLock();
+                }
                 ForegroundSessionBinding.Lease primary = binding.primaryLease();
                 currentInstanceId = primary != null ? primary.instanceId() : null;
                 Notification refreshed = buildLeaseNotification(binding, primary);

@@ -493,7 +493,7 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                 spec = UmlLaunchSpec.builder()
                         .kernelPath(kernelPath)
                         .stubExePath(stubExePath)
-                        .memMb(Math.max(UmlLaunchSpec.MIN_MEMORY_MB, config.ramMegabytes()))
+                        .memMb(requestedMemMb)
                         .rootMode(UmlLaunchSpec.RootMode.EXT4_UBD)
                         .ubd0Path(rootVolumePath)
                         .credsHostfsDir(bootCredsDir)
@@ -509,7 +509,7 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                 spec = UmlLaunchSpec.builder()
                         .kernelPath(kernelPath)
                         .stubExePath(stubExePath)
-                        .memMb(Math.max(UmlLaunchSpec.MIN_MEMORY_MB, config.ramMegabytes()))
+                        .memMb(requestedMemMb)
                         .ephemeralRootDir(ephemeralRootDir)
                         .runtimeDir(runtimeDir)
                         .extraArgs(List.of("console=tty0"))
@@ -893,9 +893,12 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                     this::closeBridgeQuietly,
                     () -> {
                         if (network != null) network.closeAfterGuestExit();
-                        cleanupEphemeralRoot(ephemeralRootDir);
-                        if (instanceBudget != null && memoryLease != null) {
-                            instanceBudget.release(memoryLease);
+                        try {
+                            cleanupEphemeralRoot(ephemeralRootDir);
+                        } finally {
+                            if (instanceBudget != null && memoryLease != null) {
+                                instanceBudget.release(memoryLease);
+                            }
                         }
                     },
                     reservationRegistry,
