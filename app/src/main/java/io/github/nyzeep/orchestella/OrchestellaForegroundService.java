@@ -12,6 +12,9 @@ import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Persistent foreground service for running Linux instances (ADR-0011, AC-2).
@@ -45,6 +48,24 @@ public class OrchestellaForegroundService extends Service {
     private static final long WAKE_LOCK_TIMEOUT_MS = 2L * 60 * 60 * 1000;
     /** Below one hour left, extend the grant instead of waiting for it to lapse. */
     private static final long WAKE_LOCK_RENEW_THRESHOLD_MS = 60L * 60 * 1000;
+
+    public record LeaseSnapshot(
+            int activeCount,
+            List<String> instanceIds,
+            Map<String, String> generationByInstance,
+            boolean wakeLockHeld,
+            boolean serviceRunning) {
+        static LeaseSnapshot empty() {
+            return new LeaseSnapshot(
+                    0, Collections.emptyList(), Collections.emptyMap(), false, false);
+        }
+    }
+
+    private static volatile LeaseSnapshot lastSnapshot = LeaseSnapshot.empty();
+
+    public static LeaseSnapshot leaseSnapshot() {
+        return lastSnapshot;
+    }
 
     private PowerManager.WakeLock wakeLock;
     private long wakeLockAcquiredAtMs = WakeLockPolicy.NOT_HELD;
@@ -101,12 +122,21 @@ public class OrchestellaForegroundService extends Service {
             return START_NOT_STICKY;
         }
         if (ACTION_STOP.equals(intent.getAction())) {
-            if (binding.stop(intent.getStringExtra(EXTRA_INSTANCE_ID),
-                    intent.getStringExtra(EXTRA_SESSION_GENERATION))) {
+            ForegroundSessionBinding.StopOutcome outcome = binding.stopLease(
+                    intent.getStringExtra(EXTRA_INSTANCE_ID),
+                    intent.getStringExtra(EXTRA_SESSION_GENERATION));
+            if (outcome == ForegroundSessionBinding.StopOutcome.LAST_LEASE_RELEASED) {
                 stopRunning();
+            } else if (outcome == ForegroundSessionBinding.StopOutcome.LEASE_RELEASED_OTHERS_ACTIVE) {
+                ForegroundSessionBinding.Lease primary = binding.primaryLease();
+                currentInstanceId = primary != null ? primary.instanceId() : null;
+                Notification refreshed = buildLeaseNotification(binding, primary);
+                startForegroundNotification(refreshed);
+                publishSnapshot(true);
             } else if (!binding.isActive()) {
                 // A cold or duplicate STOP must not create a service with no work.
                 stopSelfResult(startId);
+                publishSnapshot(false);
             }
             return binding.isActive() ? START_STICKY : START_NOT_STICKY;
         }
@@ -118,12 +148,13 @@ public class OrchestellaForegroundService extends Service {
                     || (!generation.equals(InstanceLaunchGuard.generation(requestedId))
                         && !generation.equals(ExecutionSessionRegistry.generation(requestedId,
                                 ExecutionSessionRegistry.get(requestedId)))))) {
-                if (!binding.isActive()) stopSelfResult(startId);
+                if (!binding.isActive()) {
+                    stopSelfResult(startId);
+                    publishSnapshot(false);
+                }
                 return binding.isActive() ? START_STICKY : START_NOT_STICKY;
             }
             if (generation == null && binding.isActive()) return START_STICKY;
-            binding.start(requestedId, generation);
-            currentInstanceId = requestedId;
             String distroTitle = intent.getStringExtra(EXTRA_DISTRO_TITLE);
             if (distroTitle == null || distroTitle.isBlank()) {
                 distroTitle = "Linux";
@@ -141,6 +172,9 @@ public class OrchestellaForegroundService extends Service {
                     policy = BatteryPolicy.BALANCED;
                 }
             }
+            binding.start(requestedId, generation, distroTitle, badge, policy);
+            ForegroundSessionBinding.Lease primary = binding.primaryLease();
+            currentInstanceId = primary != null ? primary.instanceId() : requestedId;
 
             // Pin session pool in memory alongside the foreground service
             PersistentTerminalSessionPool.getInstance();
@@ -149,16 +183,26 @@ public class OrchestellaForegroundService extends Service {
             // notification is raised so the user sees the auto-start, but no guest runs
             // yet, so holding a wake lock would only drain the battery. The lock is
             // claimed by the first real launch (generation != null).
-            boolean holdWakeLock = generation != null;
-            Notification notification = buildPersistentNotification(distroTitle, badge, policy, currentInstanceId);
+            boolean hadHeldWakeLock = wakeLock != null && wakeLock.isHeld();
+            boolean holdWakeLock = binding.hasAnyNonNullGenerationLease();
+            Notification notification = buildLeaseNotification(binding, primary);
             boolean foregroundRaised = false;
             try {
                 if (holdWakeLock) acquireWakeLock();
                 startForegroundNotification(notification);
                 foregroundRaised = true;
+                publishSnapshot(true);
             } finally {
-                // Never leave a dangling lock behind a failed foreground promotion.
-                if (holdWakeLock && !foregroundRaised) releaseWakeLock();
+                // Roll back only the failed start's lease; preserve active sessions' wake lock.
+                if (!foregroundRaised) {
+                    binding.stopLease(requestedId, generation);
+                    ForegroundSessionBinding.Lease remainingPrimary = binding.primaryLease();
+                    currentInstanceId = remainingPrimary != null ? remainingPrimary.instanceId() : null;
+                    if (holdWakeLock && !hadHeldWakeLock && !binding.hasAnyNonNullGenerationLease()) {
+                        releaseWakeLock();
+                    }
+                    publishSnapshot(binding.activeCount() > 0);
+                }
             }
             return START_STICKY;
         }
@@ -168,8 +212,10 @@ public class OrchestellaForegroundService extends Service {
 
     @Override
     public void onDestroy() {
+        binding.clear();
         releaseWakeLock();
         currentInstanceId = null;
+        publishSnapshot(false);
         super.onDestroy();
     }
 
@@ -181,12 +227,55 @@ public class OrchestellaForegroundService extends Service {
     private void stopRunning() {
         currentInstanceId = null;
         releaseWakeLock();
+        publishSnapshot(false);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE);
         } else {
             stopForeground(true);
         }
         stopSelf();
+    }
+
+    private void publishSnapshot(boolean running) {
+        lastSnapshot = new LeaseSnapshot(
+                binding.activeCount(),
+                binding.activeInstanceIds(),
+                binding.generationByInstance(),
+                wakeLock != null && wakeLock.isHeld(),
+                running);
+    }
+
+    private Notification buildLeaseNotification(
+            ForegroundSessionBinding leases, ForegroundSessionBinding.Lease primary) {
+        if (primary == null) {
+            return buildPersistentNotification("Linux", "完整 Linux", BatteryPolicy.BALANCED, null);
+        }
+        int activeCount = leases.activeCount();
+        if (activeCount <= 1) {
+            return buildPersistentNotification(
+                    primary.distroTitle(),
+                    primary.performanceBadge(),
+                    primary.batteryPolicy(),
+                    primary.instanceId());
+        }
+        Intent notificationIntent = new Intent(this, MainActivity.class);
+        notificationIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        PendingIntent pendingIntent =
+                PendingIntent.getActivity(this, 0, notificationIntent, pendingFlags);
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Notification.Builder(this, CHANNEL_ID)
+                : new Notification.Builder(this);
+        return builder
+                .setContentTitle(activeCount + " 个 Linux 实例正在运行")
+                .setContentText("状态: RUNNING · " + primary.distroTitle() + " · " + primary.performanceBadge())
+                .setSmallIcon(android.R.drawable.stat_notify_sync)
+                .setContentIntent(pendingIntent)
+                .setOngoing(true)
+                .build();
     }
 
     private void startForegroundNotification(Notification notification) {

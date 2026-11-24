@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <instrumentation
+        android:name="io.github.nyzeep.orchestella.W304MatrixProbe"
+        android:targetPackage="${applicationId}"
+        android:label="Orchestella W3-04 multi-instance UML matrix probe" />
+</manifest>

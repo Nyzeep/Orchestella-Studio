@@ -53,6 +53,16 @@ public final class InstanceLifecycle {
         SUSPENDED
     }
 
+    /**
+     * Explicit concurrency boundary (ADR-0016): ordinary builds enforce a single RUNNING
+     * instance across all strategies; isolated QA builds may opt into concurrent
+     * {@link FullLinuxContract.ExecutionStrategy#USER_MODE_KERNEL} instances only.
+     */
+    public enum ConcurrencyPolicy {
+        SINGLE_RUNNING_INSTANCE,
+        ISOLATED_MULTI_USER_MODE_KERNEL
+    }
+
     /** Structured diagnostic information for an abnormal termination or VMM crash. */
     public static final class CrashDiagnostic {
         private final long timestampMillis;

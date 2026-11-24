@@ -18,6 +18,11 @@ import java.io.OutputStream;
  * control pair speaks the Bridge v1 protocol.
  */
 public interface ExecutionSession {
+    /** Optional strategy-owned launch generation token associated with this session. */
+    default String launchGeneration() {
+        return null;
+    }
+
     /** Blocks until the guest exits; returns its exit status. */
     int waitFor() throws InterruptedException;
 

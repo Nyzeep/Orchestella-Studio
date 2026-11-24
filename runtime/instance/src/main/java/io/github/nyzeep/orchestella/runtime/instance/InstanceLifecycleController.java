@@ -291,22 +291,25 @@ class InstanceLifecycleController {
     }
 
     public synchronized Instance start(String id) throws IOException {
+        return start(id, InstanceLifecycle.ConcurrencyPolicy.SINGLE_RUNNING_INSTANCE);
+    }
+
+    public synchronized Instance start(String id, InstanceLifecycle.ConcurrencyPolicy policy)
+            throws IOException {
+        Objects.requireNonNull(policy, "policy");
         synchronized (store.stateMonitor()) {
-            return startLocked(id);
+            return startLocked(id, policy);
         }
     }
 
-    private Instance startLocked(String id) throws IOException {
+    private Instance startLocked(String id, InstanceLifecycle.ConcurrencyPolicy policy)
+            throws IOException {
         Instance current = store.load(id);
         if (current.state() != State.STOPPED) {
             throw new InvalidTransitionException(
                     "cannot start instance in state " + current.state() + "; expected STOPPED");
         }
-        for (Instance instance : store.list()) {
-            if (!instance.id().equals(id) && instance.state() == State.RUNNING) {
-                throw new SingleRunningInstanceException("another Instance is already RUNNING");
-            }
-        }
+        ensureConcurrencyAllowedLocked(current, policy);
         return transition(id, State.RUNNING);
     }
 
@@ -483,17 +486,19 @@ class InstanceLifecycleController {
      * Enforces the single-running-instance constraint and clears prior crash diagnostics.
      */
     public synchronized Instance coldRestore(String id) throws IOException {
+        return coldRestore(id, InstanceLifecycle.ConcurrencyPolicy.SINGLE_RUNNING_INSTANCE);
+    }
+
+    public synchronized Instance coldRestore(String id, InstanceLifecycle.ConcurrencyPolicy policy)
+            throws IOException {
+        Objects.requireNonNull(policy, "policy");
         synchronized (store.stateMonitor()) {
-            return coldRestoreLocked(id);
+            return coldRestoreLocked(id, policy);
         }
     }
 
-    private Instance coldRestoreLocked(String id) throws IOException {
-        for (Instance instance : store.list()) {
-            if (!instance.id().equals(id) && instance.state() == State.RUNNING) {
-                throw new SingleRunningInstanceException("another Instance is already RUNNING");
-            }
-        }
+    private Instance coldRestoreLocked(String id, InstanceLifecycle.ConcurrencyPolicy policy)
+            throws IOException {
         Instance current = store.load(id);
         if (current.state() != State.INTERRUPTED
                 && current.state() != State.CRASHED
@@ -503,9 +508,31 @@ class InstanceLifecycleController {
                             + current.state()
                             + "; expected INTERRUPTED, CRASHED, or STOPPED");
         }
+        ensureConcurrencyAllowedLocked(current, policy);
         Instance transitioned = current.transitioned(State.RUNNING, clock, null);
         store.save(transitioned);
         return transitioned;
+    }
+
+    private void ensureConcurrencyAllowedLocked(
+            Instance target, InstanceLifecycle.ConcurrencyPolicy policy) throws IOException {
+        boolean allowMultiUml =
+                policy == InstanceLifecycle.ConcurrencyPolicy.ISOLATED_MULTI_USER_MODE_KERNEL
+                        && isUserModeKernel(target);
+        for (Instance instance : store.list()) {
+            if (!instance.id().equals(target.id()) && instance.state() == State.RUNNING) {
+                if (!allowMultiUml || !isUserModeKernel(instance)) {
+                    throw new SingleRunningInstanceException("another Instance is already RUNNING");
+                }
+            }
+        }
+    }
+
+    private static boolean isUserModeKernel(Instance instance) {
+        ExecutionPolicyContract.StrategyDeclaration strategy =
+                instance.executionIdentity().strategy();
+        return !strategy.isAbsent()
+                && strategy.strategy() == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL;
     }
 
     /**

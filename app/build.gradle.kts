@@ -317,6 +317,11 @@ android {
             manifest.srcFile("src/w303Qa/AndroidManifest.xml")
             java.srcDir("src/w303Qa/java")
         }
+    } else if (buildChannel == "qa" && buildPurpose == "w304") {
+        sourceSets.getByName("androidTest") {
+            manifest.srcFile("src/w304Qa/AndroidManifest.xml")
+            java.srcDir("src/w304Qa/java")
+        }
     }
 
     if (qemuNativeLibDir != null || qemuAssetsDir != null || qemuInitramfsDir != null) {

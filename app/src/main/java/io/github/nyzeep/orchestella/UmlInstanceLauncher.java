@@ -14,6 +14,7 @@ import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import io.github.nyzeep.orchestella.runtime.engineuml.CpioNewcToolExtractor;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroCapabilityCatalog;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlEphemeralRootFixture;
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlInstanceBudget;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlInstanceRootfsProvisioner;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlLaunchSpec;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlProcessFactory;
@@ -23,6 +24,7 @@ import io.github.nyzeep.orchestella.runtime.engineuml.UmlRootReservationRegistry
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlRuntimeSupervisor;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlVolumeInspector;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
+import io.github.nyzeep.orchestella.runtime.network.LoopbackEndpointRegistry;
 import io.github.nyzeep.orchestella.runtime.network.download.ResilientDownloadEngine;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -60,8 +62,10 @@ import java.util.stream.Collectors;
  * <p>Supports persistent per-instance ext4 {@code ubd0} root volumes assembled atomically on
  * first boot via {@link UmlInstanceRootfsProvisioner} (reusing {@link UmlRootfsProvisioner}'s
  * verified Alpine input as a read-only seed), while retaining compatibility with the W3-01
- * disposable HOSTFS constructor for legacy contract tests. Never alters or shares state with
- * {@link UmlFaceLauncher}, {@link UmlFaceRideAlong}, QEMU, or AVF.
+ * disposable HOSTFS constructor for legacy contract tests. Never alters
+ * {@link UmlFaceLauncher}, {@link UmlFaceRideAlong}, QEMU, or AVF;
+ * host-memory admission reads {@link UmlFaceStatusRegistry#runningMemMb()}
+ * strictly as read-only input.
  */
 public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserModeKernelLaunch {
     static final String ALPINE_MINIROOTFS_RESOURCE = UmlKernelAssets.FastProfile.ROOTFS_TAR;
@@ -93,12 +97,15 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
 
     private static final ConcurrentMap<String, RuntimeProcessSupervisor.StopResult>
             LAST_FAILED_CLEANUP = new ConcurrentHashMap<>();
+    private static final AtomicBoolean PROCESS_BUDGET_CONFIGURED = new AtomicBoolean(false);
 
     private final Context context;
     private final ExecutableResolver executableResolver;
     private final File filesDir;
     private final UmlProcessFactory processFactory;
     private final UmlRootReservationRegistry reservationRegistry;
+    private final UmlInstanceBudget instanceBudget;
+    private final LoopbackEndpointRegistry endpointRegistry;
     private final UmlEphemeralRootFixture.TarSource tarSource;
     private final LongSupplier monotonicNanos;
     private final long stopGraceMs;
@@ -110,6 +117,21 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
     private final Object instanceWriteLock;
     private final InstanceLifecycle.FileStore instanceStore;
     private final Clock clock;
+
+    /** Configures the process-wide UML memory budget against Android host RAM and ride-along usage. */
+    public static void configureProcessBudget(Context context) {
+        Objects.requireNonNull(context, "context");
+        Context appContext = context.getApplicationContext();
+        UmlInstanceBudget.configureDefault(
+                () -> {
+                    HostHardwareProfile profile = HostHardwareDetector.detect(appContext);
+                    return new UmlInstanceBudget.HostMemorySnapshot(
+                            profile.totalRamMb(), profile.availRamMb(), profile.isLowMemory());
+                },
+                UmlFaceStatusRegistry::runningMemMb,
+                UmlInstanceBudget.BudgetPolicy.defaults());
+        PROCESS_BUDGET_CONFIGURED.set(true);
+    }
 
     public UmlInstanceLauncher(Context context) {
         this(context, null);
@@ -130,11 +152,16 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
     private UmlInstanceLauncher(
             Context context, InstanceLifecycle.FileStore instanceStore, boolean persistentVolumeMode) {
         Context appContext = Objects.requireNonNull(context, "context").getApplicationContext();
+        if (PROCESS_BUDGET_CONFIGURED.compareAndSet(false, true)) {
+            configureProcessBudget(appContext);
+        }
         this.context = appContext;
         this.executableResolver = soName -> NativeExecutableStore.ensure(appContext, soName);
         this.filesDir = appContext.getFilesDir();
         this.processFactory = new UmlNativePtyBridge();
         this.reservationRegistry = UmlRootReservationRegistry.defaultRegistry();
+        this.instanceBudget = UmlInstanceBudget.defaultBudget();
+        this.endpointRegistry = LoopbackEndpointRegistry.defaultRegistry();
         this.tarSource = () -> PackagedAssetStreams.openResource(appContext, ALPINE_MINIROOTFS_RESOURCE);
         this.monotonicNanos = SystemClock::elapsedRealtimeNanos;
         this.stopGraceMs = DEFAULT_STOP_GRACE_MS;
@@ -177,12 +204,41 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
             long stopGraceMs,
             long forceWaitMs,
             long channelsCloseTimeoutMs) {
+        this(
+                nativeLibraryDir,
+                filesDir,
+                processFactory,
+                reservationRegistry,
+                permissiveJvmBudget(),
+                new LoopbackEndpointRegistry(),
+                tarSource,
+                monotonicNanos,
+                stopGraceMs,
+                forceWaitMs,
+                channelsCloseTimeoutMs);
+    }
+
+    /** Pure-JVM injectable constructor for W3-04 multi-instance disposable HOSTFS tests. */
+    public UmlInstanceLauncher(
+            File nativeLibraryDir,
+            File filesDir,
+            UmlProcessFactory processFactory,
+            UmlRootReservationRegistry reservationRegistry,
+            UmlInstanceBudget instanceBudget,
+            LoopbackEndpointRegistry endpointRegistry,
+            UmlEphemeralRootFixture.TarSource tarSource,
+            LongSupplier monotonicNanos,
+            long stopGraceMs,
+            long forceWaitMs,
+            long channelsCloseTimeoutMs) {
         Objects.requireNonNull(nativeLibraryDir, "nativeLibraryDir");
         this.context = null;
         this.executableResolver = soName -> new File(nativeLibraryDir, soName).getAbsolutePath();
         this.filesDir = Objects.requireNonNull(filesDir, "filesDir");
         this.processFactory = Objects.requireNonNull(processFactory, "processFactory");
         this.reservationRegistry = Objects.requireNonNull(reservationRegistry, "reservationRegistry");
+        this.instanceBudget = Objects.requireNonNull(instanceBudget, "instanceBudget");
+        this.endpointRegistry = Objects.requireNonNull(endpointRegistry, "endpointRegistry");
         this.tarSource = Objects.requireNonNull(tarSource, "tarSource");
         this.monotonicNanos = Objects.requireNonNull(monotonicNanos, "monotonicNanos");
         this.stopGraceMs = Math.max(0L, stopGraceMs);
@@ -211,12 +267,49 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
             long stopGraceMs,
             long forceWaitMs,
             long channelsCloseTimeoutMs) {
+        this(
+                nativeLibraryDir,
+                filesDir,
+                processFactory,
+                reservationRegistry,
+                permissiveJvmBudget(),
+                new LoopbackEndpointRegistry(),
+                instanceProvisioner,
+                seedInputSupplier,
+                instanceWriteLock,
+                instanceStore,
+                clock,
+                monotonicNanos,
+                stopGraceMs,
+                forceWaitMs,
+                channelsCloseTimeoutMs);
+    }
+
+    /** Pure-JVM injectable constructor for W3-04 multi-instance persistent ext4 tests. */
+    public UmlInstanceLauncher(
+            File nativeLibraryDir,
+            File filesDir,
+            UmlProcessFactory processFactory,
+            UmlRootReservationRegistry reservationRegistry,
+            UmlInstanceBudget instanceBudget,
+            LoopbackEndpointRegistry endpointRegistry,
+            UmlInstanceRootfsProvisioner instanceProvisioner,
+            SeedInputSupplier seedInputSupplier,
+            Object instanceWriteLock,
+            InstanceLifecycle.FileStore instanceStore,
+            Clock clock,
+            LongSupplier monotonicNanos,
+            long stopGraceMs,
+            long forceWaitMs,
+            long channelsCloseTimeoutMs) {
         Objects.requireNonNull(nativeLibraryDir, "nativeLibraryDir");
         this.context = null;
         this.executableResolver = soName -> new File(nativeLibraryDir, soName).getAbsolutePath();
         this.filesDir = Objects.requireNonNull(filesDir, "filesDir");
         this.processFactory = Objects.requireNonNull(processFactory, "processFactory");
         this.reservationRegistry = Objects.requireNonNull(reservationRegistry, "reservationRegistry");
+        this.instanceBudget = Objects.requireNonNull(instanceBudget, "instanceBudget");
+        this.endpointRegistry = Objects.requireNonNull(endpointRegistry, "endpointRegistry");
         this.tarSource = null;
         this.monotonicNanos = Objects.requireNonNull(monotonicNanos, "monotonicNanos");
         this.stopGraceMs = Math.max(0L, stopGraceMs);
@@ -228,6 +321,13 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
         this.instanceWriteLock = instanceWriteLock != null ? instanceWriteLock : new Object();
         this.instanceStore = instanceStore;
         this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    private static UmlInstanceBudget permissiveJvmBudget() {
+        return new UmlInstanceBudget(
+                () -> new UmlInstanceBudget.HostMemorySnapshot(65536, 65536, false),
+                () -> 0,
+                UmlInstanceBudget.BudgetPolicy.defaults());
     }
 
     /**
@@ -302,9 +402,12 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
         UmlProcessHandle spawnedHandle = null;
         ParcelFileDescriptor spawnedNetworkSocket = null;
         UmlPasstNetwork spawnedNetwork = null;
+        UmlInstanceBudget.MemoryLease memoryLease = null;
         Session registeredSession = null;
         boolean retainReservationOnUnconfirmedStop = false;
         try {
+            int requestedMemMb = Math.max(UmlLaunchSpec.MIN_MEMORY_MB, config.ramMegabytes());
+            memoryLease = instanceBudget.acquire(parameters.instanceId, generation, requestedMemMb);
             baseStageTrace.onGate(ProductionStageRecorder.Stage.INPUTS_BEGIN);
             String kernelPath = executableResolver.resolve(KERNEL_LIBRARY_NAME);
             String stubExePath = executableResolver.resolve(STUB_LIBRARY_NAME);
@@ -425,8 +528,8 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                     // The optional network owns its own diagnostic and cannot block the shell.
                 }
                 network = new UmlPasstNetwork(
-                        context, runtimeDir, parameters.instanceId, parameters.bridgeToken,
-                        spawnedNetworkSocket);
+                        context, runtimeDir, parameters.instanceId, generation,
+                        parameters.bridgeToken, spawnedNetworkSocket, endpointRegistry);
                 spawnedNetworkSocket = null;
                 spawnedNetwork = network;
             } else {
@@ -446,6 +549,8 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                     sessionTempDir,
                     reservationRegistry,
                     reservation,
+                    instanceBudget,
+                    memoryLease,
                     readinessTracker,
                     timeline,
                     baseStageTrace,
@@ -515,6 +620,9 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                         UmlReadinessTracker.RejectionReason.LAUNCH_FAILED,
                         monotonicNanos.getAsLong());
                 baseStageTrace.onFailure(ProductionStageRecorder.Failure.CREATE_FAILED);
+                if (!retainReservationOnUnconfirmedStop && memoryLease != null) {
+                    instanceBudget.release(memoryLease);
+                }
                 RuntimeProcessSupervisor.StopResult preSpawnCleanup = retainReservationOnUnconfirmedStop
                         ? RuntimeProcessSupervisor.StopResult.UNCONFIRMED
                         : cleanUpBeforeSpawn(
@@ -730,6 +838,44 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                 long channelsCloseTimeoutMs,
                 long terminateGraceMs,
                 long closeGraceMs) {
+            this(
+                    instanceId,
+                    generation,
+                    handle,
+                    network,
+                    ephemeralRootDir,
+                    reservationRegistry,
+                    reservation,
+                    null,
+                    null,
+                    readinessTracker,
+                    timeline,
+                    baseStageTrace,
+                    monotonicNanos,
+                    forceWaitMs,
+                    channelsCloseTimeoutMs,
+                    terminateGraceMs,
+                    closeGraceMs);
+        }
+
+        Session(
+                String instanceId,
+                String generation,
+                UmlProcessHandle handle,
+                UmlPasstNetwork network,
+                Path ephemeralRootDir,
+                UmlRootReservationRegistry reservationRegistry,
+                UmlRootReservationRegistry.Reservation reservation,
+                UmlInstanceBudget instanceBudget,
+                UmlInstanceBudget.MemoryLease memoryLease,
+                UmlReadinessTracker readinessTracker,
+                LaunchTimeline timeline,
+                LaunchStageObserver baseStageTrace,
+                LongSupplier monotonicNanos,
+                long forceWaitMs,
+                long channelsCloseTimeoutMs,
+                long terminateGraceMs,
+                long closeGraceMs) {
             this.instanceId = instanceId;
             this.generation = generation;
             this.handle = handle;
@@ -748,6 +894,9 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                     () -> {
                         if (network != null) network.closeAfterGuestExit();
                         cleanupEphemeralRoot(ephemeralRootDir);
+                        if (instanceBudget != null && memoryLease != null) {
+                            instanceBudget.release(memoryLease);
+                        }
                     },
                     reservationRegistry,
                     reservation,
@@ -808,8 +957,17 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
             return ephemeralRootDir;
         }
 
+        @Override
+        public String launchGeneration() {
+            return generation;
+        }
+
         String generation() {
             return generation;
+        }
+
+        long guestPid() {
+            return handle.pid();
         }
 
         private boolean isCurrentGeneration() {

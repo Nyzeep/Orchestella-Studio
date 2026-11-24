@@ -21,6 +21,9 @@ public final class OrchestellaApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        if (BuildConfig.IS_ISOLATED_QA_BUILD) {
+            UmlInstanceLauncher.configureProcessBudget(this);
+        }
         GpuDeviceModelProbeOwner.warmUpAsync(this);
     }
 }

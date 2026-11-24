@@ -603,6 +603,11 @@ public final class UmlFaceLauncher {
         wired.execute(grantedWidth, item);
     }
 
+    /** The configured guest RAM allocation in MiB for this compile-worker face. */
+    public int memMb() {
+        return params.memMb();
+    }
+
     /** The current lifecycle state (observability for the wiring owner). */
     public synchronized State state() {
         return state;

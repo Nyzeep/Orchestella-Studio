@@ -20,15 +20,24 @@ public final class InstanceLaunchSequence {
      */
     public static void beforeLaunch(InstanceLifecycle.Controller controller,
             InstanceLifecycle.Instance instance) throws IOException {
+        beforeLaunch(controller, instance, InstanceLifecycle.ConcurrencyPolicy.SINGLE_RUNNING_INSTANCE);
+    }
+
+    /**
+     * Drives pre-launch transitions under the caller's explicit concurrency policy (ADR-0016).
+     */
+    public static void beforeLaunch(InstanceLifecycle.Controller controller,
+            InstanceLifecycle.Instance instance,
+            InstanceLifecycle.ConcurrencyPolicy concurrencyPolicy) throws IOException {
         if (instance.state() == InstanceLifecycle.State.CREATED) {
             controller.beginProvisioning(instance.id());
             controller.completeProvisioning(instance.id());
         }
         if (instance.state() == InstanceLifecycle.State.CRASHED
                 || instance.state() == InstanceLifecycle.State.INTERRUPTED) {
-            controller.coldRestore(instance.id());
+            controller.coldRestore(instance.id(), concurrencyPolicy);
         } else {
-            controller.start(instance.id());
+            controller.start(instance.id(), concurrencyPolicy);
         }
     }
 
@@ -124,6 +133,20 @@ public final class InstanceLaunchSequence {
                 || ExecutionSessionRegistry.get(instanceId) != null) return false;
         if (enteredRunning && cleanupResult == StopResult.UNCONFIRMED) return false;
         if (enteredRunning) controller.recordCrash(instanceId, -1, null, "Launch failed before VM owner registration");
+        InstanceLaunchGuard.end(instanceId, generation);
+        stopForeground.run();
+        return true;
+    }
+
+    /**
+     * Reverts a pre-spawn admission refusal (before any guest process or disk state was created):
+     * transitions {@code RUNNING -> STOPPED} cleanly without recording a crash.
+     */
+    public static boolean afterPrelaunchRefusal(InstanceLifecycle.Controller controller, String instanceId,
+            String generation, boolean enteredRunning, Runnable stopForeground) throws IOException {
+        if (!InstanceLaunchGuard.isLatest(instanceId, generation)
+                || ExecutionSessionRegistry.get(instanceId) != null) return false;
+        if (enteredRunning) controller.recordNormalGuestStop(instanceId);
         InstanceLaunchGuard.end(instanceId, generation);
         stopForeground.run();
         return true;

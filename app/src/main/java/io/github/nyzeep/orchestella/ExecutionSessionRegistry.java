@@ -114,4 +114,12 @@ public final class ExecutionSessionRegistry {
                 PersistentTerminalSessionPool.getInstance().getHolder(instanceId);
         return holder != null && holder.rawSession() == expected ? holder.generation() : null;
     }
+
+    public static int activeSessionCount() {
+        return PersistentTerminalSessionPool.getInstance().activeSessionCount();
+    }
+
+    public static java.util.Set<String> activeInstanceIds() {
+        return PersistentTerminalSessionPool.getInstance().activeInstanceIds();
+    }
 }

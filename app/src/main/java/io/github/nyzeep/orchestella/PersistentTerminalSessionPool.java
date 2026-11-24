@@ -169,7 +169,12 @@ public final class PersistentTerminalSessionPool {
             this.session = Objects.requireNonNull(session, "session");
             this.provisioningListener = provisioningListener;
             String launching = InstanceLaunchGuard.generation(instanceId);
-            this.generation = launching != null ? launching : java.util.UUID.randomUUID().toString();
+            if (launching == null || launching.isBlank()) {
+                launching = session.launchGeneration();
+            }
+            this.generation = (launching != null && !launching.isBlank())
+                    ? launching
+                    : java.util.UUID.randomUUID().toString();
             this.ringBuffer = new TerminalRingBuffer(ringBufferCapacity);
             // W1-05 (T-14): protocol replies go through the bounded write queue and
             // never block. The pump thread calls this sink from inside the screen
@@ -783,6 +788,26 @@ public final class PersistentTerminalSessionPool {
     public boolean hasActiveSession(String instanceId) {
         SessionHolder holder = getHolder(instanceId);
         return holder != null && holder.isAlive();
+    }
+
+    public int activeSessionCount() {
+        int count = 0;
+        for (SessionHolder holder : holders.values()) {
+            if (holder.hasOwner()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public java.util.Set<String> activeInstanceIds() {
+        java.util.Set<String> ids = new java.util.LinkedHashSet<>();
+        for (SessionHolder holder : holders.values()) {
+            if (holder.hasOwner()) {
+                ids.add(holder.instanceId());
+            }
+        }
+        return java.util.Collections.unmodifiableSet(ids);
     }
 
     public String attach(String instanceId, Consumer<String> listener) {

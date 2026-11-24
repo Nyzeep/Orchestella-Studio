@@ -81,6 +81,7 @@ jobs:
           export AVF_VALIDATION_TEST_ROOT="$RUNNER_TEMP/avf-validation-tests"
           python3 -B -m unittest discover -s tools/device-validation -p 'test_avf*.py'
           python3 -B -m unittest discover -s tools/device-validation -p 'test_dv_*.py'
+          python3 -B -m unittest discover -s tools/device-validation -p 'test_run_*.py'
           python3 -B tools/device-validation/run_avf_device_validation.py \
             --dry-run --out "$RUNNER_TEMP/avf-device-validation-dry-run"
 

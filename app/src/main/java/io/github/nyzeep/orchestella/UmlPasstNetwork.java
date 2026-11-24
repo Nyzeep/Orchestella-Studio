@@ -13,6 +13,7 @@ import io.github.nyzeep.orchestella.runtime.contract.StorageContract;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlNetworkProfile;
 import io.github.nyzeep.orchestella.runtime.instance.GatewaySlotArbiter;
 import io.github.nyzeep.orchestella.runtime.network.FilePortForwardingStore;
+import io.github.nyzeep.orchestella.runtime.network.LoopbackEndpointRegistry;
 import io.github.nyzeep.orchestella.runtime.network.SocketPortForwarder;
 import java.io.Closeable;
 import java.io.IOException;
@@ -28,8 +29,12 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /** Per-session passt owner and authenticated transport for loopback TCP rules. */
@@ -83,6 +88,7 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
     private static final long READINESS_JOIN_TIMEOUT_MS = 500L;
     private static final int DEFAULT_CONNECTION_LIMIT = 12;
     private static final int TCP_IDLE_TIMEOUT_MS = 60_000;
+    private static final Set<Integer> RESERVED_RELAY_PORTS = ConcurrentHashMap.newKeySet();
 
     private static final class Attempt {
         final int pid;
@@ -105,12 +111,16 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
     private final Path runtimeDir;
     private final FilePortForwardingStore store;
     private final String instanceId;
+    private final String generation;
     private final String token;
     private final ExecutableSupplier executableSupplier;
     private final int guestFd;
     private final Closeable guestSocketCloser;
     private final PasstLauncher passtLauncher;
     private final RouteMonitor routeMonitor;
+    private final LoopbackEndpointRegistry endpointRegistry;
+    private final Map<String, LoopbackEndpointRegistry.EndpointLease> ownedEndpoints =
+            new LinkedHashMap<>();
     private final SecureRandom random = new SecureRandom();
     private final SocketPortForwarder forwarding = new SocketPortForwarder(
             this::connectGuest, DEFAULT_CONNECTION_LIMIT, TCP_IDLE_TIMEOUT_MS);
@@ -125,16 +135,25 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
 
     UmlPasstNetwork(Context context, Path runtimeDir, String instanceId, String token,
             ParcelFileDescriptor guestSocket) {
+        this(context, runtimeDir, instanceId, "uml-net", token, guestSocket,
+                LoopbackEndpointRegistry.defaultRegistry());
+    }
+
+    UmlPasstNetwork(Context context, Path runtimeDir, String instanceId, String generation,
+            String token, ParcelFileDescriptor guestSocket,
+            LoopbackEndpointRegistry endpointRegistry) {
         this(
                 runtimeDir,
                 context.getFilesDir().toPath().resolve("network"),
                 instanceId,
+                generation,
                 token,
                 () -> NativeExecutableStore.ensure(context, PASST_LIBRARY),
                 guestSocket != null ? guestSocket.getFd() : -1,
                 guestSocket != null ? guestSocket : () -> {},
                 androidPasstLauncher(),
-                new AndroidRouteMonitor(context.getSystemService(ConnectivityManager.class)));
+                new AndroidRouteMonitor(context.getSystemService(ConnectivityManager.class)),
+                endpointRegistry);
     }
 
     UmlPasstNetwork(
@@ -147,15 +166,34 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
             Closeable guestSocketCloser,
             PasstLauncher passtLauncher,
             RouteMonitor routeMonitor) {
+        this(runtimeDir, networkStoreRoot, instanceId, "uml-net", token, executableSupplier,
+                guestFd, guestSocketCloser, passtLauncher, routeMonitor,
+                LoopbackEndpointRegistry.defaultRegistry());
+    }
+
+    UmlPasstNetwork(
+            Path runtimeDir,
+            Path networkStoreRoot,
+            String instanceId,
+            String generation,
+            String token,
+            ExecutableSupplier executableSupplier,
+            int guestFd,
+            Closeable guestSocketCloser,
+            PasstLauncher passtLauncher,
+            RouteMonitor routeMonitor,
+            LoopbackEndpointRegistry endpointRegistry) {
         this.runtimeDir = Objects.requireNonNull(runtimeDir, "runtimeDir");
         this.store = new FilePortForwardingStore(Objects.requireNonNull(networkStoreRoot, "networkStoreRoot"));
         this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
+        this.generation = (generation == null || generation.isBlank()) ? "uml-net" : generation;
         this.token = Objects.requireNonNull(token, "token");
         this.executableSupplier = Objects.requireNonNull(executableSupplier, "executableSupplier");
         this.guestFd = guestFd;
         this.guestSocketCloser = Objects.requireNonNull(guestSocketCloser, "guestSocketCloser");
         this.passtLauncher = Objects.requireNonNull(passtLauncher, "passtLauncher");
         this.routeMonitor = Objects.requireNonNull(routeMonitor, "routeMonitor");
+        this.endpointRegistry = Objects.requireNonNull(endpointRegistry, "endpointRegistry");
     }
 
     void restoreBeforePublish() {
@@ -178,7 +216,7 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
     void start() {
         synchronized (lock) {
             if (closed || worker != null || executable == null) return;
-            worker = new Thread(this::run, "uml-passt");
+            worker = new Thread(this::run, "uml-passt-" + instanceId);
             worker.setDaemon(true);
             worker.start();
         }
@@ -254,10 +292,12 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
 
     private boolean runAttempt(String executable, HostRoute next) {
         Path pidFile = null;
+        Integer reservedPort = null;
         Attempt candidate = null;
         Thread readiness = null;
         try {
             int port = pickRelayPort();
+            reservedPort = port;
             pidFile = Files.createTempFile(runtimeDir, "passt-", ".pid");
             PasstProcess process = passtLauncher.spawn(argv(executable, pidFile, port, next.dns()), pidFile);
             candidate = new Attempt(process.pid(), port, process, next);
@@ -268,7 +308,9 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
                 if (closed || !next.equals(route)) cancelAttemptLocked(true);
             }
             if (!active.cancelled) {
-                readiness = new Thread(() -> confirmReadiness(active, readinessFile), "uml-passt-readiness");
+                readiness = new Thread(
+                        () -> confirmReadiness(active, readinessFile),
+                        "uml-passt-readiness-" + instanceId);
                 readiness.setDaemon(true);
                 readiness.start();
                 process.pump(guestFd);
@@ -302,6 +344,9 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
                     }
                 }
             }
+            if (reservedPort != null) {
+                RESERVED_RELAY_PORTS.remove(reservedPort);
+            }
             if (pidFile != null) {
                 try {
                     Files.deleteIfExists(pidFile);
@@ -314,7 +359,7 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
     }
 
     private static int pickRelayPort() throws IOException {
-        for (int attempt = 0; attempt < 8; attempt++) {
+        for (int attempt = 0; attempt < 16; attempt++) {
             int port;
             try (ServerSocket pickPort = new ServerSocket()) {
                 pickPort.bind(new InetSocketAddress(LOOPBACK, 0));
@@ -322,7 +367,8 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
             }
             if (!PortForwardingRule.isReservedHostPort(port)
                     && (port < GatewaySlotArbiter.PORT_BASE
-                            || port >= GatewaySlotArbiter.PORT_BASE + GatewaySlotArbiter.PORT_SLOTS)) {
+                            || port >= GatewaySlotArbiter.PORT_BASE + GatewaySlotArbiter.PORT_SLOTS)
+                    && RESERVED_RELAY_PORTS.add(port)) {
                 return port;
             }
         }
@@ -378,7 +424,7 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
             for (PortForwardingRule rule : store.loadRules(instanceId)) {
                 if (!supportsRule(rule)) continue;
                 try {
-                    forwarding.addRule(rule);
+                    applyRuleWithLeaseLocked(rule, null);
                 } catch (IOException refused) {
                     Log.w(TAG, "forwarding=RESTORE_BIND_REFUSED endpoint=USER_LOOPBACK");
                 }
@@ -504,6 +550,10 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
 
     private void finishClose() {
         forwarding.close();
+        for (LoopbackEndpointRegistry.EndpointLease lease : ownedEndpoints.values()) {
+            endpointRegistry.release(lease);
+        }
+        ownedEndpoints.clear();
         closeQuietly(guestSocketCloser);
         setStatus(Status.STOPPED);
     }
@@ -537,7 +587,7 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
         synchronized (lock) {
             requireListeners();
             if (!supportsRule(rule)) throw new IOException("unsupported UML loopback forwarding rule");
-            forwarding.addRule(rule);
+            applyRuleWithLeaseLocked(rule, null);
         }
     }
 
@@ -546,13 +596,48 @@ final class UmlPasstNetwork implements PortForwardingEngine.Live {
         synchronized (lock) {
             requireListeners();
             if (!supportsRule(replacement)) throw new IOException("unsupported UML loopback forwarding rule");
-            forwarding.replaceRule(previous, replacement);
+            if (!previous.id().equals(replacement.id())) {
+                throw new IOException("the previous forwarding listener is not active");
+            }
+            applyRuleWithLeaseLocked(replacement, previous);
+        }
+    }
+
+    private void applyRuleWithLeaseLocked(PortForwardingRule target, PortForwardingRule previous)
+            throws IOException {
+        LoopbackEndpointRegistry.EndpointLease existing = ownedEndpoints.get(target.id());
+        LoopbackEndpointRegistry.EndpointLease acquired = endpointRegistry.acquire(
+                target.bindAddress(), target.hostPort(), instanceId, generation, target.id());
+        try {
+            if (previous != null) {
+                forwarding.replaceRule(previous, target);
+            } else {
+                forwarding.addRule(target);
+            }
+        } catch (IOException | RuntimeException failure) {
+            if (acquired != existing) {
+                endpointRegistry.release(acquired);
+            }
+            throw failure;
+        }
+        ownedEndpoints.put(target.id(), acquired);
+        if (existing != null && existing != acquired) {
+            endpointRegistry.release(existing);
         }
     }
 
     @Override
     public void removeRule(PortForwardingRule rule) throws IOException {
-        forwarding.removeRule(rule);
+        synchronized (lock) {
+            forwarding.removeRule(rule);
+            LoopbackEndpointRegistry.EndpointLease lease = ownedEndpoints.get(rule.id());
+            if (lease != null
+                    && lease.hostPort() == rule.hostPort()
+                    && Objects.equals(lease.bindAddress(), rule.bindAddress())) {
+                ownedEndpoints.remove(rule.id());
+                endpointRegistry.release(lease);
+            }
+        }
     }
 
     @Override

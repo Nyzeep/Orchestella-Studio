@@ -279,7 +279,15 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
                 }
                 return LaunchOutcome.Busy
             }
-            InstanceLaunchSequence.beforeLaunch(controller, instance)
+            val concurrencyPolicy = if (
+                isolatedQaEnabled.asBoolean &&
+                preflight.resolvedStrategy() == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL
+            ) {
+                InstanceLifecycle.ConcurrencyPolicy.ISOLATED_MULTI_USER_MODE_KERNEL
+            } else {
+                InstanceLifecycle.ConcurrencyPolicy.SINGLE_RUNNING_INSTANCE
+            }
+            InstanceLaunchSequence.beforeLaunch(controller, instance, concurrencyPolicy)
             running = true
             val distroTitle = instance.distro().id().replaceFirstChar { it.uppercase() } + " " + instance.distro().version()
             val badge = if (preflight.resolvedStrategy() == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL) {
@@ -388,8 +396,7 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
                     // accelerator lane must not outlive the launch that
                     // armed it. A WAIT_FAILED keeps both lanes untouched.
                     if (exit.status() != InstanceLaunchSequence.ExitStatus.WAIT_FAILED) {
-                        acceleratorCoordinator?.close()
-                        umlFaceLane.disarm(instance.id())
+                        closeAndDisarmAccelerator(acceleratorCoordinator, instance.id())
                     }
                     if (exit.status() != InstanceLaunchSequence.ExitStatus.STALE) ui.runOnUi {
                         if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)) return@runOnUi
@@ -410,8 +417,7 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
                     // The watcher only throws after the guest was observed
                     // exiting, so the QEMU runtime is already gone; the
                     // accelerator lane must not survive it unattended.
-                    acceleratorCoordinator?.close()
-                    umlFaceLane.disarm(instance.id())
+                    closeAndDisarmAccelerator(acceleratorCoordinator, instance.id())
                     ui.runOnUi {
                         if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)) return@runOnUi
                         ui.showStatus(copy.detailMessage(failure))
@@ -446,14 +452,21 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
             // A failed launch may have left a runtime whose stop was not
             // confirmed; keep RUNNING metadata and the foreground binding in
             // that case instead of pretending the instance crashed.
-            acceleratorCoordinator?.close()
-            umlFaceLane.disarm(instance.id())
+            closeAndDisarmAccelerator(acceleratorCoordinator, instance.id())
             val cleanupResult = cleanupBridge.takeLastCleanupResult(instance.id())
             try {
-                InstanceLaunchSequence.afterLaunchFailure(
-                    controller, instance.id(), failedGeneration, running, cleanupResult
-                ) {
-                    foreground.stop(instance.id(), failedGeneration)
+                if (failure is io.github.nyzeep.orchestella.runtime.engineuml.UmlInstanceBudget.BudgetRefusalException) {
+                    InstanceLaunchSequence.afterPrelaunchRefusal(
+                        controller, instance.id(), failedGeneration, running
+                    ) {
+                        foreground.stop(instance.id(), failedGeneration)
+                    }
+                } else {
+                    InstanceLaunchSequence.afterLaunchFailure(
+                        controller, instance.id(), failedGeneration, running, cleanupResult
+                    ) {
+                        foreground.stop(instance.id(), failedGeneration)
+                    }
                 }
             } catch (_: Exception) {
                 // A metadata/observer failure is not evidence of VM death; retain its owner.
@@ -596,6 +609,16 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
             laneEventSink,
             legacyStrategyLaunch,
         )
+
+    private fun closeAndDisarmAccelerator(
+        coord: DualLaneCoordinator?,
+        instanceId: String,
+    ) {
+        coord?.close()
+        if (coord != null) {
+            umlFaceLane.disarm(instanceId)
+        }
+    }
 
     private fun launchNavigation(instance: InstanceLifecycle.Instance) = LaunchNavigation(
         bridgeToken = instance.bridgeToken(),

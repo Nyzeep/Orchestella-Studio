@@ -45,6 +45,11 @@ tasks.register<JavaExec>("socketForwarderDiagnosticsTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.network.SocketPortForwarderDiagnosticsTest")
 }
 
+tasks.register<JavaExec>("loopbackEndpointRegistryTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.network.LoopbackEndpointRegistryTest")
+}
+
 // The manager contract suite is strategy-neutral: other engine modules re-run
 // it against their own live forwarding engine (Ticket 36 AC-3), so the test
 // classes are published as consumable artifacts.
@@ -64,6 +69,7 @@ tasks.named("check") {
         "portForwardingManagerContractTest",
         "resilientDownloadEngineContractTest",
         "bridgeProxyGatewayContractTest",
-        "socketForwarderDiagnosticsTest"
+        "socketForwarderDiagnosticsTest",
+        "loopbackEndpointRegistryTest"
     )
 }

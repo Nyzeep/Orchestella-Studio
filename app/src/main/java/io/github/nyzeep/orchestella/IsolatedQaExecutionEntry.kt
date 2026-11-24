@@ -163,6 +163,64 @@ class IsolatedQaExecutionEntry(
     }
 
     /**
+     * Creates an independent standalone UML instance with its own root volume, hostname, and RAM
+     * budget for multi-instance QA verification without reusing prior QA instances.
+     */
+    @JvmOverloads
+    @Throws(IOException::class)
+    fun createStandaloneUmlInstance(
+        store: InstanceLifecycle.Store,
+        controller: InstanceLifecycle.Controller,
+        qaRootsDir: Path,
+        hostname: String,
+        ramMegabytes: Int = 512,
+        distroId: String = "alpine",
+    ): InstanceLifecycle.Instance {
+        check(isEnabled()) {
+            "Isolated QA execution entry is disabled outside QA builds (buildChannel=${BuildConfig.BUILD_CHANNEL})"
+        }
+        val gateVerdict = UmlDistroCapabilityCatalog.requireCreatable(
+            distroId,
+            UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64,
+        )
+        val projection = DistroCreatabilityProjection.evaluateForStrategy(
+            strategy = FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+            distroId = distroId,
+            filesDir = qaRootsDir.parent ?: qaRootsDir,
+            isolatedQaEnabled = isEnabled(),
+            umlRootfsDownloadEnabled = BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED,
+        )
+        check(projection.creatable) {
+            projection.refusalReason ?: "Distro $distroId is not creatable for USER_MODE_KERNEL"
+        }
+        Files.createDirectories(qaRootsDir)
+        val rootVolume = qaRootsDir.resolve("qa-uml-${gateVerdict.distroId()}-${UUID.randomUUID()}.raw")
+        if (Files.notExists(rootVolume)) {
+            Files.createFile(rootVolume)
+        }
+        val created = createInstance(
+            controller = controller,
+            distro = InstanceLifecycle.DistroReference(gateVerdict.distroId(), gateVerdict.version()),
+            rootVolume = rootVolume,
+            hardwareConfig = VmHardwareConfig.builder()
+                .cpuCores(1)
+                .ramMegabytes(ramMegabytes)
+                .diskCapacityBytes(StorageContract.DEFAULT_ROOT_VOLUME_BYTES)
+                .build(),
+            userConfig = InstanceUserConfig(
+                InstanceUserConfig.DEFAULT_ROOT_USER,
+                "orchestellaqa",
+                false,
+                hostname,
+            ),
+            strategy = FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+            volumeFormat = StorageContract.RootVolumeFormat.RAW_SPARSE,
+        )
+        controller.beginProvisioning(created.id())
+        return controller.completeProvisioning(created.id())
+    }
+
+    /**
      * Explicit root-volume replacement / migration entry (W3-02 / R-02).
      * Never called implicitly on ordinary launches; preserves the old volume if provisioning fails.
      */

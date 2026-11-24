@@ -350,7 +350,12 @@ object UmlRootfsExtraArgs {
  * gate-refused face reads 0 and the UI says so.
  */
 object UmlFaceStatusRegistry {
-    class BoundFace(val instanceId: String, val face: UmlFaceLauncher, val channelWired: Boolean)
+    class BoundFace @JvmOverloads constructor(
+        val instanceId: String,
+        val face: UmlFaceLauncher,
+        val channelWired: Boolean,
+        val generation: String = java.util.UUID.randomUUID().toString(),
+    )
 
     @Volatile
     private var bound: BoundFace? = null
@@ -362,12 +367,18 @@ object UmlFaceStatusRegistry {
      * that omits it states the unwired truth, never a faked wired claim.
      */
     @Synchronized
+    @JvmOverloads
     @JvmStatic
-    fun register(instanceId: String, face: UmlFaceLauncher, channelWired: Boolean = false): Boolean {
+    fun register(
+        instanceId: String,
+        face: UmlFaceLauncher,
+        channelWired: Boolean = false,
+        generation: String = java.util.UUID.randomUUID().toString(),
+    ): Boolean {
         if (bound != null) {
             return false
         }
-        bound = BoundFace(instanceId, face, channelWired)
+        bound = BoundFace(instanceId, face, channelWired, generation)
         return true
     }
 
@@ -383,6 +394,18 @@ object UmlFaceStatusRegistry {
         return true
     }
 
+    /** Removes only the face bound for this exact instance and generation. */
+    @Synchronized
+    @JvmStatic
+    fun unregister(instanceId: String, generation: String): Boolean {
+        val current = bound ?: return false
+        if (current.instanceId != instanceId || current.generation != generation) {
+            return false
+        }
+        bound = null
+        return true
+    }
+
     @Synchronized
     @JvmStatic
     fun current(): BoundFace? = bound
@@ -390,6 +413,13 @@ object UmlFaceStatusRegistry {
     /** The bound face's dispatchable width; 0 when no face is bound or it is down. */
     @JvmStatic
     fun runningWidth(): Int = current()?.face?.width() ?: 0
+
+    /** The bound face's committed memory in MiB while not yet stopped; 0 when stopped/absent. */
+    @JvmStatic
+    fun runningMemMb(): Int {
+        val face = current()?.face ?: return 0
+        return if (face.state() != UmlFaceLauncher.State.STOPPED) face.memMb() else 0
+    }
 
     /**
      * The bound face's channel truth, as the arm stated it at register time:
@@ -507,50 +537,72 @@ class UmlFaceRideAlong(
     private val log: (String) -> Unit,
 ) : InstanceLaunchCoordinator.UmlFaceLane {
 
+    private val lifecycleLock = Any()
+    private var armedGeneration: String? = null
+
     override fun arm(instanceId: String, gateEnabled: Boolean): UmlFaceLauncher? {
-        if (UmlFaceStatusRegistry.current() != null) {
-            log("uml-face arm refused: another face is already bound")
-            return null
+        synchronized(lifecycleLock) {
+            if (UmlFaceStatusRegistry.current() != null) {
+                log("uml-face arm refused: another face is already bound")
+                return null
+            }
+            // Provision the D-1 lane channel first (flag off answers null); a stale
+            // session from an earlier arm is closed by the wiring itself — never two.
+            val channel = compileBridge?.faceChannel()
+            val face = backend(instanceId, gateEnabled, channel)
+            if (face == null) {
+                compileBridge?.disarm()
+                log("uml-face arm declined: the wiring backend answered null")
+                return null
+            }
+            val result = face.start()
+            if (!result.started()) {
+                compileBridge?.disarm()
+                log("uml-face start refused code=${result.code} detail=${result.detail ?: "-"}")
+                return null
+            }
+            val generation = java.util.UUID.randomUUID().toString()
+            if (!UmlFaceStatusRegistry.register(
+                    instanceId,
+                    face,
+                    channelWired = channel != null,
+                    generation = generation,
+                )
+            ) {
+                // Registry slot already taken: stop this kernel and close channel cleanly.
+                log("uml-face arm refused: registry slot taken mid-start; stopping this face")
+                face.stop()
+                compileBridge?.disarm()
+                return null
+            }
+            armedGeneration = generation
+            // The arm line states the channel truthfully: wired when the D-1 lane
+            // channel rode into the assembly slot, unwired when it did not — and
+            // the same fact now rides into the registry (channelWired) so the
+            // dashboard renders the routability truth. The width stays the face's
+            // own honest read either way.
+            log("uml-face started width=${face.width()} channel=${if (channel != null) "wired" else "unwired"}")
+            return face
         }
-        // Provision the D-1 lane channel first (flag off answers null); a stale
-        // session from an earlier arm is closed by the wiring itself — never two.
-        val channel = compileBridge?.faceChannel()
-        val face = backend(instanceId, gateEnabled, channel)
-        if (face == null) {
-            log("uml-face arm declined: the wiring backend answered null")
-            return null
-        }
-        val result = face.start()
-        if (!result.started()) {
-            log("uml-face start refused code=${result.code} detail=${result.detail ?: "-"}")
-            return null
-        }
-        if (!UmlFaceStatusRegistry.register(instanceId, face, channelWired = channel != null)) {
-            // A concurrent arm won the slot mid-start: never run two kernels.
-            log("uml-face arm refused: registry slot taken mid-start; stopping this face")
-            face.stop()
-            return null
-        }
-        // The arm line states the channel truthfully: wired when the D-1 lane
-        // channel rode into the assembly slot, unwired when it did not — and
-        // the same fact now rides into the registry (channelWired) so the
-        // dashboard renders the routability truth. The width stays the face's
-        // own honest read either way.
-        log("uml-face started width=${face.width()} channel=${if (channel != null) "wired" else "unwired"}")
-        return face
     }
 
     override fun disarm(instanceId: String) {
-        val bound = UmlFaceStatusRegistry.current() ?: return
-        if (bound.instanceId != instanceId) {
-            return
+        synchronized(lifecycleLock) {
+            val bound = UmlFaceStatusRegistry.current() ?: return
+            if (bound.instanceId != instanceId) {
+                return
+            }
+            if (armedGeneration != null && bound.generation != armedGeneration) {
+                return
+            }
+            bound.face.stop()
+            UmlFaceStatusRegistry.unregister(instanceId, bound.generation)
+            armedGeneration = null
+            // The compile bridge (channel + submitter listener) dies with the face
+            // it serves — the listener never outlives the armed orchestrator.
+            compileBridge?.disarm()
+            log("uml-face stopped")
         }
-        bound.face.stop()
-        UmlFaceStatusRegistry.unregister(instanceId)
-        // The compile bridge (channel + submitter listener) dies with the face
-        // it serves — the listener never outlives the armed orchestrator.
-        compileBridge?.disarm()
-        log("uml-face stopped")
     }
 
     override fun bindFabric(orchestrator: FabricOrchestrator?) {
