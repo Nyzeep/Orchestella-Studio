@@ -101,7 +101,7 @@ public final class DesktopSessionCoordinatorTest {
         @Override public void close() {
         }
 
-        @Override public DisplayChannel waylandChannel() {
+        @Override public DisplayChannel displayChannel() {
             return channel;
         }
 

@@ -200,7 +200,7 @@ class InstanceDetailViewModelTest {
         assertEquals("⚠ 崩溃告警", state.stateBadgeText)
         assertFalse(state.canOpenTerminal)
         assertFalse(state.canLaunchDesktop)
-        assertFalse(state.canPowerOn)
+        assertTrue(state.canPowerOn)
         assertFalse(state.canPowerOff)
         assertTrue(state.hasCrashDiagnostic)
         assertEquals(139, state.crashDiagnostic?.exitCode())

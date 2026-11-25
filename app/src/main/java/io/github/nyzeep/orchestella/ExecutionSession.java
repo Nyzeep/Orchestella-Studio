@@ -88,10 +88,10 @@ public interface ExecutionSession {
     }
 
     /**
-     * Optional strategy-neutral Wayland graphics and input channel.
-     * Null when the session does not provide a Wayland graphics stream.
+     * Optional strategy-neutral display graphics and input channel.
+     * Null when the session does not provide a graphical display stream.
      */
-    default io.github.nyzeep.orchestella.runtime.contract.DisplayChannel waylandChannel() {
+    default io.github.nyzeep.orchestella.runtime.contract.DisplayChannel displayChannel() {
         return null;
     }
 

@@ -237,14 +237,15 @@ class InstancesUiStateTest {
     }
 
     @Test
-    fun crashedCardSitsInErrorGroupAndOnlyOffersLogsAndDelete() {
+    fun crashedCardSitsInErrorGroupAndAllowsColdRestorePowerResetLogsAndDelete() {
         val row = InstancesUiState.from(listOf(card(crashed("rocky")))).groups.single().items.single()
 
         assertEquals(InstanceStatus.Crashed, row.status)
         assertEquals(InstanceGroup.Error, row.status.group)
         assertFalse(row.canOpenTerminal)
-        assertFalse(row.canLaunch)
-        assertFalse(row.primaryEnabled)
+        assertTrue(row.canLaunch)
+        assertEquals(InstancePrimaryAction.Launch, row.primaryAction)
+        assertTrue(row.primaryEnabled)
         assertFalse(row.canLaunchDesktop)
         // CRASHED→STOPPED 是合法转移，电源用于复位。
         assertTrue(row.canPowerOff)

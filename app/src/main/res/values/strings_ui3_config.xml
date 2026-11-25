@@ -90,7 +90,7 @@
 
     <!-- 引擎与授权子页 -->
     <string name="config_system_section_title">引擎与授权</string>
-    <string name="config_system_hint">QEMU 软件虚拟化是全设备回退路径；AVF 取决于设备能力与授权；UML 编译面随 pVM 加速总开关。</string>
+    <string name="config_system_hint">QEMU 软件模拟是全设备回退路径；AVF 取决于设备能力与授权；UML 编译面随 pVM 加速总开关。</string>
     <string name="config_system_card_title">硬件虚拟化（AVF）</string>
     <string name="config_system_badge_probing">检测中…</string>
     <string name="config_system_details_probing">正在读取平台声明与权限…</string>

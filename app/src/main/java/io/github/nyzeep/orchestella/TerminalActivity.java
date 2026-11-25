@@ -1143,10 +1143,35 @@ public class TerminalActivity extends ComponentActivity {
         }
     }
 
+    static final String CONTROL_SOCKET_PREFIX = "droidlayer-control-";
+    static final String TERMINAL_SOCKET_PREFIX = "droidlayer-terminal-";
+
+    static String controlSocketName(String instanceId) {
+        return CONTROL_SOCKET_PREFIX + instanceId;
+    }
+
+    static String terminalSocketName(String instanceId) {
+        return TERMINAL_SOCKET_PREFIX + instanceId;
+    }
+
+    static boolean supportsSocketRecovery(InstanceLifecycle.Instance instance) {
+        if (instance == null || instance.id() == null || instance.id().trim().isEmpty()) {
+            return false;
+        }
+        io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract.StrategyDeclaration strategy =
+                instance.executionIdentity().strategy();
+        return strategy.isAbsent()
+                || strategy.strategy()
+                        == io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION;
+    }
+
     private ExecutionSession probeAndRecoverSession(InstanceLifecycle.Instance instance) throws Exception {
+        if (!supportsSocketRecovery(instance)) {
+            throw new java.io.IOException("当前执行策略不支持 QEMU socket 探活恢复");
+        }
         String socketSuffix = instance.id();
-        String controlSocket = "orchestella-" + socketSuffix + "-ctrl";
-        String terminalSocket = "orchestella-" + socketSuffix + "-term";
+        String controlSocket = controlSocketName(socketSuffix);
+        String terminalSocket = terminalSocketName(socketSuffix);
 
         // The probe's only job is the connect. try-with-resources closes on
         // failure too, or a refused/absent endpoint leaks one abstract-socket

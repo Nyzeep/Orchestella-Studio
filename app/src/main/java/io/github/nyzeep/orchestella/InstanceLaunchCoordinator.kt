@@ -465,7 +465,7 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
             val sessionBadge = when (outcome.strategy) {
                 FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL -> capabilityMatrix.performanceBadge()
                 FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION -> "AVF 硬件虚拟化"
-                FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION -> "QEMU 软件虚拟化"
+                FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION -> "QEMU 软件模拟"
             }
             foreground.start(instance.id(), distroTitle, sessionBadge,
                 settings.batteryPolicy(), sessionGeneration)

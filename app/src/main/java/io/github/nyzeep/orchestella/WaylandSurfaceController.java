@@ -123,7 +123,7 @@ public final class WaylandSurfaceController {
         public String toBadgeText() {
             return String.format(
                     Locale.ROOT,
-                    "Wayland [%s] | %d FPS | %dx%d -> %dx%d | R:%d D:%d",
+                    "RFB [%s] | %d FPS | %dx%d -> %dx%d | R:%d D:%d",
                     connectionState,
                     fps,
                     contentWidth > 0 ? contentWidth : viewportWidth,

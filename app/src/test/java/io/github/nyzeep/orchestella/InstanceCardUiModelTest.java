@@ -159,12 +159,15 @@ public final class InstanceCardUiModelTest {
 
         assertFalse("CRASHED must not be breathing", model.isBreathing());
         assertTrue(model.getStateBadgeText().contains("异常终止"));
+        assertTrue("CRASHED badge must advertise recovery or diagnostic guidance",
+                model.getStateBadgeText().contains("重新启动"));
         assertEquals(R.color.status_crashed, model.getStateBadgeColorRes());
         assertTrue("Must indicate diagnostic available", model.getHasCrashDiagnostic());
         assertNotNull(model.getCrashDiagnostic());
         assertEquals(139, model.getCrashDiagnostic().exitCode());
         assertEquals("Segmentation fault", model.getCrashDiagnostic().message());
 
+        assertTrue("DW-09: Can cold-restore launch crashed instance", model.getCanLaunch());
         assertTrue("Can delete crashed instance", model.getCanDelete());
         assertFalse("Cannot clone crashed instance", model.getCanClone());
         assertFalse("Cannot edit hardware directly on crashed instance", model.getCanConfigureHardware());

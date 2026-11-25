@@ -60,7 +60,7 @@ data class InstanceCardUiModel(
             val stateBadgeText = when (state) {
                 InstanceLifecycle.State.RUNNING -> "● 运行中 · $strategyBadge"
                 InstanceLifecycle.State.STOPPED -> "■ 已停止"
-                InstanceLifecycle.State.CRASHED -> "▲ 异常终止（点击查看诊断）"
+                InstanceLifecycle.State.CRASHED -> "▲ 异常终止（可重新启动或查看诊断）"
                 InstanceLifecycle.State.INTERRUPTED -> "⚠️ 运行中断"
                 InstanceLifecycle.State.SUSPENDED -> "⏸ 已挂起"
                 InstanceLifecycle.State.CREATED -> "○ 已创建"
@@ -121,7 +121,7 @@ data class InstanceCardUiModel(
                 ramMb = ramMb,
                 diskGb = diskGb,
                 gpuEnabled = gpuEnabled,
-                canLaunch = isStopped || isCreated || state == InstanceLifecycle.State.INTERRUPTED,
+                canLaunch = isStopped || isCreated || isCrashed || state == InstanceLifecycle.State.INTERRUPTED,
                 canOpenTerminal = isRunning,
                 // G-04 + W3-05：桌面入口与 DesktopEntryPolicy 及策略能力矩阵同源。
                 canLaunchDesktop = effectiveCanLaunchDesktop,

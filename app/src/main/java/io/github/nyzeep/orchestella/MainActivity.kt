@@ -1391,7 +1391,7 @@ class MainActivity : AppCompatActivity() {
                 // Session-18 W-B (user-approved copy): when the pVM lane is
                 // really ready, say so; otherwise the plain software
                 // virtualization wording stays — no fake acceleration.
-                if (laneReady) BadgeCopy.derive(true, "") else "QEMU 软件虚拟化"
+                if (laneReady) BadgeCopy.derive(true, "") else "QEMU 软件模拟"
             is AvfInstanceLauncher.AvfSession -> "AVF 硬件虚拟化"
             else -> session?.capabilityMatrix()?.performanceBadge() ?: strategyBadge
         }
@@ -1444,7 +1444,45 @@ class MainActivity : AppCompatActivity() {
         val requestedSession = ExecutionSessionRegistry.get(instance.id())
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val session = requestedSession ?: throw IOException("实例已离线")
+                if (requestedSession == null) {
+                    val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
+                    val resetOutcome = OfflineInstanceStopReset.tryResetOffline(
+                        store = instanceStore,
+                        controller = controller,
+                        instanceId = instance.id(),
+                        hasLiveSession = { ExecutionSessionRegistry.get(instance.id()) != null },
+                        isLaunchInFlight = { InstanceLaunchGuard.isInFlight(instance.id()) },
+                        runtimeProbe = ::probeOfflineRuntimeStopped,
+                    )
+                    when (resetOutcome) {
+                        OfflineInstanceStopReset.Outcome.RESET_TO_STOPPED,
+                        OfflineInstanceStopReset.Outcome.ALREADY_STOPPED -> {
+                            withContext(Dispatchers.Main) {
+                                refreshInstanceListAfterMutation()
+                                setCreateStatusLine("实例已复位为已停止")
+                            }
+                            return@launch
+                        }
+                        OfflineInstanceStopReset.Outcome.REJECTED_UNCONFIRMED -> {
+                            android.util.Log.w(
+                                "MainActivity",
+                                "offline reset refused: STOP_UNCONFIRMED id=${instance.id()}",
+                            )
+                            withContext(Dispatchers.Main) {
+                                setCreateStatusLine("检测到残留运行资源，停止未确认，未改写实例状态")
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    R.string.toast_operation_failed,
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                            return@launch
+                        }
+                        OfflineInstanceStopReset.Outcome.REJECTED_INVALID_STATE ->
+                            throw IOException("实例已离线")
+                    }
+                }
+                val session = requestedSession
                 if (ExecutionSessionRegistry.get(instance.id()) !== session) throw IOException("运行会话已变化")
                 val intent = if (force) PersistentTerminalSessionPool.StopIntent.FORCE
                     else PersistentTerminalSessionPool.StopIntent.GRACEFUL
@@ -1471,6 +1509,88 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private fun probeOfflineRuntimeStopped(
+        instance: InstanceLifecycle.Instance,
+    ): RuntimeProcessSupervisor.StopResult {
+        val instanceId = instance.id()
+        return try {
+            if (ExecutionSessionRegistry.get(instanceId) != null ||
+                InstanceLaunchGuard.isInFlight(instanceId) ||
+                !UmlInstanceLauncher.areLeasesReleased(instanceId, instance.rootVolume()) ||
+                NetworkGatewayDaemon.forwardingEngine(instanceId) != null
+            ) {
+                return RuntimeProcessSupervisor.StopResult.UNCONFIRMED
+            }
+            if (isAbstractSocketReachable(TerminalActivity.controlSocketName(instanceId)) ||
+                isAbstractSocketReachable(TerminalActivity.terminalSocketName(instanceId))
+            ) {
+                return RuntimeProcessSupervisor.StopResult.UNCONFIRMED
+            }
+            if (OfflineInstanceStopReset.isGatewaySlotOccupied(
+                    privateRoot = filesDir.canonicalFile.toPath(),
+                    instanceId = instanceId,
+                    portBoundProbe = { port ->
+                        io.github.nyzeep.orchestella.runtime.instance.GatewaySlotLease.tcpListenerBound(port)
+                    },
+                    processAliveProbe = ::isRecordedProcessAlive,
+                )
+            ) {
+                return RuntimeProcessSupervisor.StopResult.UNCONFIRMED
+            }
+            RuntimeProcessSupervisor.StopResult.ALREADY_STOPPED
+        } catch (_: Exception) {
+            RuntimeProcessSupervisor.StopResult.UNCONFIRMED
+        }
+    }
+
+    private fun isRecordedProcessAlive(pid: Int, expectedStartTicks: Long): Boolean {
+        val observation = NetworkGatewayDaemon.inspectProcess(
+            pid,
+            expectedStartTicks,
+            {
+                val statPath = java.nio.file.Paths.get("/proc/$pid/stat")
+                if (!java.nio.file.Files.isRegularFile(statPath)) {
+                    0L
+                } else {
+                    val stat = String(
+                        java.nio.file.Files.readAllBytes(statPath),
+                        java.nio.charset.StandardCharsets.UTF_8,
+                    )
+                    NetworkGatewayDaemon.parseStartTicksFromStat(stat)
+                }
+            },
+            {
+                try {
+                    android.system.Os.kill(pid, 0)
+                    io.github.nyzeep.orchestella.runtime.instance.GatewaySlotLease.ProcessState.RUNNING
+                } catch (error: android.system.ErrnoException) {
+                    if (error.errno == android.system.OsConstants.ESRCH) {
+                        io.github.nyzeep.orchestella.runtime.instance.GatewaySlotLease.ProcessState.EXITED
+                    } else {
+                        io.github.nyzeep.orchestella.runtime.instance.GatewaySlotLease.ProcessState.UNAVAILABLE
+                    }
+                }
+            },
+            { emptyList() },
+        )
+        return observation.state() != io.github.nyzeep.orchestella.runtime.instance.GatewaySlotLease.ProcessState.EXITED
+    }
+
+    private fun isAbstractSocketReachable(socketName: String): Boolean =
+        try {
+            android.net.LocalSocket().use { socket ->
+                socket.connect(
+                    android.net.LocalSocketAddress(
+                        socketName,
+                        android.net.LocalSocketAddress.Namespace.ABSTRACT,
+                    ),
+                )
+            }
+            true
+        } catch (_: IOException) {
+            false
+        }
 
     private fun isHeadless(@Suppress("UNUSED_PARAMETER") instance: InstanceLifecycle.Instance): Boolean {
         // G-04：headless 兜底判定与三档入口 enabled 同源（DesktopEntryPolicy）——
@@ -2287,3 +2407,87 @@ private data class Oe3ShellPrefs(
     /** UI-02：壳层背景三态的壁纸输入（SAF content://）。 */
     val backgroundUri: String? = null,
 )
+
+/**
+ * DW-09：对处于 `CRASHED` / `INTERRUPTED` 且已无活跃 `ExecutionSession` 的实例执行安全复位。
+ * 遵循 `StopConfirmation` `ALREADY_STOPPED` / `STOP_UNCONFIRMED` 纪律：仅在探活确认无残留运行
+ * 资源或占槽时才迁移元数据至 `STOPPED`，绝不触碰或删除用户根盘文件。
+ */
+internal object OfflineInstanceStopReset {
+    enum class Outcome {
+        RESET_TO_STOPPED,
+        ALREADY_STOPPED,
+        REJECTED_UNCONFIRMED,
+        REJECTED_INVALID_STATE,
+    }
+
+    fun interface RuntimeLivenessProbe {
+        fun probe(instance: InstanceLifecycle.Instance): RuntimeProcessSupervisor.StopResult
+    }
+
+    fun tryResetOffline(
+        store: InstanceLifecycle.Store,
+        controller: InstanceLifecycle.Controller,
+        instanceId: String,
+        hasLiveSession: () -> Boolean,
+        isLaunchInFlight: () -> Boolean,
+        runtimeProbe: RuntimeLivenessProbe,
+    ): Outcome {
+        if (hasLiveSession() || isLaunchInFlight()) {
+            return Outcome.REJECTED_UNCONFIRMED
+        }
+        val current = store.load(instanceId)
+        val state = current.state()
+        if (state == InstanceLifecycle.State.STOPPED) {
+            return Outcome.ALREADY_STOPPED
+        }
+        if (state != InstanceLifecycle.State.CRASHED && state != InstanceLifecycle.State.INTERRUPTED) {
+            return Outcome.REJECTED_INVALID_STATE
+        }
+        val probeResult = try {
+            runtimeProbe.probe(current)
+        } catch (_: Exception) {
+            RuntimeProcessSupervisor.StopResult.UNCONFIRMED
+        }
+        val confirmedStopped =
+            probeResult == RuntimeProcessSupervisor.StopResult.ALREADY_STOPPED ||
+                probeResult == RuntimeProcessSupervisor.StopResult.CONFIRMED
+        if (!confirmedStopped || hasLiveSession() || isLaunchInFlight()) {
+            return Outcome.REJECTED_UNCONFIRMED
+        }
+        controller.resetToStopped(current.id())
+        return Outcome.RESET_TO_STOPPED
+    }
+
+    fun isGatewaySlotOccupied(
+        privateRoot: java.nio.file.Path,
+        instanceId: String,
+        portBoundProbe: (Int) -> Boolean,
+        processAliveProbe: (Int, Long) -> Boolean,
+    ): Boolean {
+        val derivedPort =
+            io.github.nyzeep.orchestella.runtime.instance.GatewaySlotArbiter.derivedPort(instanceId)
+        if (portBoundProbe(derivedPort)) {
+            return true
+        }
+        val ownerPath = privateRoot.resolve("net-slots").resolve("$derivedPort.owner")
+        if (!java.nio.file.Files.isRegularFile(ownerPath)) {
+            return false
+        }
+        val lines = String(
+            java.nio.file.Files.readAllBytes(ownerPath),
+            java.nio.charset.StandardCharsets.UTF_8,
+        ).split('\n')
+        if (lines.getOrNull(1) != instanceId) {
+            return false
+        }
+        val pid = lines.getOrNull(3)?.toIntOrNull() ?: return true
+        val startTicks = lines.getOrNull(4)?.toLongOrNull() ?: return true
+        if (pid > 0) {
+            return processAliveProbe(pid, startTicks)
+        }
+        val launcherPid = lines.getOrNull(6)?.toIntOrNull() ?: 0
+        val launcherStartTicks = lines.getOrNull(7)?.toLongOrNull() ?: 0L
+        return launcherPid > 0 && processAliveProbe(launcherPid, launcherStartTicks)
+    }
+}

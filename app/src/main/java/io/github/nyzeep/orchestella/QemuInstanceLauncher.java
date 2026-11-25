@@ -568,7 +568,7 @@ public final class QemuInstanceLauncher {
         }
 
         @Override
-        public io.github.nyzeep.orchestella.runtime.contract.DisplayChannel waylandChannel() {
+        public io.github.nyzeep.orchestella.runtime.contract.DisplayChannel displayChannel() {
             return displayChannel;
         }
 

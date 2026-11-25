@@ -61,7 +61,7 @@ public class DesktopActivity extends ComponentActivity
         instanceId = getIntent() != null ? getIntent().getStringExtra(DesktopLaunchIntent.EXTRA_INSTANCE_ID) : null;
         bridgeToken = getIntent() != null ? getIntent().getStringExtra(DesktopLaunchIntent.EXTRA_BRIDGE_TOKEN) : null;
         session = ExecutionSessionRegistry.get(instanceId);
-        DisplayChannel waylandChannel = session != null ? session.waylandChannel() : null;
+        DisplayChannel waylandChannel = session != null ? session.displayChannel() : null;
         BridgeClient bridgeClient = session != null ? session.bridgeClient() : null;
 
         int densityDpi = getResources().getConfiguration().densityDpi;
@@ -80,7 +80,7 @@ public class DesktopActivity extends ComponentActivity
         peripheralController = new DesktopPeripheralController(this, session, bridgeClient, bridgeToken,
                 target -> DesktopControlClient.of(target.bridgeClient()));
         inputController = new DesktopInputController(this, waylandChannel,
-                () -> session != null ? session.waylandChannel() : null, uiHandler);
+                () -> session != null ? session.displayChannel() : null, uiHandler);
         inputController.attachSurface(surfaceController.view());
 
         setContentView(buildContentView());

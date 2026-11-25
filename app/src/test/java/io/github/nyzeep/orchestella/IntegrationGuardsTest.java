@@ -84,6 +84,32 @@ public final class IntegrationGuardsTest {
                 ci.contains("run_avf_device_validation.py") && ci.contains("--dry-run"));
     }
 
+    @Test
+    public void executionSessionUsesDisplayChannelAndNoLegacyWaylandChannelMethodRemains()
+            throws IOException {
+        String sessionSource = read(
+                "app/src/main/java/io/github/nyzeep/orchestella/ExecutionSession.java");
+        assertTrue("ExecutionSession must expose displayChannel()",
+                sessionSource.contains("DisplayChannel displayChannel()"));
+        assertFalse("ExecutionSession must not retain waylandChannel()",
+                sessionSource.contains("waylandChannel("));
+
+        Path mainJava = repoRoot().resolve("app/src/main/java");
+        try (Stream<Path> files = Files.walk(mainJava)) {
+            for (Path file : files.filter(path -> path.toString().endsWith(".java")
+                    || path.toString().endsWith(".kt")).toList()) {
+                String source = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+                assertFalse("Production code must not declare or call legacy waylandChannel(): " + file,
+                        source.contains("waylandChannel("));
+            }
+        }
+
+        String hudController = read(
+                "app/src/main/java/io/github/nyzeep/orchestella/WaylandSurfaceController.java");
+        assertFalse("HudBadgeInfo.toBadgeText() must use RFB rather than Wayland",
+                hudController.contains("\"Wayland ["));
+    }
+
     private static String read(String relative) throws IOException {
         return new String(Files.readAllBytes(repoRoot().resolve(relative)), StandardCharsets.UTF_8);
     }

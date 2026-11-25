@@ -195,7 +195,7 @@ public final class AvfInstanceLauncher {
         }
 
         @Override public io.github.nyzeep.orchestella.runtime.contract.DisplayControl displayControl() { return display; }
-        @Override public io.github.nyzeep.orchestella.runtime.contract.DisplayChannel waylandChannel() { return display; }
+        @Override public io.github.nyzeep.orchestella.runtime.contract.DisplayChannel displayChannel() { return display; }
         @Override public boolean connectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) {
             return display != null && display.connect(new io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel.InputCapabilities(
                     keyboard, unicodeText, pointer));

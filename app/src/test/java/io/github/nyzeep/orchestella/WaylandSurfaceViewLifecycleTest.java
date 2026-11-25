@@ -287,6 +287,8 @@ public final class WaylandSurfaceViewLifecycleTest {
         assertEquals(DisplayChannel.ConnectionState.CONNECTED, badge.connectionState());
         assertEquals(2400, badge.viewportWidth());
         assertEquals(1080, badge.viewportHeight());
+        assertTrue(badge.toBadgeText().startsWith("RFB ["));
+        assertFalse(badge.toBadgeText().contains("Wayland"));
         assertTrue(badge.toBadgeText().contains("CONNECTED"));
         assertTrue(badge.toBadgeText().contains("2400x1080"));
 
@@ -294,6 +296,7 @@ public final class WaylandSurfaceViewLifecycleTest {
         channel.notifyState(DisplayChannel.ConnectionState.DISCONNECTED, "Socket closed");
         WaylandSurfaceController.HudBadgeInfo disconnectedBadge = controller.getHudBadgeInfo();
         assertEquals(DisplayChannel.ConnectionState.DISCONNECTED, disconnectedBadge.connectionState());
+        assertTrue(disconnectedBadge.toBadgeText().startsWith("RFB ["));
         assertTrue(disconnectedBadge.toBadgeText().contains("DISCONNECTED"));
     }
 

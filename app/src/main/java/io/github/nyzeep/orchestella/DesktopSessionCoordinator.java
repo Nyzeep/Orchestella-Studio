@@ -106,7 +106,7 @@ public final class DesktopSessionCoordinator {
      * graphical desktop, so the activity offers the terminal hand-off instead.
      */
     public boolean isHeadlessInstance() {
-        return session == null || session.waylandChannel() == null;
+        return session == null || session.displayChannel() == null;
     }
 
     /** The frame-confirmation observer for the surface renderer; owns the presentation gate semantics. */
@@ -242,7 +242,7 @@ public final class DesktopSessionCoordinator {
             return session.reconnectDisplay(inputs != null && inputs.optBoolean("keyboard"),
                     inputs != null && inputs.optBoolean("unicodeText"), inputs != null && inputs.optBoolean("pointer"));
         }
-        return session.waylandChannel() != null;
+        return session.displayChannel() != null;
     }
 
     /** Test seam: the current display generation. */

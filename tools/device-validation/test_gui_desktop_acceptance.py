@@ -695,12 +695,12 @@ class EndToEndDriveTest(unittest.TestCase):
         g08.MISSING.clear()
 
     def add_control(self, status_payloads):
-        server = self.registry.add_pair("orchestella-" + INSTANCE + "-ctrl")
+        server = self.registry.add_pair("droidlayer-control-" + INSTANCE)
         self.sockets.append(server)
         FakeAgent(server, status_payloads)
 
     def add_terminal(self, blocks):
-        server = self.registry.add_pair("orchestella-" + INSTANCE + "-term")
+        server = self.registry.add_pair("droidlayer-terminal-" + INSTANCE)
         self.sockets.append(server)
         FakeShell(server, blocks)
 
@@ -829,7 +829,7 @@ class EndToEndDriveTest(unittest.TestCase):
 
     def test_occupied_channel_blocks_guest_sections(self):
         # A control socket that never answers models the app-owned chardev.
-        self.registry.add_pair("orchestella-" + INSTANCE + "-ctrl")
+        self.registry.add_pair("droidlayer-control-" + INSTANCE)
         with tempfile.TemporaryDirectory() as root:
             args = base_args(output_root=root, output="evidence/blocked.json",
                              hello_timeout=0.2)
@@ -853,6 +853,25 @@ class EndToEndDriveTest(unittest.TestCase):
             code = g08.check(args)
             self.assertEqual(2, code)
             self.assertEqual("instance-running", g08.MISSING[0]["id"])
+        g08.MISSING.clear()
+
+    def test_socket_naming_matches_qemu_launcher_and_rejects_legacy_prefix(self):
+        import dv_pvm_crossfire as crossfire
+
+        self.assertEqual("droidlayer-control-inst-1", g08.control_socket_name("inst-1"))
+        self.assertEqual("droidlayer-terminal-inst-1", g08.terminal_socket_name("inst-1"))
+        self.assertEqual(crossfire.TERMINAL_SOCKET_PREFIX, g08.TERMINAL_SOCKET_PREFIX)
+
+        # Register ONLY the obsolete orchestella-<id>-ctrl/-term sockets:
+        # g08 must still fail fast with INSTANCE_SOCKET_ABSENT instead of accepting them.
+        self.sockets.append(self.registry.add_pair("orchestella-" + INSTANCE + "-ctrl"))
+        self.sockets.append(self.registry.add_pair("orchestella-" + INSTANCE + "-term"))
+        with tempfile.TemporaryDirectory() as root:
+            args = base_args(output_root=root, output="evidence/legacy-prefix.json")
+            code = g08.check(args)
+            self.assertEqual(2, code)
+            self.assertEqual("instance-running", g08.MISSING[0]["id"])
+            self.assertEqual("INSTANCE_SOCKET_ABSENT", g08.MISSING[0]["reason"])
         g08.MISSING.clear()
 
 

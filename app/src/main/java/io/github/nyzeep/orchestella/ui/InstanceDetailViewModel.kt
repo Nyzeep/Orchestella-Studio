@@ -285,7 +285,7 @@ class InstanceDetailViewModel(
             canLaunchDesktop = DesktopEntryPolicy.canLaunchDesktop(isRunning, supportsDesktop) &&
                 allowsDesktopEntry,
             allowsDesktopEntry = allowsDesktopEntry,
-            canPowerOn = isStopped || isCreated || isInterrupted || state == InstanceLifecycle.State.SUSPENDED,
+            canPowerOn = isStopped || isCreated || isInterrupted || isCrashed || state == InstanceLifecycle.State.SUSPENDED,
             canPowerOff = isRunning || state == InstanceLifecycle.State.SUSPENDED,
             canModifyHardware = canModifyHw,
             hardwareModificationRejectionReason = hwRejectionReason,

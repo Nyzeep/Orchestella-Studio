@@ -517,7 +517,7 @@ public final class InstanceLaunchCoordinatorTest {
             assertEquals("foreground start #1 carries the launch generation; start #2 the software badge",
                     List.of(
                             "start:" + setup.instance.id() + ":Debian 13:64GB RAM:BALANCED:" + generation,
-                            "start:" + setup.instance.id() + ":Debian 13:QEMU 软件虚拟化:BALANCED:" + generation),
+                            "start:" + setup.instance.id() + ":Debian 13:QEMU 软件模拟:BALANCED:" + generation),
                     seams.foreground.snapshot());
 
             // The success UI carries the exact terminal navigation payload and no status
@@ -1032,7 +1032,7 @@ public final class InstanceLaunchCoordinatorTest {
             String sessionGeneration = ExecutionSessionRegistry.generation(setup.instance.id(), session);
             assertNotNull(sessionGeneration);
             assertEquals(2, seams.foreground.snapshot().size());
-            assertEquals("start:" + setup.instance.id() + ":Debian 13:QEMU 软件虚拟化:BALANCED:" + sessionGeneration,
+            assertEquals("start:" + setup.instance.id() + ":Debian 13:QEMU 软件模拟:BALANCED:" + sessionGeneration,
                     seams.foreground.snapshot().get(1));
             // Degraded wording precedes the terminal navigation.
             assertEquals(List.of("status:copy:degraded:AVF_REASON_X",

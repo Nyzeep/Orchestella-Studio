@@ -83,7 +83,17 @@ GUEST_IDENTITY_PREAMBLE = (
     'U=$(id -u -- "$QA_USER" 2>/dev/null); export QA_USER U; '
 )
 CONSUMER_SOCKET = "droidlayer-audio"
+CONTROL_SOCKET_PREFIX = "droidlayer-control-"
+TERMINAL_SOCKET_PREFIX = "droidlayer-terminal-"
 GOOD_STATES = ("awaiting-frame", "ready")
+
+
+def control_socket_name(instance_id):
+    return CONTROL_SOCKET_PREFIX + instance_id
+
+
+def terminal_socket_name(instance_id):
+    return TERMINAL_SOCKET_PREFIX + instance_id
 BAD_STATES = ("failed", "cancelled")
 GPU_LOG_RE = re.compile(
     r"gpu-acceleration state=(ACTIVE|FALLBACK|DISABLED) "
@@ -846,7 +856,7 @@ def wait_for_control(adb, args, deadline, window_seconds):
               "%d seconds remain (exit/close the desktop window as instructed)"
               % max(0, int(end - time.monotonic())), flush=True)
         time.sleep(float(getattr(args, "confirm_poll_interval", 10.0)))
-        factory, _ = socket_factory_for(adb, "orchestella-" + args.instance_id + "-ctrl")
+        factory, _ = socket_factory_for(adb, control_socket_name(args.instance_id))
         if factory is None:
             continue
         control = ControlChannel(factory, reply_timeout=args.hello_timeout)
@@ -1093,8 +1103,8 @@ def check(args):
                          "Install the Orchestella APK and start the desktop-labwc instance.")
             return finish(report, args, 2, started)
 
-        control_name = "orchestella-" + args.instance_id + "-ctrl"
-        terminal_name = "orchestella-" + args.instance_id + "-term"
+        control_name = control_socket_name(args.instance_id)
+        terminal_name = terminal_socket_name(args.instance_id)
         factory, port = socket_factory_for(adb, control_name)
         if factory is None:
             note_missing("instance-running", "INSTANCE_SOCKET_ABSENT",
