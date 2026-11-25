@@ -517,6 +517,11 @@ class ProfileContracts(unittest.TestCase):
         self.assertFalse((self.root / "etc/systemd/system/orchestella-desktop-wayvnc.service").exists())
         # DW-04: the fixed 9104 PulseAudio endpoint ships with the profile.
         self.assertIn("port=9104", (self.root / "home/orchestella/.config/pulse/default.pa").read_text())
+        self.assertEqual("autospawn = no\n", (self.root / "home/orchestella/.config/pulse/client.conf").read_text())
+        pulse_unit = (user_dir / "orchestella-desktop-pulseaudio.service").read_text()
+        self.assertIn("feature-session.py pulseaudio", pulse_unit)
+        self.assertIn("Conflicts=pulseaudio.socket pulseaudio.service", pulse_unit)
+        self.assertIn("Restart=always", pulse_unit)
         commands = (self.root / "commands.jsonl").read_text()
         self.assertIn('"enable-linger"', commands)
         self.assertIn('"show-user"', commands)
@@ -688,6 +693,9 @@ class ProfileContracts(unittest.TestCase):
         self.assertEqual("command-timeout", settled["audio_relay_reason"])
         commands = [json.loads(line) for line in (self.root / "commands.jsonl").read_text().splitlines()]
         self.assertEqual(1, commands.count(["systemctl", "start", "--no-block", "orchestella-audio-relay.service"]))
+        pulse_starts = [call for call in commands if call[:1] == ["runuser"]
+                        and call[-1] == "orchestella-desktop-pulseaudio.service" and "start" in call]
+        self.assertEqual(1, len(pulse_starts))
         # Negative: a cancel file against the published job owner still refuses
         # the commit while the on-disk state stays untouched.
         features = self.root / "var/lib/orchestella/features"
@@ -708,6 +716,23 @@ class ProfileContracts(unittest.TestCase):
         (features / (generation + ".cancel")).unlink()
         (lock / "owner.json").unlink()
         lock.rmdir()
+
+    def test_pulseaudio_start_failure_keeps_video_ready_under_dw08(self):
+        self.ctl("install", "desktop-labwc")
+        self.wait("desktop-labwc", {"installed"})
+        self.fixture(fail_on="orchestella-desktop-pulseaudio.service", no_audio_endpoint=True)
+        rc, value = self.ctl("start", "desktop-labwc")
+        self.assertEqual(0, rc)
+        value = self.wait("desktop-labwc", {"awaiting-frame", "failed"}, require_inactive=True)
+        self.assertEqual("awaiting-frame", value["state"])
+        self.assertEqual("verified", value["capture"])
+        self.assertEqual("verified", value["protocols"])
+        self.assertEqual("unverified", value["audio_relay"])
+        self.assertEqual("pulseaudio-start-failed", value["audio_relay_reason"])
+        rc, ready = self.ctl("confirm-frame", "desktop-labwc", value["generation"])
+        self.assertEqual(0, rc, ready.get("reason"))
+        self.assertEqual("ready", ready["state"])
+        self.assertEqual("unverified", ready["audio_relay"])
 
     def test_code_expose_unexpose_and_dead_relay_remove_stale_flag(self):
         self.code_archive()

@@ -92,6 +92,20 @@ def desktop_apps(runtime):
                 child.wait(timeout=1)
 
 
+def pulseaudio(runtime):
+    user = ordinary_user()
+    config = Path(user.pw_dir) / ".config/pulse/default.pa"
+    info = config.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+        raise ValueError("unsafe-pulse-config")
+    os.environ["HOME"] = user.pw_dir
+    os.environ["XDG_RUNTIME_DIR"] = str(runtime)
+    os.execv(
+        "/usr/bin/pulseaudio",
+        ["pulseaudio", "--daemonize=no", "--exit-idle-time=-1", "--disallow-exit", "-nF", str(config)],
+    )
+
+
 def nic_relay(address, port):
     # The root-owned unit passes the fixed, explicitly selected guest NIC endpoint.
     ip = ipaddress.IPv4Address(address)
@@ -176,6 +190,8 @@ def main():
         if socket_path.is_symlink():
             return 1
         os.execv("/usr/bin/wayvnc", ["wayvnc", "--config", ordinary_user().pw_dir + "/.config/orchestella/wayvnc.conf", "--max-fps", "15", "--unix-socket", str(socket_path)])
+    if sys.argv[1:] == ["pulseaudio"]:
+        return pulseaudio(runtime)
     if len(sys.argv) == 4 and sys.argv[1] == "nic-relay":
         return nic_relay(sys.argv[2], int(sys.argv[3]))
     return 1

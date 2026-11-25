@@ -72,6 +72,7 @@ public final class QemuInstanceLauncher {
          * the other channels. Audio playback itself stays UI-driven (see capabilityMatrix).
          */
         private volatile AudioHostRelay audioRelay;
+        private volatile String audioConsumerSocketName;
         /**
          * G-06 GPU decision for this launch (enum single-source in engine-qemu).
          * Disabled until the launcher attaches the real gate outcome; G-07 reads
@@ -514,6 +515,7 @@ public final class QemuInstanceLauncher {
                 relay.close();
                 audioRelay = null;
             }
+            audioConsumerSocketName = null;
             if (displayChannel != null) {
                 displayChannel.close();
             }
@@ -536,11 +538,21 @@ public final class QemuInstanceLauncher {
 
         /**
          * G-05: installs the engine-owned audio relay started by the launcher. The
-         * relay owns the @droidlayer-audio abstract listener; this session only
+         * relay owns the per-instance abstract listener; this session only
          * carries its lifetime. Never called by tests with a real listener.
          */
         void attachAudioRelay(AudioHostRelay relay) {
+            attachAudioRelay(relay, null);
+        }
+
+        void attachAudioRelay(AudioHostRelay relay, String consumerSocketName) {
             this.audioRelay = relay;
+            this.audioConsumerSocketName = consumerSocketName;
+        }
+
+        @Override
+        public String audioConsumerSocketName() {
+            return audioConsumerSocketName;
         }
 
         /** Package-visible for stop-path tests: the wired audio relay, or null. */
@@ -742,8 +754,9 @@ public final class QemuInstanceLauncher {
         timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
         // Ticket 27: observation-only stage trace, bound to this launch's real
         // identity; disabled recording changes nothing on this path.
+        String launchGeneration = InstanceLaunchGuard.generation(parameters.instanceId);
         LaunchStageObserver stageTrace = StageTraceProvider.observerForLaunch(context,
-                parameters.instanceId, InstanceLaunchGuard.generation(parameters.instanceId),
+                parameters.instanceId, launchGeneration,
                 "qemu");
         stageTrace.onGate(ProductionStageRecorder.Stage.LAUNCH_REQUESTED);
 
@@ -991,15 +1004,24 @@ public final class QemuInstanceLauncher {
         // G-06: carry the launch's GPU gate outcome for the UI layer (G-07 reads it
         // through ExecutionSession). Attach is best-effort and never null.
         session.attachGpuStatus(gpuStatus);
-        // G-05: the engine assembly layer owns the @droidlayer-audio listener (never the
-        // Activity). The relay is best-effort: failure tears itself down and consumers
-        // fall back via FallbackAudioSource; the audio loop stays unverified on devices.
+        // G-05: the engine assembly layer owns the per-instance abstract audio listener
+        // (never the Activity). The relay keeps listening across guest startup and desktop
+        // entry transitions; failure stays isolated from the VM launch.
         try {
+            String audioGeneration = (launchGeneration != null && !launchGeneration.isBlank())
+                    ? launchGeneration
+                    : java.util.UUID.randomUUID().toString();
+            String consumerSocketName = audioConsumerSocketName(parameters.instanceId, audioGeneration);
             AudioHostRelay audioRelay = AudioHostRelay.forLocalSockets(
-                    AudioHostRelay.DEFAULT_CONSUMER_SOCKET_NAME, audioSocketPath, parameters.bridgeToken,
+                    consumerSocketName, audioSocketPath, parameters.bridgeToken,
                     (event, detail) -> Log.i(TAG, "audio-relay " + event + " " + detail));
-            audioRelay.start();
-            session.attachAudioRelay(audioRelay);
+            if (audioRelay.isListening()) {
+                audioRelay.start();
+                session.attachAudioRelay(audioRelay, consumerSocketName);
+            } else {
+                audioRelay.close();
+                Log.w(TAG, "audio-relay-unavailable listener-not-bound");
+            }
         } catch (RuntimeException | Error unavailable) {
             Log.w(TAG, "audio-relay-unavailable " + unavailable.getClass().getSimpleName());
         }
@@ -1045,6 +1067,43 @@ public final class QemuInstanceLauncher {
     /** Non-secret distro id for telemetry; unknown or ambiguous filenames stay honest. */
     static String resolveDistroId(String rootfsFileName) {
         return QemuLaunchEvidence.resolveDistroId(rootfsFileName);
+    }
+
+    static String shortAudioInstanceId(String instanceId) {
+        String normalized = normalizeAsciiAlnum(instanceId);
+        if (normalized.isEmpty()) {
+            return "unknown";
+        }
+        return normalized.substring(0, Math.min(12, normalized.length()));
+    }
+
+    static String audioConsumerSocketPrefix(String instanceId) {
+        return "orchestella-audio-" + shortAudioInstanceId(instanceId);
+    }
+
+    static String audioConsumerSocketName(String instanceId, String launchGeneration) {
+        String prefix = audioConsumerSocketPrefix(instanceId);
+        String gen = normalizeAsciiAlnum(launchGeneration);
+        if (gen.isEmpty()) {
+            return prefix;
+        }
+        return prefix + "-" + gen.substring(0, Math.min(8, gen.length()));
+    }
+
+    private static String normalizeAsciiAlnum(String value) {
+        if (value == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c >= 'A' && c <= 'Z') {
+                sb.append((char) (c + ('a' - 'A')));
+            } else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     /**

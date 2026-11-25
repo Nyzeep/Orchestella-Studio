@@ -35,6 +35,9 @@ UNITS = {
 # remain root system units: they are root supervisors (root-only token/device
 # FDs plus privilege drop) and cannot run inside the user manager.
 DESKTOP_USER_UNITS = ("orchestella-desktop-compositor.service", "orchestella-desktop-wayvnc.service")
+# W4-03: PulseAudio runs as an independent persistent user unit outside UNITS[:3]
+# and outside DESKTOP_USER_UNITS so DW-08 display readiness remains strictly decoupled.
+DESKTOP_AUDIO_USER_UNIT = "orchestella-desktop-pulseaudio.service"
 # DW-04: the guest payload cannot read repo files, so the PulseAudio session
 # configuration is embedded here. Mirrors scripts/desktop/pulseaudio/default.pa
 # (guarded by PulseAudioConfigVerifier); without it the stock session config
@@ -693,9 +696,9 @@ class Controller:
 
     def unit_ctl(self, args, timeout=30, required=True, reason="command-failed", cancellable=True):
         # Route every unit operation to the manager that owns the unit named by the
-        # final argument: desktop-labwc compositor/wayvnc to the persistent user
-        # manager (DW-03), the relays and all code-server units to the system one.
-        if self.profile == "desktop-labwc" and args and args[-1] in DESKTOP_USER_UNITS:
+        # final argument: desktop-labwc compositor/wayvnc/pulseaudio to the persistent
+        # user manager (DW-03/W4-03), the relays and all code-server units to the system one.
+        if self.profile == "desktop-labwc" and args and args[-1] in (*DESKTOP_USER_UNITS, DESKTOP_AUDIO_USER_UNIT):
             return self.user_systemctl(args, timeout, required, reason, cancellable)
         return self.run(["systemctl", *args], timeout, required, reason, cancellable)
 
@@ -735,6 +738,15 @@ class Controller:
                 "UMask=0077\n" + extra +
                 "ExecStart=" + executable + ("\nRestart=always\nRestartSec=2\n" if restart else "\nRestart=no\n") + "KillMode=control-group\nTimeoutStopSec=5\nStandardOutput=null\nStandardError=null\n")
 
+    def desktop_audio_unit_body(self):
+        # W4-03: run pulseaudio persistently (--exit-idle-time=-1) under the user manager
+        # while conflicting with Debian's stock socket-activated pulseaudio.service/socket.
+        return self.user_service_body(
+            "/usr/bin/python3 -B /usr/local/lib/orchestella/feature-session.py pulseaudio",
+            dependency="Conflicts=pulseaudio.socket pulseaudio.service\nAfter=pulseaudio.socket pulseaudio.service\nStartLimitIntervalSec=0\n",
+            restart=True,
+        )
+
     def configure(self):
         uid, gid = self.user(create=True)
         self.private_dir(self.home + "/.config", uid, gid)
@@ -747,9 +759,11 @@ class Controller:
             # DW-04: the fixed 9104 endpoint for audio-relay is session configuration
             # of the installed pulseaudio package; user edits of default.pa survive.
             self.config(self.home + "/.config/pulse/default.pa", PULSE_DEFAULT_PA)
+            self.config(self.home + "/.config/pulse/client.conf", "autospawn = no\n")
             extra = "Environment=WLR_BACKENDS=headless\nEnvironment=WLR_RENDERER=pixman\nEnvironment=WLR_HEADLESS_OUTPUTS=1\n"
             self.user_unit(UNITS[self.profile][0], self.user_service_body("/usr/bin/dbus-run-session -- /usr/bin/labwc -C " + self.home + "/.config/labwc -S '/usr/bin/python3 -B /usr/local/lib/orchestella/feature-session.py desktop-apps'", extra))
             self.user_unit(UNITS[self.profile][1], self.user_service_body("/usr/bin/python3 -B /usr/local/lib/orchestella/feature-session.py wayvnc", dependency="Requires=orchestella-desktop-compositor.service\nAfter=orchestella-desktop-compositor.service\nBindsTo=orchestella-desktop-compositor.service\n"))
+            self.user_unit(DESKTOP_AUDIO_USER_UNIT, self.desktop_audio_unit_body())
             # The relays are root supervisors (root-only token/device FDs plus
             # privilege drop) and stay persistent system units. wayvnc-name
             # dependencies cannot cross the manager boundary, so readiness is
@@ -758,9 +772,8 @@ class Controller:
             self.unit(UNITS[self.profile][2], self.service_body("/usr/bin/python3 -B /usr/local/lib/orchestella/display-relay.py --user " + self.username + " --transport " + self.display_transport(), user=False, restart=True))
             # G-05: audio data plane. Same root supervisor + privilege drop as the display
             # relay; the worker exits with "unavailable" until the guest PulseAudio endpoint
-            # (127.0.0.1:9104) exists, and systemd restarts it. Not a readiness gate:
-            # the audio closure is unverified on real devices.
-            self.unit(UNITS[self.profile][3], self.service_body("/usr/bin/python3 -B /usr/local/lib/orchestella/audio-relay.py --user " + self.username, user=False, restart=True))
+            # (127.0.0.1:9104) exists, and systemd restarts it. Not a readiness gate.
+            self.unit(UNITS[self.profile][3], self.service_body("/usr/bin/python3 -B /usr/local/lib/orchestella/audio-relay.py --user " + self.username, user=False, dependency="StartLimitIntervalSec=0\n", restart=True))
             self.enable_linger()
             self.user_reload()
         elif self.profile == "podman":
@@ -1340,18 +1353,70 @@ class Controller:
             # Do not start a root daemon; the distribution's CLI package may also contain one.
             self.save(state="installed", phase="cli-verified", reason="daemon-unverified", docker_cli="verified", docker_daemon="unverified")
 
-    def queue_audio_relay(self):
-        # Publish video readiness before submitting the optional audio job. The
-        # start generation remains the owner while queueing so STOP can cancel it.
-        reason = "none"
-        timeout = self.fixture.get("audio_start_seconds", 2) if self.testing else 2
+    def prepare_audio_device(self):
+        if self.testing:
+            return
+        link = Path("/dev/virtio-ports/orchestella.audio")
         try:
-            self.unit_ctl(["start", "--no-block", UNITS[self.profile][3]], timeout=timeout,
-                          reason="audio-relay-start-failed")
+            target = link.resolve(strict=True)
+            if target.parent != Path("/dev") or not re.fullmatch(r"vport[0-9]+p[0-9]+", target.name):
+                raise Failure("unsafe-audio-device")
+            info = target.stat()
+            name = Path("/sys/class/virtio-ports", target.name, "name").read_text().strip()
+            if not stat.S_ISCHR(info.st_mode) or info.st_uid != 0 or name != "orchestella.audio":
+                raise Failure("unsafe-audio-device")
+            os.chmod(target, 0o600)
+            rule = Path("/etc/udev/rules.d/71-orchestella-audio.rules")
+            prefix = "# Orchestella owned audio device rule\n"
+            if rule.is_symlink() or rule.exists() and not rule.read_text().startswith(prefix):
+                raise Failure("audio-rule-collision")
+            atomic_bytes(rule, (prefix + 'SUBSYSTEM=="virtio-ports", ATTR{name}=="orchestella.audio", OWNER="root", GROUP="root", MODE="0600"\n').encode(), 0o644)
+        except OSError:
+            raise Failure("audio-device-unavailable") from None
+
+    def ensure_desktop_audio_unit(self):
+        uid, gid = self.user()
+        self.private_dir(self.home + "/.config", uid, gid)
+        self.config(self.home + "/.config/pulse/default.pa", PULSE_DEFAULT_PA)
+        self.config(self.home + "/.config/pulse/client.conf", "autospawn = no\n")
+        unit_path = self.path(self.home + "/.config/systemd/user/" + DESKTOP_AUDIO_USER_UNIT)
+        if not unit_path.exists():
+            self.user_unit(DESKTOP_AUDIO_USER_UNIT, self.desktop_audio_unit_body())
+            self.user_reload()
+
+    def _start_optional_audio_unit(self, unit, timeout, default_reason):
+        try:
+            self.unit_ctl(["start", "--no-block", unit], timeout=timeout, reason=default_reason)
+            return "none"
         except Cancelled:
             raise
         except (Failure, OSError) as error:
-            reason = error.reason if isinstance(error, Failure) else "audio-relay-start-failed"
+            return error.reason if isinstance(error, Failure) else default_reason
+
+    def queue_audio_relay(self):
+        # Publish video readiness before submitting the optional audio jobs. The
+        # start generation remains the owner while queueing so STOP can cancel it.
+        timeout = self.fixture.get("audio_start_seconds", 2) if self.testing else 2
+        device_reason = "none"
+        pulse_reason = "none"
+        if self.profile == "desktop-labwc":
+            try:
+                self.prepare_audio_device()
+            except (Failure, OSError) as error:
+                device_reason = error.reason if isinstance(error, Failure) else "audio-device-unavailable"
+            try:
+                self.ensure_desktop_audio_unit()
+            except Cancelled:
+                raise
+            except (Failure, OSError) as error:
+                pulse_reason = error.reason if isinstance(error, Failure) else "pulseaudio-start-failed"
+            else:
+                pulse_reason = self._start_optional_audio_unit(
+                    DESKTOP_AUDIO_USER_UNIT, timeout, "pulseaudio-start-failed")
+        relay_reason = self._start_optional_audio_unit(
+            UNITS[self.profile][3], timeout, "audio-relay-start-failed")
+        reason = relay_reason if relay_reason != "none" else (
+            pulse_reason if pulse_reason != "none" else device_reason)
         with self.mutex():
             self.check_cancel()
             state = self.state()
@@ -1446,6 +1511,7 @@ class Controller:
                 raise Failure("service-stop-failed")
         uid, _ = self.user()
         if self.profile == "desktop-labwc":
+            self.unit_ctl(["stop", DESKTOP_AUDIO_USER_UNIT], timeout=10, required=False, cancellable=False)
             for name in ("wayvnc.sock", "desktop-clients.json"):
                 self.path("/run/user/%d/orchestella/%s" % (uid, name)).unlink(missing_ok=True)
             self.save(resize_width=0, resize_height=0, resize_scale=0.0)

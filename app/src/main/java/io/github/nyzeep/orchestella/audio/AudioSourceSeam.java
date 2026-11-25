@@ -11,6 +11,12 @@ public interface AudioSourceSeam extends Closeable {
 
     InputStream openStream() throws IOException;
 
+    /**
+     * Resets any dead or half-open transport state before a recovery reconnect
+     * without permanently closing the source.
+     */
+    default void resetConnection() {}
+
     boolean isConnected();
 
     @Override

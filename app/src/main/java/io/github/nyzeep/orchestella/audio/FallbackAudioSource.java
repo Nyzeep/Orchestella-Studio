@@ -3,17 +3,18 @@ package io.github.nyzeep.orchestella.audio;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Composite audio source that attempts primary audio source (e.g. LocalSocket @droidlayer-audio)
- * and automatically falls back to secondary audio source (e.g. TCP 127.0.0.1:9104) with bounded
- * retry and backoff.
+ * Composite audio source that attempts primary audio source (e.g. per-instance LocalSocket)
+ * and optionally falls back to secondary audio source with bounded retry and backoff.
  *
  * <p>G-05: the probe walk is an explicit finite state machine ({@link Phase}) so the fallback
  * rhythm is observable and logged. Honest reachability note: the TCP 9104 secondary is only
  * reachable from the host when the instance launch spec actually carries a hostfwd rule for
  * the guest port — the default spec has none, so the fallback is expected to fail there.
- * The whole audio closure is code-complete but unverified on real devices.
+ * Production QEMU instances use {@link #forPrimaryOnly(AudioSourceSeam)} with their isolated
+ * {@code @orchestella-audio-<id12>-<gen8>} endpoint.
  */
 public final class FallbackAudioSource implements AudioSourceSeam {
 
@@ -47,9 +48,11 @@ public final class FallbackAudioSource implements AudioSourceSeam {
     private final ProbeObserver observer;
 
     private volatile Phase phase = Phase.IDLE;
-    private int consecutiveFailedRounds = 0;
-    private AudioSourceSeam activeSource;
-    private boolean closed = false;
+    private final AtomicInteger consecutiveFailedRounds = new AtomicInteger(0);
+    private final AtomicInteger connectionEpoch = new AtomicInteger(0);
+    private final Object sleepLock = new Object();
+    private volatile AudioSourceSeam activeSource;
+    private volatile boolean closed = false;
 
     public FallbackAudioSource(AudioSourceSeam primary, AudioSourceSeam secondary) {
         this(primary, secondary, 5, 500);
@@ -69,22 +72,47 @@ public final class FallbackAudioSource implements AudioSourceSeam {
             int maxAttempts,
             long retryDelayMs,
             ProbeObserver observer) {
+        this(primary, Objects.requireNonNull(secondary, "secondary"), maxAttempts, retryDelayMs, observer, true);
+    }
+
+    /** Per-instance local-socket source without a shared TCP 9104 secondary fallback. */
+    public static FallbackAudioSource forPrimaryOnly(AudioSourceSeam primary) {
+        return forPrimaryOnly(primary, 5, 500, null);
+    }
+
+    /** Per-instance local-socket source with configurable retry/observer and no secondary fallback. */
+    public static FallbackAudioSource forPrimaryOnly(
+            AudioSourceSeam primary,
+            int maxAttempts,
+            long retryDelayMs,
+            ProbeObserver observer) {
+        return new FallbackAudioSource(primary, null, maxAttempts, retryDelayMs, observer, false);
+    }
+
+    private FallbackAudioSource(
+            AudioSourceSeam primary,
+            AudioSourceSeam secondary,
+            int maxAttempts,
+            long retryDelayMs,
+            ProbeObserver observer,
+            boolean unusedInternalMarker) {
         this.primary = Objects.requireNonNull(primary, "primary");
-        this.secondary = Objects.requireNonNull(secondary, "secondary");
+        this.secondary = secondary;
         this.maxAttempts = Math.max(1, maxAttempts);
         this.retryDelayMs = Math.max(0, retryDelayMs);
         this.observer = observer;
     }
 
     @Override
-    public synchronized InputStream openStream() throws IOException {
+    public InputStream openStream() throws IOException {
         if (closed) {
             throw new IOException("FallbackAudioSource already closed");
         }
 
+        int epoch = connectionEpoch.get();
         IOException lastError = null;
         for (int attempt = 0; attempt < maxAttempts; attempt++) {
-            if (closed || Thread.currentThread().isInterrupted()) {
+            if (closed || epoch != connectionEpoch.get() || Thread.currentThread().isInterrupted()) {
                 break;
             }
 
@@ -92,6 +120,10 @@ public final class FallbackAudioSource implements AudioSourceSeam {
             try {
                 InputStream stream = primary.openStream();
                 if (stream != null) {
+                    if (closed || epoch != connectionEpoch.get()) {
+                        closeQuietly(stream);
+                        break;
+                    }
                     activeSource = primary;
                     enter(Phase.PRIMARY_ACTIVE, recoveryPrefix() + "primary-source-active");
                     return stream;
@@ -100,46 +132,98 @@ public final class FallbackAudioSource implements AudioSourceSeam {
             } catch (IOException e) {
                 lastError = e;
             }
-            enter(Phase.PROBING_SECONDARY, "primary-unavailable: " + safeReason(lastError));
+            if (secondary != null && !closed && epoch == connectionEpoch.get()) {
+                enter(Phase.PROBING_SECONDARY, "primary-unavailable: " + safeReason(lastError));
 
-            try {
-                InputStream stream = secondary.openStream();
-                if (stream != null) {
-                    activeSource = secondary;
-                    enter(Phase.SECONDARY_ACTIVE,
-                            recoveryPrefix() + "secondary-source-active; " + SECONDARY_REACHABILITY_NOTE);
-                    return stream;
+                try {
+                    InputStream stream = secondary.openStream();
+                    if (stream != null) {
+                        if (closed || epoch != connectionEpoch.get()) {
+                            closeQuietly(stream);
+                            break;
+                        }
+                        activeSource = secondary;
+                        enter(Phase.SECONDARY_ACTIVE,
+                                recoveryPrefix() + "secondary-source-active; " + SECONDARY_REACHABILITY_NOTE);
+                        return stream;
+                    }
+                    lastError = new IOException("secondary audio source returned no stream");
+                } catch (IOException e) {
+                    lastError = e;
                 }
-                lastError = new IOException("secondary audio source returned no stream");
-            } catch (IOException e) {
-                lastError = e;
             }
-            consecutiveFailedRounds++;
-            enter(Phase.BACKOFF, "round-failed=" + consecutiveFailedRounds
-                    + "; secondary-note: " + SECONDARY_REACHABILITY_NOTE);
+            if (closed || epoch != connectionEpoch.get()) {
+                break;
+            }
+            int rounds = consecutiveFailedRounds.incrementAndGet();
+            enter(Phase.BACKOFF, secondary != null
+                    ? "round-failed=" + rounds + "; secondary-note: " + SECONDARY_REACHABILITY_NOTE
+                    : "round-failed=" + rounds + "; primary-unavailable: " + safeReason(lastError));
 
             if (attempt < maxAttempts - 1 && retryDelayMs > 0) {
+                awaitBackoff(epoch);
+            }
+        }
+
+        if (closed || epoch != connectionEpoch.get()) {
+            throw new IOException(closed
+                    ? "FallbackAudioSource closed while connecting"
+                    : "Audio source reset while connecting");
+        }
+        enter(Phase.EXHAUSTED, "both-sources-failed: " + safeReason(lastError));
+        throw lastError != null ? lastError : new IOException("Audio sources failed to connect");
+    }
+
+    private void awaitBackoff(int epoch) throws IOException {
+        long deadlineNs = System.nanoTime() + retryDelayMs * 1_000_000L;
+        synchronized (sleepLock) {
+            while (!closed && epoch == connectionEpoch.get()) {
+                long remainingNs = deadlineNs - System.nanoTime();
+                if (remainingNs <= 0L) {
+                    return;
+                }
+                long waitMs = remainingNs / 1_000_000L;
+                int waitNanos = (int) (remainingNs % 1_000_000L);
                 try {
-                    Thread.sleep(retryDelayMs);
+                    sleepLock.wait(waitMs, waitNanos);
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     throw new IOException("Interrupted while connecting audio stream", interrupted);
                 }
             }
         }
-
-        enter(Phase.EXHAUSTED, "both-sources-failed: " + safeReason(lastError));
-        throw lastError != null ? lastError : new IOException("Audio sources failed to connect");
     }
 
     @Override
-    public synchronized boolean isConnected() {
-        return activeSource != null && activeSource.isConnected();
+    public boolean isConnected() {
+        AudioSourceSeam current = activeSource;
+        return current != null && current.isConnected();
     }
 
     @Override
-    public synchronized void close() throws IOException {
+    public void resetConnection() {
+        if (closed) {
+            return;
+        }
+        connectionEpoch.incrementAndGet();
+        activeSource = null;
+        synchronized (sleepLock) {
+            sleepLock.notifyAll();
+        }
+        primary.resetConnection();
+        if (secondary != null) {
+            secondary.resetConnection();
+        }
+    }
+
+    @Override
+    public void close() throws IOException {
         closed = true;
+        connectionEpoch.incrementAndGet();
+        activeSource = null;
+        synchronized (sleepLock) {
+            sleepLock.notifyAll();
+        }
         enter(Phase.CLOSED, "fallback-source-closed");
         IOException last = null;
         try {
@@ -147,14 +231,26 @@ public final class FallbackAudioSource implements AudioSourceSeam {
         } catch (IOException e) {
             last = e;
         }
-        try {
-            secondary.close();
-        } catch (IOException e) {
-            last = e;
+        if (secondary != null) {
+            try {
+                secondary.close();
+            } catch (IOException e) {
+                last = e;
+            }
         }
-        activeSource = null;
         if (last != null) {
             throw last;
+        }
+    }
+
+    private static void closeQuietly(InputStream stream) {
+        if (stream == null) {
+            return;
+        }
+        try {
+            stream.close();
+        } catch (IOException ignored) {
+            // Best-effort cleanup when cancelled mid-open.
         }
     }
 
@@ -177,21 +273,19 @@ public final class FallbackAudioSource implements AudioSourceSeam {
 
     /** How many complete primary+secondary probe rounds have failed since the last success. */
     public int getConsecutiveFailedRounds() {
-        return consecutiveFailedRounds;
+        return consecutiveFailedRounds.get();
     }
 
     /**
      * Recovery bookkeeping: a successful probe resets the failed-round counter and
-     * reports the recovery inside the active-phase detail (no extra event). Must be
-     * called with the monitor held, right before the active transition.
+     * reports the recovery inside the active-phase detail (no extra event).
      */
     private String recoveryPrefix() {
-        if (consecutiveFailedRounds == 0) {
+        int previous = consecutiveFailedRounds.getAndSet(0);
+        if (previous == 0) {
             return "";
         }
-        String prefix = "recovered-after-" + consecutiveFailedRounds + "-failed-rounds; ";
-        consecutiveFailedRounds = 0;
-        return prefix;
+        return "recovered-after-" + previous + "-failed-rounds; ";
     }
 
     private void enter(Phase next, String detail) {

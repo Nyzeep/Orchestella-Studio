@@ -17,9 +17,9 @@ import io.github.nyzeep.orchestella.audio.StreamConnection;
 /**
  * Engine-side audio loop (G-05). Bridges the guest's virtio-serial audio port —
  * surfacing on the host as the QEMU-served per-instance chardev socket — to local
- * consumer links accepted on the abstract {@code @droidlayer-audio} socket, where
- * {@link io.github.nyzeep.orchestella.audio.LocalSocketAudioSource} (client connect
- * or attach path) picks the PCM stream up for {@code LowLatencyAudioPlayer}.
+ * consumer links accepted on the instance-scoped abstract {@code @orchestella-audio-...}
+ * socket, where {@link io.github.nyzeep.orchestella.audio.LocalSocketAudioSource} picks
+ * the PCM stream up for {@code LowLatencyAudioPlayer}.
  *
  * <p>Wire protocol to the guest relay (mirror of the display plane): the host sends
  * {@code ORCHESTELLA/AUDIO 1 <bridge-token>\n} on the chardev connection and waits
@@ -39,7 +39,7 @@ import io.github.nyzeep.orchestella.audio.StreamConnection;
  */
 public final class AudioHostRelay implements AutoCloseable {
 
-    /** Abstract socket name consumers connect to (LocalSocketAudioSource.DEFAULT_SOCKET_NAME). */
+    /** Legacy default consumer socket name used only when callers omit an instance socket name. */
     public static final String DEFAULT_CONSUMER_SOCKET_NAME = "droidlayer-audio";
 
     static final String PREAMBLE = "ORCHESTELLA/AUDIO 1 ";
@@ -54,6 +54,10 @@ public final class AudioHostRelay implements AutoCloseable {
     public interface ConsumerAcceptor extends java.io.Closeable {
         /** Blocks until a consumer connects. Throws when closed or the listener dies. */
         StreamConnection accept() throws IOException;
+
+        default boolean isListening() {
+            return true;
+        }
     }
 
     /** Guest-transport factory seam: one fresh chardev connection per call. */
@@ -69,6 +73,7 @@ public final class AudioHostRelay implements AutoCloseable {
     private static final int PUMP_BUFFER_BYTES = 8192;
     static final int MAX_TRANSPORT_ATTEMPTS = 5;
     private static final long TRANSPORT_RETRY_DELAY_MS = 2_000L;
+    private static final long STANDBY_RETRY_DELAY_MS = 5_000L;
     private static final long HANDSHAKE_TIMEOUT_MS = 15_000L;
     private static final long HANDSHAKE_POLL_MS = 50L;
 
@@ -76,23 +81,45 @@ public final class AudioHostRelay implements AutoCloseable {
     private final TransportFactory transportFactory;
     private final String token;
     private final EventSink sink;
+    private final long retryDelayMs;
+    private final long handshakeTimeoutMs;
+    private final long standbyRetryDelayMs;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicBoolean failed = new AtomicBoolean();
+    private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicReference<StreamConnection> consumer = new AtomicReference<>();
+    private final AtomicReference<StreamConnection> activeTransport = new AtomicReference<>();
+    private final AtomicReference<Thread> acceptorThreadRef = new AtomicReference<>();
+    private final AtomicReference<Thread> transportThreadRef = new AtomicReference<>();
+    private final Object wakeLock = new Object();
+    private boolean reconnectRequested = false;
     private volatile State state = State.IDLE;
 
     private AudioHostRelay(ConsumerAcceptor acceptor, TransportFactory transportFactory,
-            String token, EventSink sink) {
+            String token, EventSink sink, long retryDelayMs, long handshakeTimeoutMs,
+            long standbyRetryDelayMs) {
         this.acceptor = Objects.requireNonNull(acceptor, "acceptor");
         this.transportFactory = Objects.requireNonNull(transportFactory, "transportFactory");
         this.token = token;
         this.sink = sink;
+        this.retryDelayMs = Math.max(1L, retryDelayMs);
+        this.handshakeTimeoutMs = Math.max(50L, handshakeTimeoutMs);
+        this.standbyRetryDelayMs = Math.max(10L, standbyRetryDelayMs);
     }
 
     /** Full-shape relay for tests: inject any acceptor/transport/sink. */
     public static AudioHostRelay forTesting(ConsumerAcceptor acceptor, TransportFactory transportFactory,
             String token, EventSink sink) {
-        return new AudioHostRelay(acceptor, transportFactory, token, sink);
+        return new AudioHostRelay(acceptor, transportFactory, token, sink,
+                TRANSPORT_RETRY_DELAY_MS, HANDSHAKE_TIMEOUT_MS, STANDBY_RETRY_DELAY_MS);
+    }
+
+    /** Test overload with bounded timings for deterministic JVM lifecycle verification. */
+    static AudioHostRelay forTesting(ConsumerAcceptor acceptor, TransportFactory transportFactory,
+            String token, EventSink sink, long retryDelayMs, long handshakeTimeoutMs,
+            long standbyRetryDelayMs) {
+        return new AudioHostRelay(acceptor, transportFactory, token, sink,
+                retryDelayMs, handshakeTimeoutMs, standbyRetryDelayMs);
     }
 
     /**
@@ -102,22 +129,44 @@ public final class AudioHostRelay implements AutoCloseable {
     public static AudioHostRelay forLocalSockets(String consumerSocketName, String chardevSocketPath,
             String bridgeToken, EventSink sink) {
         return new AudioHostRelay(new LocalSocketAcceptor(consumerSocketName, sink),
-                new ChardevTransportFactory(chardevSocketPath, sink), bridgeToken, sink);
+                new ChardevTransportFactory(chardevSocketPath, sink), bridgeToken, sink,
+                TRANSPORT_RETRY_DELAY_MS, HANDSHAKE_TIMEOUT_MS, STANDBY_RETRY_DELAY_MS);
     }
 
     /** Spawns the accept and transport daemon threads; does no blocking work on the caller. */
     public AudioHostRelay start() {
+        if (closed.get() || !started.compareAndSet(false, true)) {
+            return this;
+        }
         Thread acceptorThread = new Thread(this::acceptLoop, "orchestella-audio-accept");
         acceptorThread.setDaemon(true);
-        acceptorThread.start();
+        acceptorThreadRef.set(acceptorThread);
         Thread transportThread = new Thread(this::transportLoop, "orchestella-audio-transport");
         transportThread.setDaemon(true);
+        transportThreadRef.set(transportThread);
+        acceptorThread.start();
         transportThread.start();
         return this;
     }
 
+    /** Wakes any standby backoff and resets the guest transport retry window. */
+    public void reconnectTransport() {
+        if (closed.get() || failed.get()) {
+            return;
+        }
+        emit("transport-reconnect-requested", "explicit");
+        requestReconnect();
+    }
+
+    private void requestReconnect() {
+        synchronized (wakeLock) {
+            reconnectRequested = true;
+            wakeLock.notifyAll();
+        }
+    }
+
     private void acceptLoop() {
-        while (!closed.get() && !failed.get()) {
+        while (!closed.get() && !failed.get() && !Thread.currentThread().isInterrupted()) {
             StreamConnection link;
             try {
                 link = acceptor.accept();
@@ -132,12 +181,18 @@ public final class AudioHostRelay implements AutoCloseable {
                 return;
             }
             StreamConnection previous = consumer.getAndSet(link);
+            if (closed.get() || failed.get()) {
+                closeQuietly(consumer.getAndSet(null));
+                closeQuietly(previous);
+                return;
+            }
             if (previous != null) {
                 // One consumer at a time: a newer client link replaces a dead/slow one.
                 closeQuietly(previous);
                 emit("consumer-detached", "replaced-by-newer-consumer");
             }
             emit("consumer-attached", "replaced=" + (previous != null));
+            requestReconnect();
         }
     }
 
@@ -147,32 +202,117 @@ public final class AudioHostRelay implements AutoCloseable {
             markFailed();
             return;
         }
-        for (int attempt = 1; attempt <= MAX_TRANSPORT_ATTEMPTS && !closed.get() && !failed.get(); attempt++) {
-            StreamConnection transport = null;
-            try {
-                state = State.CONNECTING;
-                transport = transportFactory.open();
-                state = State.HANDSHAKING;
-                handshake(transport);
-                emit("transport-ready", "attempt=" + attempt);
-                pump(transport);
-                emit("transport-ended", "guest-side EOF after " + attempt + " attempt(s)");
-                if (!closed.get() && !failed.get()) {
-                    // The guest relay session ended (restart cycle). Give it a beat, reconnect.
-                    sleepQuietly(TRANSPORT_RETRY_DELAY_MS);
-                    continue;
+        while (!closed.get() && !failed.get() && !Thread.currentThread().isInterrupted()) {
+            int attempt = 0;
+            while (attempt < MAX_TRANSPORT_ATTEMPTS
+                    && !closed.get()
+                    && !failed.get()
+                    && !Thread.currentThread().isInterrupted()) {
+                if (consumeReconnectRequest()) {
+                    attempt = 0;
                 }
-                return;
-            } catch (IOException | RuntimeException | Error failure) {
-                closeQuietly(transport);
-                emit("transport-failed", "attempt=" + attempt + " " + failure.getClass().getSimpleName());
-                if (attempt < MAX_TRANSPORT_ATTEMPTS && !closed.get() && !failed.get()) {
-                    sleepQuietly(TRANSPORT_RETRY_DELAY_MS);
+                attempt++;
+                StreamConnection transport = null;
+                boolean completedSession = false;
+                try {
+                    state = State.CONNECTING;
+                    transport = transportFactory.open();
+                    activeTransport.set(transport);
+                    if (closed.get() || failed.get()) {
+                        return;
+                    }
+                    state = State.HANDSHAKING;
+                    handshake(transport);
+                    emit("transport-ready", "attempt=" + attempt);
+                    attempt = 0;
+                    pump(transport);
+                    completedSession = true;
+                    emit("transport-ended", "guest-side EOF");
+                } catch (IOException | RuntimeException | Error failure) {
+                    if (!closed.get() && !failed.get()) {
+                        emit("transport-failed", "attempt=" + attempt + " " + failure.getClass().getSimpleName());
+                    }
+                } finally {
+                    if (transport != null) {
+                        activeTransport.compareAndSet(transport, null);
+                        closeQuietly(transport);
+                    }
+                }
+                if (closed.get() || failed.get() || Thread.currentThread().isInterrupted()) {
+                    return;
+                }
+                if (completedSession || attempt < MAX_TRANSPORT_ATTEMPTS) {
+                    if (awaitRetryOrWake(retryDelayMs)) {
+                        attempt = 0;
+                    }
                 }
             }
+            if (closed.get() || failed.get() || Thread.currentThread().isInterrupted()) {
+                return;
+            }
+            // Keep the consumer LocalServerSocket alive across guest boot and desktop idle
+            // periods; park in standby until a consumer attaches or reconnect is requested.
+            state = State.IDLE;
+            emit("transport-standby", "window-exhausted; waiting-for-consumer-or-reconnect");
+            awaitStandbyWake();
         }
-        if (!closed.get()) {
-            markFailed();
+    }
+
+    private boolean consumeReconnectRequest() {
+        synchronized (wakeLock) {
+            boolean requested = reconnectRequested;
+            reconnectRequested = false;
+            return requested;
+        }
+    }
+
+    private boolean awaitRetryOrWake(long delayMs) {
+        long deadline = System.nanoTime() + delayMs * 1_000_000L;
+        synchronized (wakeLock) {
+            while (!closed.get() && !failed.get() && !reconnectRequested) {
+                long remainingMs = (deadline - System.nanoTime() + 999_999L) / 1_000_000L;
+                if (remainingMs <= 0L) {
+                    return false;
+                }
+                try {
+                    wakeLock.wait(remainingMs);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+            boolean woken = reconnectRequested;
+            reconnectRequested = false;
+            return woken;
+        }
+    }
+
+    private void awaitStandbyWake() {
+        long deadlineNs = System.nanoTime() + standbyRetryDelayMs * 1_000_000L;
+        synchronized (wakeLock) {
+            while (!closed.get() && !failed.get() && !reconnectRequested) {
+                if (consumer.get() == null) {
+                    try {
+                        wakeLock.wait();
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                    deadlineNs = System.nanoTime() + standbyRetryDelayMs * 1_000_000L;
+                } else {
+                    long remainingMs = (deadlineNs - System.nanoTime() + 999_999L) / 1_000_000L;
+                    if (remainingMs <= 0L) {
+                        break;
+                    }
+                    try {
+                        wakeLock.wait(remainingMs);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }
+            reconnectRequested = false;
         }
     }
 
@@ -184,8 +324,8 @@ public final class AudioHostRelay implements AutoCloseable {
     private void handshake(StreamConnection transport) throws IOException {
         AtomicBoolean settled = new AtomicBoolean(false);
         Thread watchdog = new Thread(() -> {
-            long end = System.nanoTime() + HANDSHAKE_TIMEOUT_MS * 1_000_000L;
-            while (!settled.get() && System.nanoTime() < end) {
+            long end = System.nanoTime() + handshakeTimeoutMs * 1_000_000L;
+            while (!settled.get() && !closed.get() && System.nanoTime() < end) {
                 try {
                     Thread.sleep(HANDSHAKE_POLL_MS);
                 } catch (InterruptedException interrupted) {
@@ -193,7 +333,9 @@ public final class AudioHostRelay implements AutoCloseable {
                 }
             }
             if (!settled.get()) {
-                emit("handshake-timeout", "closing transport to unblock the READY read");
+                if (!closed.get()) {
+                    emit("handshake-timeout", "closing transport to unblock the READY read");
+                }
                 closeQuietly(transport);
             }
         }, "orchestella-audio-handshake");
@@ -221,6 +363,7 @@ public final class AudioHostRelay implements AutoCloseable {
             throw new IOException("audio relay handshake line overflow");
         } finally {
             settled.set(true);
+            watchdog.interrupt();
         }
     }
 
@@ -252,6 +395,9 @@ public final class AudioHostRelay implements AutoCloseable {
                 consumer.compareAndSet(current, null);
                 closeQuietly(current);
                 emit("consumer-detached", consumerDead.getClass().getSimpleName());
+                synchronized (wakeLock) {
+                    wakeLock.notifyAll();
+                }
             }
         }
     }
@@ -259,8 +405,12 @@ public final class AudioHostRelay implements AutoCloseable {
     private void markFailed() {
         if (failed.compareAndSet(false, true)) {
             state = State.FAILED;
-            emit("relay-failed", "transport budget exhausted; consumer connects will fail fast");
+            emit("relay-failed", "transport disabled; consumer connects will fail fast");
+            synchronized (wakeLock) {
+                wakeLock.notifyAll();
+            }
             closeQuietly(consumer.getAndSet(null));
+            closeQuietly(activeTransport.getAndSet(null));
             try {
                 acceptor.close();
             } catch (IOException | RuntimeException | Error ignored) {
@@ -276,11 +426,40 @@ public final class AudioHostRelay implements AutoCloseable {
         }
         state = State.CLOSED;
         emit("relay-closed", "session teardown");
+        synchronized (wakeLock) {
+            wakeLock.notifyAll();
+        }
         closeQuietly(consumer.getAndSet(null));
+        closeQuietly(activeTransport.getAndSet(null));
         try {
             acceptor.close();
         } catch (IOException | RuntimeException | Error ignored) {
             // Teardown is best-effort; threads observe the closed flag.
+        }
+        interruptThread(acceptorThreadRef.get());
+        interruptThread(transportThreadRef.get());
+    }
+
+    boolean awaitTerminationForTest(long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        for (Thread thread : new Thread[]{acceptorThreadRef.get(), transportThreadRef.get()}) {
+            if (thread == null) {
+                continue;
+            }
+            long remaining = deadline - System.currentTimeMillis();
+            if (remaining > 0L) {
+                thread.join(remaining);
+            }
+            if (thread.isAlive()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static void interruptThread(Thread thread) {
+        if (thread != null) {
+            thread.interrupt();
         }
     }
 
@@ -288,17 +467,13 @@ public final class AudioHostRelay implements AutoCloseable {
         return state;
     }
 
+    boolean isListening() {
+        return acceptor.isListening();
+    }
+
     private void emit(String event, String detail) {
         if (sink != null) {
             sink.onEvent(event, detail);
-        }
-    }
-
-    private static void sleepQuietly(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
         }
     }
 
@@ -322,14 +497,22 @@ public final class AudioHostRelay implements AutoCloseable {
             this.sink = sink;
             LocalServerSocket created = null;
             try {
-                // LocalServerSocket(String) binds the ABSTRACT namespace: @droidlayer-audio.
+                // LocalServerSocket(String) binds the ABSTRACT namespace per instance.
                 created = new LocalServerSocket(socketName);
+                if (sink != null) {
+                    sink.onEvent("consumer-listening", "socket=" + socketName);
+                }
             } catch (IOException | RuntimeException | Error failure) {
                 if (sink != null) {
                     sink.onEvent("listen-failed", failure.getClass().getSimpleName());
                 }
             }
             this.server = created;
+        }
+
+        @Override
+        public boolean isListening() {
+            return server != null;
         }
 
         @Override
@@ -400,6 +583,16 @@ public final class AudioHostRelay implements AutoCloseable {
 
         @Override
         public void close() throws IOException {
+            try {
+                socket.shutdownInput();
+            } catch (IOException | RuntimeException ignored) {
+                // Android LocalSocket.close() does not reliably wake a blocked read(); shutdownInput() does.
+            }
+            try {
+                socket.shutdownOutput();
+            } catch (IOException | RuntimeException ignored) {
+                // Best-effort half-close before closing the socket descriptor.
+            }
             socket.close();
         }
     }

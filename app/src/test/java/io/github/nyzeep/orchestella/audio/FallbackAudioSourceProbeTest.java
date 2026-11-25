@@ -272,4 +272,65 @@ public class FallbackAudioSourceProbeTest {
                 FallbackAudioSource.Phase.CLOSED);
         assertEquals(expected, phases);
     }
+
+    @Test
+    public void primaryOnlySkipsSecondaryAndRecoversOnRetry() throws Exception {
+        MockAudioSource primary = new MockAudioSource();
+        primary.shouldFail = true;
+        List<FallbackAudioSource.Phase> phases = new ArrayList<>();
+        FallbackAudioSource fallback = FallbackAudioSource.forPrimaryOnly(
+                primary, 2, 0, (phase, detail) -> phases.add(phase));
+
+        try {
+            fallback.openStream();
+            fail("primary-only exhaustion must throw");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("Simulated source failure"));
+        }
+        assertEquals(List.of(
+                FallbackAudioSource.Phase.PROBING_PRIMARY,
+                FallbackAudioSource.Phase.BACKOFF,
+                FallbackAudioSource.Phase.PROBING_PRIMARY,
+                FallbackAudioSource.Phase.BACKOFF,
+                FallbackAudioSource.Phase.EXHAUSTED), phases);
+
+        primary.shouldFail = false;
+        InputStream stream = fallback.openStream();
+        assertNotNull(stream);
+        assertSame(primary, fallback.getActiveSource());
+        assertEquals(FallbackAudioSource.Phase.PRIMARY_ACTIVE, fallback.getPhase());
+        fallback.close();
+    }
+
+    @Test(timeout = 5_000)
+    public void resetConnectionUnblocksOpenStreamBackoffWithoutDeadlock() throws Exception {
+        MockAudioSource primary = new MockAudioSource();
+        primary.shouldFail = true;
+        CountDownLatch backoffEntered = new CountDownLatch(1);
+        FallbackAudioSource fallback = FallbackAudioSource.forPrimaryOnly(
+                primary, 4, 60_000,
+                (phase, detail) -> {
+                    if (phase == FallbackAudioSource.Phase.BACKOFF) {
+                        backoffEntered.countDown();
+                    }
+                });
+
+        CountDownLatch openExited = new CountDownLatch(1);
+        Thread probe = new Thread(() -> {
+            try {
+                fallback.openStream();
+            } catch (IOException expected) {
+                openExited.countDown();
+            }
+        });
+        probe.setDaemon(true);
+        probe.start();
+        assertTrue("probe must enter BACKOFF", backoffEntered.await(2, TimeUnit.SECONDS));
+
+        // Must return immediately without waiting for the 60s backoff sleep.
+        fallback.resetConnection();
+        assertTrue("openStream must exit promptly after resetConnection", openExited.await(2, TimeUnit.SECONDS));
+        probe.join(2_000);
+        fallback.close();
+    }
 }

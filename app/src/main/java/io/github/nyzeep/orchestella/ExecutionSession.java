@@ -95,6 +95,14 @@ public interface ExecutionSession {
         return null;
     }
 
+    /**
+     * Optional strategy-neutral abstract local socket name carrying this session's
+     * host-side PCM stream. Null when audio streaming is not provided by this strategy.
+     */
+    default String audioConsumerSocketName() {
+        return null;
+    }
+
     /** Connects the separate display transport using capabilities established by the guest probe. */
     default boolean connectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) { return false; }
     default boolean reconnectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) {

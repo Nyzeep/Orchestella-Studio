@@ -62,8 +62,8 @@ def systemctl_fixture(service_args):
             store(path("/run/user/1000/orchestella/desktop-clients.json"), {"display": "wayland-0", "foot": 1, "waybar": 2})
         if name == "orchestella-desktop-wayvnc.service":
             path("/run/user/1000/orchestella/wayvnc.sock").touch()
-        if name == "orchestella-audio-relay.service":
-            # DW-08 synthetic audio data plane: the PulseAudio simple-protocol
+        if name in ("orchestella-audio-relay.service", "orchestella-desktop-pulseaudio.service"):
+            # DW-08/W4-03 synthetic audio data plane: the PulseAudio simple-protocol
             # listener on 127.0.0.1:9104 owned by the ordinary user, observed
             # passively through the synthetic /proc/net/tcp like the code-server
             # relay. no_audio_endpoint models a restart-looping relay whose guest
@@ -80,7 +80,7 @@ def systemctl_fixture(service_args):
             tcp.write_text("sl local_address rem_address st tx_queue tr retrnsmt uid timeout inode\n0: 0F7FA8C0:46A0 00000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 0 1\n")
     elif operation == "stop":
         services[name] = False
-        if name == "orchestella-code-server-relay.service":
+        if name in ("orchestella-code-server-relay.service", "orchestella-desktop-pulseaudio.service"):
             path("/proc/net/tcp").unlink(missing_ok=True)
         if name == "orchestella-code-server.service" and fixture.get("http_pid"):
             try:

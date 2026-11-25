@@ -1,12 +1,15 @@
 package io.github.nyzeep.orchestella;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.junit.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -18,6 +21,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import io.github.nyzeep.orchestella.audio.LocalSocketAudioSource;
@@ -410,23 +414,181 @@ public final class AudioHostRelayTest {
         assertEquals(AudioHostRelay.State.CLOSED, relay.state());
     }
 
-    @Test(timeout = 30_000)
-    public void unhandledTransportErrorIsBoundedAndReported() throws Exception {
+    @Test(timeout = 20_000)
+    public void unhandledTransportErrorEntersStandbyWithoutDestroyingListener() throws Exception {
         RecordingSink sink = new RecordingSink();
         FakeAcceptor acceptor = new FakeAcceptor();
+        AtomicInteger attempts = new AtomicInteger();
         AudioHostRelay relay = AudioHostRelay.forTesting(acceptor, () -> {
+            attempts.incrementAndGet();
             throw new IOException("chardev never comes up");
-        }, TOKEN, sink);
+        }, TOKEN, sink, 10L, 200L, 5_000L);
         relay.start();
 
-        // Five transport attempts are logged, then the budget is exhausted.
-        assertTrue("transport failures must be bounded and then reported",
-                sink.awaitEvent("relay-failed", 1, 25_000));
-        assertTrue("each attempt must be visible",
+        assertTrue("five attempts must settle into standby without marking FAILED",
+                sink.awaitEvent("transport-standby", 1, 5_000));
+        assertTrue("each attempt in the window must be visible",
                 sink.count("transport-failed") >= AudioHostRelay.MAX_TRANSPORT_ATTEMPTS);
-        assertEquals(AudioHostRelay.State.FAILED, relay.state());
+        assertEquals(0, sink.count("relay-failed"));
+        assertEquals(AudioHostRelay.State.IDLE, relay.state());
+        assertTrue("consumer acceptor must stay alive during standby", acceptor.open.get());
 
         relay.close();
+        assertEquals(AudioHostRelay.State.CLOSED, relay.state());
+    }
+
+    @Test(timeout = 20_000)
+    public void standbyRelayWakesAndStreamsPcmWhenConsumerAttaches() throws Exception {
+        RecordingSink sink = new RecordingSink();
+        FakeAcceptor acceptor = new FakeAcceptor();
+        AtomicInteger openCount = new AtomicInteger();
+        AtomicReference<TransportPipes> pipesRef = new AtomicReference<>();
+        AudioHostRelay relay = AudioHostRelay.forTesting(acceptor, () -> {
+            if (openCount.incrementAndGet() <= AudioHostRelay.MAX_TRANSPORT_ATTEMPTS) {
+                throw new IOException("desktop audio not ready yet");
+            }
+            TransportPipes pipes = new TransportPipes();
+            pipesRef.set(pipes);
+            return new StreamConnection() {
+                @Override public InputStream inputStream() { return pipes.relayInput; }
+                @Override public OutputStream outputStream() { return pipes.relayOutput; }
+                @Override public void close() throws IOException {
+                    pipes.relayInput.close();
+                    pipes.relayOutput.close();
+                }
+            };
+        }, TOKEN, sink, 10L, 500L, 30_000L);
+        relay.start();
+
+        assertTrue("relay must enter standby after initial window",
+                sink.awaitEvent("transport-standby", 1, 5_000));
+        int attemptsBeforeConsumer = openCount.get();
+
+        // Attaching a consumer must wake standby immediately and reset the retry window.
+        PipeConnection link = new PipeConnection();
+        acceptor.offer(link);
+        assertTrue(sink.awaitEvent("consumer-attached", 1, 5_000));
+
+        PreamblePeer peer = new PreamblePeer(pipesRef);
+        assertTrue("woken relay must open transport and send preamble",
+                peer.gotLine.await(5, TimeUnit.SECONDS));
+        assertTrue(peer.line.toString().startsWith("ORCHESTELLA/AUDIO 1 " + TOKEN));
+        TransportPipes pipes = pipesRef.get();
+        assertNotNull(pipes);
+        pipes.guestWrites.write("ORCHESTELLA/AUDIO READY 1\n".getBytes("US-ASCII"));
+        pipes.guestWrites.flush();
+        assertTrue(sink.awaitEvent("transport-ready", 1, 5_000));
+        assertTrue(openCount.get() > attemptsBeforeConsumer);
+
+        LocalSocketAudioSource source = new LocalSocketAudioSource();
+        source.attach(link);
+        InputStream pcm = source.openStream();
+        pipes.guestWrites.write(PCM_A);
+        pipes.guestWrites.flush();
+        assertEqualsBytes(PCM_A, pcm, "woken relay must pump PCM to attached consumer");
+        assertEquals(AudioHostRelay.State.PUMPING, relay.state());
+
+        source.close();
+        relay.close();
+    }
+
+    @Test(timeout = 10_000)
+    public void closeInterruptsActiveBlockedPumpReadAndExitsThreadsBoundedly() throws Exception {
+        RecordingSink sink = new RecordingSink();
+        FakeAcceptor acceptor = new FakeAcceptor();
+        CountDownLatch inBlockedRead = new CountDownLatch(1);
+        CountDownLatch transportClosed = new CountDownLatch(1);
+        AtomicBoolean streamClosed = new AtomicBoolean(false);
+        ByteArrayOutputStream guestOut = new ByteArrayOutputStream();
+
+        InputStream blockingStream = new InputStream() {
+            private final byte[] readyBytes = "ORCHESTELLA/AUDIO READY 1\n".getBytes("US-ASCII");
+            private int idx = 0;
+
+            @Override
+            public synchronized int read() throws IOException {
+                if (idx < readyBytes.length) {
+                    return readyBytes[idx++] & 0xFF;
+                }
+                return -1;
+            }
+
+            @Override
+            public int read(byte[] b, int off, int len) throws IOException {
+                inBlockedRead.countDown();
+                synchronized (this) {
+                    while (!streamClosed.get()) {
+                        try {
+                            wait(200);
+                        } catch (InterruptedException interrupted) {
+                            throw new IOException("interrupted", interrupted);
+                        }
+                    }
+                }
+                throw new IOException("transport closed");
+            }
+
+            @Override
+            public synchronized void close() {
+                streamClosed.set(true);
+                notifyAll();
+            }
+        };
+
+        AudioHostRelay relay = AudioHostRelay.forTesting(acceptor, () -> new StreamConnection() {
+            @Override public InputStream inputStream() { return blockingStream; }
+            @Override public OutputStream outputStream() { return guestOut; }
+            @Override public void close() throws IOException {
+                transportClosed.countDown();
+                blockingStream.close();
+            }
+        }, TOKEN, sink, 10L, 1_000L, 5_000L);
+        relay.start();
+
+        assertTrue("pump must enter blocking input.read()", inBlockedRead.await(5, TimeUnit.SECONDS));
+        relay.close();
+
+        assertTrue("close() must close activeTransport immediately",
+                transportClosed.await(2, TimeUnit.SECONDS));
+        assertTrue("relay worker threads must exit boundedly on close()",
+                relay.awaitTerminationForTest(2_000L));
+        assertEquals(AudioHostRelay.State.CLOSED, relay.state());
+    }
+
+    @Test(timeout = 20_000)
+    public void concurrentInstancesIsolateAudioSocketsAndPumpIndependently() throws Exception {
+        String socketA = QemuInstanceLauncher.audioConsumerSocketName(
+                "0f1e2d3c-4b5a-6978-8796-aabbccddeeff", "gen-a111");
+        String socketB = QemuInstanceLauncher.audioConsumerSocketName(
+                "99887766-5544-3322-1100-ffeeddccbbaa", "gen-b222");
+        assertNotEquals(socketA, socketB);
+
+        RelayHarness instanceA = new RelayHarness(TOKEN);
+        RelayHarness instanceB = new RelayHarness(TOKEN);
+        instanceA.completeHandshake();
+        instanceB.completeHandshake();
+
+        PipeConnection linkA = new PipeConnection();
+        PipeConnection linkB = new PipeConnection();
+        instanceA.acceptor.offer(linkA);
+        instanceB.acceptor.offer(linkB);
+        assertTrue(instanceA.sink.awaitEvent("consumer-attached", 1, 5_000));
+        assertTrue(instanceB.sink.awaitEvent("consumer-attached", 1, 5_000));
+
+        LocalSocketAudioSource sourceA = new LocalSocketAudioSource(socketA);
+        LocalSocketAudioSource sourceB = new LocalSocketAudioSource(socketB);
+        sourceA.attach(linkA);
+        sourceB.attach(linkB);
+
+        instanceA.writeGuest(PCM_A);
+        instanceB.writeGuest(PCM_B);
+        assertEqualsBytes(PCM_A, sourceA.openStream(), "instance A must receive only its PCM");
+        assertEqualsBytes(PCM_B, sourceB.openStream(), "instance B must receive only its PCM");
+
+        sourceA.close();
+        sourceB.close();
+        instanceA.relay.close();
+        instanceB.relay.close();
     }
 
     @Test(timeout = 5_000)

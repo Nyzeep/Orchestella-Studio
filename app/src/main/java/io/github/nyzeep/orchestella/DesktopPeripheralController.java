@@ -11,7 +11,6 @@ import io.github.nyzeep.orchestella.audio.AudioTrackSeam;
 import io.github.nyzeep.orchestella.audio.FallbackAudioSource;
 import io.github.nyzeep.orchestella.audio.LocalSocketAudioSource;
 import io.github.nyzeep.orchestella.audio.LowLatencyAudioPlayer;
-import io.github.nyzeep.orchestella.audio.TcpAudioSource;
 import io.github.nyzeep.orchestella.clipboard.ClipboardBridgeManager;
 import io.github.nyzeep.orchestella.peripherals.FileDropTargetListener;
 import io.github.nyzeep.orchestella.runtime.contract.AudioStreamContract;
@@ -50,10 +49,26 @@ public final class DesktopPeripheralController {
         assembleClipboardAndServe();
     }
 
-    /** PAUSED resumes and IDLE starts; every other state keeps its current playback. */
+    private DesktopPeripheralController(LowLatencyAudioPlayer audioPlayer) {
+        this.activity = null;
+        this.session = null;
+        this.bridgeClient = null;
+        this.bridgeToken = null;
+        this.controlClientResolver = null;
+        this.audioPlayer = audioPlayer;
+    }
+
+    /** JVM test factory exercising foreground audio recovery without an Android Activity. */
+    static DesktopPeripheralController forAudioTesting(LowLatencyAudioPlayer audioPlayer) {
+        return new DesktopPeripheralController(audioPlayer);
+    }
+
+    /** PAUSED resumes, IDLE and recoverable ERROR start; every other state keeps current playback. */
     public static AudioForegroundAction foregroundAudioActionFor(AudioStreamContract.State state) {
         if (state == AudioStreamContract.State.PAUSED) return AudioForegroundAction.RESUME;
-        if (state == AudioStreamContract.State.IDLE) return AudioForegroundAction.START;
+        if (state == AudioStreamContract.State.IDLE || state == AudioStreamContract.State.ERROR) {
+            return AudioForegroundAction.START;
+        }
         return AudioForegroundAction.NONE;
     }
 
@@ -77,13 +92,31 @@ public final class DesktopPeripheralController {
         return session != null && bridgeToken != null && session.markBridgeServing();
     }
 
-    // 1. LowLatencyAudioPlayer assembly (unchanged from the pre-split activity).
+    /**
+     * Resolves the per-instance host audio source from {@link ExecutionSession#audioConsumerSocketName()}.
+     * Strategies without an audio endpoint (AVF / UML / null session) remain honestly silent instead
+     * of probing a shared global socket or unforwarded TCP 9104.
+     */
+    static AudioSourceSeam createAudioSourceFor(ExecutionSession session) {
+        String socketName = session != null ? session.audioConsumerSocketName() : null;
+        if (socketName == null) {
+            return null;
+        }
+        String trimmed = socketName.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return FallbackAudioSource.forPrimaryOnly(new LocalSocketAudioSource(trimmed));
+    }
+
+    // 1. LowLatencyAudioPlayer assembly bound strictly to the session's audio endpoint.
     private void assembleAudio() {
         try {
-            AudioSourceSeam audioSource = new FallbackAudioSource(
-                    new LocalSocketAudioSource(LocalSocketAudioSource.DEFAULT_SOCKET_NAME),
-                    new TcpAudioSource(TcpAudioSource.DEFAULT_HOST, TcpAudioSource.DEFAULT_PORT)
-            );
+            AudioSourceSeam audioSource = createAudioSourceFor(session);
+            if (audioSource == null) {
+                audioPlayer = null;
+                return;
+            }
             AudioTrackSeam audioTrack = new AndroidAudioTrackAdapter();
             AudioDriftCompensator compensator = new AudioDriftCompensator();
             AudioFocusSeam focusSeam = new AndroidAudioFocusAdapter(activity);
@@ -149,7 +182,7 @@ public final class DesktopPeripheralController {
         }
     }
 
-    /** Foreground audio entry: PAUSED resumes, IDLE starts. */
+    /** Foreground audio entry: PAUSED resumes, IDLE or ERROR starts. */
     public void onForeground() {
         if (audioPlayer != null) {
             AudioForegroundAction action = foregroundAudioActionFor(audioPlayer.state());

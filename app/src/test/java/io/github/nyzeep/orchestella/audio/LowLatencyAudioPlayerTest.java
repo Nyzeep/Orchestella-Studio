@@ -211,12 +211,50 @@ public class LowLatencyAudioPlayerTest {
         }
     }
 
+    @Test
+    public void testStartAfterReleaseIsIgnored() {
+        player.release();
+        player.start();
+        assertEquals(AudioStreamContract.State.STOPPED, player.state());
+        assertFalse(player.isWorkerRunning());
+    }
+
+    @Test
+    public void testStreamEofTransitionsToErrorAndRecoversOnStart() throws Exception {
+        byte[] pcm = new byte[4096];
+        for (int i = 0; i < pcm.length; i++) {
+            pcm[i] = (byte) ((i % 90) + 1);
+        }
+        fakeSource.setAudioData(pcm);
+        fakeSource.setEofAfterData(true);
+
+        CountDownLatch errorLatch = new CountDownLatch(1);
+        player.addStateListener((oldState, newState) -> {
+            if (newState == AudioStreamContract.State.ERROR) {
+                errorLatch.countDown();
+            }
+        });
+
+        player.start();
+        assertTrue("Unexpected stream EOF must transition player to ERROR",
+                errorLatch.await(2, TimeUnit.SECONDS));
+        assertEquals(AudioStreamContract.State.ERROR, player.state());
+
+        fakeSource.setEofAfterData(false);
+        player.start();
+        assertTrue("Second start from ERROR must stream PCM again",
+                fakeTrack.waitForBytesWritten(pcm.length * 2, 3, TimeUnit.SECONDS));
+        assertEquals(AudioStreamContract.State.RUNNING, player.state());
+    }
+
     // --- Test Doubles & Fakes ---
 
     private static class FakeAudioSource implements AudioSourceSeam {
         private byte[] audioData = new byte[0];
         private boolean throwOnRead = false;
-        private boolean closed = false;
+        private boolean eofAfterData = false;
+        private volatile boolean closed = false;
+        private volatile CountDownLatch gate = new CountDownLatch(1);
 
         void setAudioData(byte[] data) {
             this.audioData = data;
@@ -226,8 +264,13 @@ public class LowLatencyAudioPlayerTest {
             this.throwOnRead = throwOnRead;
         }
 
+        void setEofAfterData(boolean eofAfterData) {
+            this.eofAfterData = eofAfterData;
+        }
+
         @Override
         public InputStream openStream() throws IOException {
+            CountDownLatch currentGate = gate;
             if (throwOnRead) {
                 return new InputStream() {
                     @Override
@@ -236,19 +279,53 @@ public class LowLatencyAudioPlayerTest {
                     }
                 };
             }
-            return new ByteArrayInputStream(audioData) {
+            byte[] data = audioData;
+            boolean eofMode = eofAfterData;
+            return new InputStream() {
+                private int offset = 0;
+                private volatile boolean streamClosed = false;
+
                 @Override
-                public int read(byte[] b, int off, int len) {
+                public int read() throws IOException {
+                    byte[] one = new byte[1];
+                    int n = read(one, 0, 1);
+                    return n <= 0 ? -1 : (one[0] & 0xFF);
+                }
+
+                @Override
+                public int read(byte[] b, int off, int len) throws IOException {
                     if (throwOnRead) {
-                        try {
-                            throw new IOException("Simulated network stream failure");
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
+                        throw new IOException("Simulated network stream failure");
                     }
-                    return super.read(b, off, len);
+                    if (offset < data.length) {
+                        int count = Math.min(len, data.length - offset);
+                        System.arraycopy(data, offset, b, off, count);
+                        offset += count;
+                        return count;
+                    }
+                    if (eofMode || streamClosed || closed) {
+                        return -1;
+                    }
+                    try {
+                        currentGate.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return -1;
+                }
+
+                @Override
+                public void close() {
+                    streamClosed = true;
+                    currentGate.countDown();
                 }
             };
+        }
+
+        @Override
+        public void resetConnection() {
+            gate.countDown();
+            gate = new CountDownLatch(1);
         }
 
         @Override
@@ -259,6 +336,7 @@ public class LowLatencyAudioPlayerTest {
         @Override
         public void close() {
             this.closed = true;
+            gate.countDown();
         }
 
         boolean isClosed() {

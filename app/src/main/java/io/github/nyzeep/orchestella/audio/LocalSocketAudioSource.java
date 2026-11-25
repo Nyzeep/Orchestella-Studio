@@ -98,6 +98,19 @@ public final class LocalSocketAudioSource implements AudioSourceSeam {
     }
 
     @Override
+    public synchronized void resetConnection() {
+        if (closed || attached != null) {
+            return;
+        }
+        closeQuietly(inputStream);
+        inputStream = null;
+        if (localSocket != null) {
+            closeQuietly(localSocket);
+            localSocket = null;
+        }
+    }
+
+    @Override
     public synchronized boolean isConnected() {
         if (attached != null) {
             return !closed;
@@ -126,16 +139,44 @@ public final class LocalSocketAudioSource implements AudioSourceSeam {
             attached = null;
         }
         if (localSocket != null) {
-            try {
-                localSocket.close();
-            } catch (IOException ignored) {
-                // Same best-effort close for the socket half.
-            }
+            closeQuietly(localSocket);
             localSocket = null;
         }
     }
 
     public String getSocketName() {
         return socketName;
+    }
+
+    private static void closeQuietly(LocalSocket socket) {
+        if (socket == null) {
+            return;
+        }
+        try {
+            socket.shutdownInput();
+        } catch (IOException | RuntimeException ignored) {
+            // Unblock any reader before closing.
+        }
+        try {
+            socket.shutdownOutput();
+        } catch (IOException | RuntimeException ignored) {
+            // Best-effort half-close.
+        }
+        try {
+            socket.close();
+        } catch (IOException ignored) {
+            // Same best-effort close for the socket half.
+        }
+    }
+
+    private static void closeQuietly(InputStream stream) {
+        if (stream == null) {
+            return;
+        }
+        try {
+            stream.close();
+        } catch (IOException ignored) {
+            // Best-effort cleanup during reset.
+        }
     }
 }

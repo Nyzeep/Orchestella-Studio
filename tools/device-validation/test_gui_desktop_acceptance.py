@@ -427,6 +427,7 @@ class ConsumerPcmTest(unittest.TestCase):
         server.close()
         counts = g08.count_consumer_pcm(lambda: client, 2.0)
         self.assertEqual(1000, counts["pcm_bytes"])
+        self.assertEqual(1000, counts["nonzero_bytes"])
         self.assertTrue(counts["transport_ended"])
 
     def test_counts_bytes_until_window(self):
@@ -434,9 +435,54 @@ class ConsumerPcmTest(unittest.TestCase):
         server.sendall(b"\x02" * 10)
         counts = g08.count_consumer_pcm(lambda: client, 0.3)
         self.assertEqual(10, counts["pcm_bytes"])
+        self.assertEqual(10, counts["nonzero_bytes"])
         self.assertFalse(counts["transport_ended"])
         client.close()
         server.close()
+
+    def test_audio_socket_resolution_and_override(self):
+        events = g08.parse_audio_events(
+            "I OrchestellaQemu: audio-relay consumer-listening socket=orchestella-audio-998877665544-othergen\n"
+            "I OrchestellaQemu: audio-relay consumer-listening socket=orchestella-audio-0f1e2d3c4b5a-gen77\n"
+        )
+        self.assertEqual(
+            "orchestella-audio-0f1e2d3c4b5a-gen77",
+            g08.resolve_audio_socket(base_args(), events),
+        )
+        self.assertEqual(
+            "orchestella-audio-0f1e2d3c4b5a",
+            g08.resolve_audio_socket(base_args(), []),
+        )
+        self.assertEqual(
+            "droidlayer-audio",
+            g08.resolve_audio_socket(base_args(audio_socket="droidlayer-audio"), events),
+        )
+        with self.assertRaises(g08.Rejected):
+            g08.audio_socket_value("bad;socket!")
+
+    def test_pcm_probe_uses_resolved_per_instance_socket(self):
+        registry = PairRegistry()
+        sock_name = "orchestella-audio-0f1e2d3c4b5a-gen77"
+        server = registry.add_pair(sock_name)
+        server.sendall(b"\x00\x00\x11\x22\x33\x44")
+        server.close()
+        adb = FakeAdb(
+            "/fake/adb",
+            SERIAL,
+            logcat_qemu=(
+                "I OrchestellaQemu: audio-relay consumer-listening socket=" + sock_name + "\n"
+                "I OrchestellaQemu: audio-relay transport-ready attempt=1\n"
+            ),
+        )
+        sections = {}
+        with mock.patch.object(g08, "socket_factory_for", lambda a, name: registry.factory_for(a, name)):
+            g08.run_audio_section(base_args(pcm_probe=True), adb, sections)
+        audio = sections["audio"]
+        self.assertEqual("pass", audio["status"])
+        self.assertEqual(sock_name, audio["consumer_socket"])
+        self.assertEqual(sock_name, audio["pcm"]["socket"])
+        self.assertEqual(6, audio["pcm"]["pcm_bytes"])
+        self.assertEqual(4, audio["pcm"]["nonzero_bytes"])
 
 
 class AudioVerdictTest(unittest.TestCase):
@@ -929,6 +975,40 @@ class EndToEndDriveTest(unittest.TestCase):
                 "--package", "io.github.bad;id",
                 "--output-root", root,
                 "--output", "evidence/bad-pkg.json",
+            ])
+            self.assertEqual(2, code)
+
+    def test_audio_socket_cli_flag_and_invalid_value_rejected(self):
+        self.add_control([])
+        with tempfile.TemporaryDirectory() as root:
+            code = g08.main([
+                "check",
+                "--adb", "/fake/adb",
+                "--serial", SERIAL,
+                "--device-alias", "bench-a",
+                "--instance-id", INSTANCE,
+                "--bridge-token", TOKEN,
+                "--sections", "audio",
+                "--audio-socket", "droidlayer-audio",
+                "--output-root", root,
+                "--output", "evidence/audio-override.json",
+            ])
+            self.assertEqual(0, code)
+            document = json.loads(g08.output_path(root, "evidence/audio-override.json").read_text(encoding="utf-8"))
+            self.assertEqual("droidlayer-audio", document["sections"]["audio"]["consumer_socket"])
+
+        with tempfile.TemporaryDirectory() as root:
+            code = g08.main([
+                "check",
+                "--adb", "/fake/adb",
+                "--serial", SERIAL,
+                "--device-alias", "bench-a",
+                "--instance-id", INSTANCE,
+                "--bridge-token", TOKEN,
+                "--sections", "audio",
+                "--audio-socket", "bad/socket",
+                "--output-root", root,
+                "--output", "evidence/bad-audio-sock.json",
             ])
             self.assertEqual(2, code)
 

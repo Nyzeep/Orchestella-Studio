@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Low-latency streaming PCM audio player implementation for Android host.
@@ -33,8 +34,10 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
     private volatile State currentState = State.IDLE;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
     private final AtomicBoolean isPaused = new AtomicBoolean(false);
+    private volatile boolean released = false;
 
     private Thread workerThread;
+    private final AtomicLong workerGeneration = new AtomicLong(0);
     private final Object stateLock = new Object();
 
     public LowLatencyAudioPlayer(
@@ -92,13 +95,33 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
 
     @Override
     public void start() {
+        Thread previous = null;
+        boolean needsReset = false;
         synchronized (stateLock) {
-            if (currentState == State.RUNNING) {
+            if (released || (currentState == State.RUNNING && isWorkerRunning())) {
                 return;
             }
             if (currentState == State.PAUSED) {
                 resume();
                 return;
+            }
+            if (currentState == State.ERROR || currentState == State.STOPPED || currentState == State.RUNNING) {
+                isRunning.set(false);
+                isPaused.set(false);
+                previous = detachWorkerLocked();
+                needsReset = true;
+            }
+        }
+        if (needsReset) {
+            stopWorker(previous, true);
+        }
+
+        synchronized (stateLock) {
+            if (released || (currentState == State.RUNNING && isWorkerRunning())) {
+                return;
+            }
+            if (needsReset) {
+                compensator.reset();
             }
 
             transitionState(State.STARTING);
@@ -124,7 +147,7 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
             // null/failing stream immediately and call transitionState(ERROR), and an
             // unconditional RUNNING write after startWorkerThread() would overwrite it.
             transitionState(State.RUNNING);
-            startWorkerThread();
+            startWorkerThread(workerGeneration.incrementAndGet());
         }
     }
 
@@ -180,16 +203,22 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
 
     @Override
     public void stop() {
+        Thread previous;
         synchronized (stateLock) {
             if (currentState == State.STOPPED) {
                 return;
             }
-
             isRunning.set(false);
             isPaused.set(false);
+            previous = detachWorkerLocked();
+        }
 
-            stopWorkerThread();
+        stopWorker(previous, true);
 
+        synchronized (stateLock) {
+            if (currentState == State.STOPPED) {
+                return;
+            }
             try {
                 audioTrack.stop();
                 audioTrack.flush();
@@ -209,20 +238,38 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
      * abandons audio focus, and closes input audio streams.
      */
     public void release() {
+        Thread previous;
         synchronized (stateLock) {
-            stop();
+            released = true;
+            isRunning.set(false);
+            isPaused.set(false);
+            previous = detachWorkerLocked();
+        }
+
+        try {
+            audioSource.close();
+        } catch (IOException ignored) {
+            // Closing the input source before joining wakes any blocked stream read immediately.
+        }
+        stopWorker(previous, false);
+
+        synchronized (stateLock) {
+            if (currentState != State.STOPPED) {
+                try {
+                    audioTrack.stop();
+                    audioTrack.flush();
+                } catch (Exception ignored) {
+                    // Best-effort track teardown during release.
+                }
+                compensator.reset();
+                transitionState(State.STOPPED);
+            }
 
             try {
                 audioTrack.release();
             } catch (Exception ignored) {
                 // release() is best-effort teardown during shutdown; nothing further uses
                 // the track after this point.
-            }
-
-            try {
-                audioSource.close();
-            } catch (IOException ignored) {
-                // Closing the input source is best-effort teardown, same as the release above.
             }
 
             focusHandler.abandonFocus();
@@ -260,82 +307,103 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
         return audioTrack;
     }
 
-    private void startWorkerThread() {
-        stopWorkerThread();
-        workerThread = new Thread(this::audioPumpLoop, "Orchestella-AudioPlayerWorker");
+    private void startWorkerThread(long generation) {
+        workerThread = new Thread(() -> audioPumpLoop(generation), "Orchestella-AudioPlayerWorker");
         workerThread.setDaemon(true);
         workerThread.start();
     }
 
-    private void stopWorkerThread() {
-        if (workerThread != null) {
-            workerThread.interrupt();
+    private Thread detachWorkerLocked() {
+        workerGeneration.incrementAndGet();
+        Thread previous = workerThread;
+        workerThread = null;
+        return previous;
+    }
+
+    private void stopWorker(Thread worker, boolean resetSource) {
+        if (resetSource) {
+            audioSource.resetConnection();
+        }
+        if (worker != null) {
+            worker.interrupt();
             try {
-                workerThread.join(500);
+                worker.join(500);
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
-            workerThread = null;
         }
     }
 
-    private void audioPumpLoop() {
+    private void enterWorkerErrorIfCurrent(long generation) {
+        if (isRunning.get() && generation == workerGeneration.get()) {
+            isRunning.set(false);
+            transitionState(State.ERROR);
+        }
+    }
+
+    private void audioPumpLoop(long generation) {
         InputStream stream = null;
         try {
             stream = audioSource.openStream();
         } catch (IOException e) {
-            if (isRunning.get()) {
-                transitionState(State.ERROR);
-            }
+            enterWorkerErrorIfCurrent(generation);
             return;
         }
 
         if (stream == null) {
-            if (isRunning.get()) {
-                transitionState(State.ERROR);
-            }
+            enterWorkerErrorIfCurrent(generation);
             return;
         }
 
         byte[] inputBuffer = new byte[CHUNK_SIZE_BYTES];
         byte[] outputBuffer = new byte[CHUNK_SIZE_BYTES];
 
-        while (isRunning.get() && !Thread.currentThread().isInterrupted()) {
-            if (isPaused.get() || !focusHandler.isPlaybackAllowed()) {
-                try {
-                    Thread.sleep(15);
-                } catch (InterruptedException e) {
-                    break;
-                }
-                continue;
-            }
-
-            try {
-                int bytesRead = stream.read(inputBuffer, 0, inputBuffer.length);
-                if (bytesRead < 0) {
-                    // Stream reached end of file / disconnect
-                    break;
-                }
-
-                if (bytesRead > 0) {
-                    // Align to frame boundary
-                    int alignedBytes = (bytesRead / AudioDriftCompensator.BYTES_PER_FRAME) * AudioDriftCompensator.BYTES_PER_FRAME;
-                    if (alignedBytes > 0) {
-                        compensator.write(inputBuffer, 0, alignedBytes);
+        try {
+            while (isRunning.get()
+                    && generation == workerGeneration.get()
+                    && !Thread.currentThread().isInterrupted()) {
+                if (isPaused.get() || !focusHandler.isPlaybackAllowed()) {
+                    try {
+                        Thread.sleep(15);
+                    } catch (InterruptedException e) {
+                        break;
                     }
+                    continue;
                 }
 
-                // Read compensated audio to write into AudioTrack
-                int compensatedBytes = compensator.read(outputBuffer, 0, outputBuffer.length);
-                if (compensatedBytes > 0 && isRunning.get() && !isPaused.get()) {
-                    audioTrack.write(outputBuffer, 0, compensatedBytes, AudioTrackSeam.WRITE_BLOCKING);
-                }
+                try {
+                    int bytesRead = stream.read(inputBuffer, 0, inputBuffer.length);
+                    if (bytesRead < 0) {
+                        // Stream reached EOF while playback remained active (e.g. relay disconnect
+                        // or consumer replacement); enter ERROR so onForeground() can reattach.
+                        enterWorkerErrorIfCurrent(generation);
+                        break;
+                    }
 
-            } catch (IOException e) {
-                if (isRunning.get()) {
-                    transitionState(State.ERROR);
+                    if (bytesRead > 0) {
+                        // Align to frame boundary
+                        int alignedBytes = (bytesRead / AudioDriftCompensator.BYTES_PER_FRAME) * AudioDriftCompensator.BYTES_PER_FRAME;
+                        if (alignedBytes > 0) {
+                            compensator.write(inputBuffer, 0, alignedBytes);
+                        }
+                    }
+
+                    // Read compensated audio to write into AudioTrack
+                    int compensatedBytes = compensator.read(outputBuffer, 0, outputBuffer.length);
+                    if (compensatedBytes > 0 && isRunning.get() && !isPaused.get()) {
+                        audioTrack.write(outputBuffer, 0, compensatedBytes, AudioTrackSeam.WRITE_BLOCKING);
+                    }
+
+                } catch (IOException e) {
+                    enterWorkerErrorIfCurrent(generation);
+                    break;
                 }
-                break;
+            }
+        } finally {
+            try {
+                stream.close();
+            } catch (IOException ignored) {
+                // Best-effort close when the worker exits or enters ERROR for recovery.
             }
         }
     }

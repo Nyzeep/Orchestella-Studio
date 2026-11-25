@@ -12,7 +12,7 @@ Covers the seven device-window acceptance sections:
   3. wayvnc capture generation + presentation-gate first frame (STATUS evidence
      and the awaiting-frame -> ready transition performed by the app itself)
   4. display channel E2E STATUS evidence + wayvnc RFB byte diversity (guest probe)
-  5. audio relay unit state + host @droidlayer-audio attachment + PCM counting
+  5. audio relay unit state + host per-instance socket attachment + PCM counting
      (no audio-quality judgment; includes the desktop-labwc pulseaudio check:
      profilectl PACKAGES ships pulseaudio since DW-04, so a missing package is
      a regular missing-item failure now, not a recorded known gap. The honest
@@ -36,7 +36,7 @@ control channel from the first screen entry (BridgeConnector serveSession). This
 script probes that empirically: the control channel must answer an authenticated
 HELLO, otherwise the guest-side sections are reported as blocked missing items
 (never silently skipped), while the always-available surfaces (logcat structured
-evidence, the app-owned @droidlayer-audio consumer socket) are still harvested.
+evidence, the app-owned @orchestella-audio-<id12>-<gen8> consumer socket) are still harvested.
 Best window for a full scripted run: right after the instance starts, before any
 screen is opened. A takeover that displaces an app-owned client kills that app
 connection (re-enter the terminal/desktop screen afterwards to reattach).
@@ -83,9 +83,41 @@ GUEST_IDENTITY_PREAMBLE = (
     'U=$(id -u -- "$QA_USER" 2>/dev/null); export QA_USER U; '
 )
 CONSUMER_SOCKET = "droidlayer-audio"
+AUDIO_SOCKET_PREFIX = "orchestella-audio-"
 CONTROL_SOCKET_PREFIX = "droidlayer-control-"
 TERMINAL_SOCKET_PREFIX = "droidlayer-terminal-"
 GOOD_STATES = ("awaiting-frame", "ready")
+
+
+def short_audio_instance_id(instance_id):
+    normalized = re.sub(r"[^a-z0-9]", "", str(instance_id or "").lower())
+    return normalized[:12] or "unknown"
+
+
+def audio_socket_prefix(instance_id):
+    return AUDIO_SOCKET_PREFIX + short_audio_instance_id(instance_id)
+
+
+def audio_socket_value(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,96}", value):
+        raise Rejected("AUDIO_SOCKET_REJECTED")
+    return value
+
+
+def resolve_audio_socket(args, relay_events=()):
+    explicit = getattr(args, "audio_socket", None)
+    if explicit is not None:
+        return audio_socket_value(explicit)
+    prefix = audio_socket_prefix(args.instance_id)
+    for event in reversed(list(relay_events)):
+        if event.get("source") != "audio-relay" or event.get("event") != "consumer-listening":
+            continue
+        match = re.search(r"\bsocket=([A-Za-z0-9._-]{1,96})\b", event.get("detail", ""))
+        if match:
+            candidate = match.group(1)
+            if candidate == prefix or candidate.startswith(prefix + "-"):
+                return candidate
+    return prefix
 
 
 def control_socket_name(instance_id):
@@ -633,29 +665,32 @@ def run_guest_benchmark(probe, deadline):
 
 
 def count_consumer_pcm(connect_factory, window_seconds, clock=time.monotonic):
-    """Attach as the one @droidlayer-audio consumer and count PCM bytes only.
+    """Attach as the one audio consumer and count PCM bytes only.
 
     The app-owned relay replaces its consumer with this link; the desktop's
     audio player may need to re-probe afterwards (FallbackAudioSource walk).
     """
     connection = connect_factory()
-    total, end = 0, clock() + float(window_seconds)
-    while clock() < end:
-        try:
-            connection.settimeout(max(0.1, min(1.0, end - clock())))
-            data = connection.recv(65536)
-        except socket.timeout:
-            continue
-        except OSError:
-            return {"pcm_bytes": total, "transport_ended": True}
-        if not data:
-            return {"pcm_bytes": total, "transport_ended": True}
-        total += len(data)
+    total, nonzero, end = 0, 0, clock() + float(window_seconds)
     try:
-        connection.close()
-    except OSError:
-        pass
-    return {"pcm_bytes": total, "transport_ended": False}
+        while clock() < end:
+            try:
+                connection.settimeout(max(0.1, min(1.0, end - clock())))
+                data = connection.recv(65536)
+            except socket.timeout:
+                continue
+            except OSError:
+                return {"pcm_bytes": total, "nonzero_bytes": nonzero, "transport_ended": True}
+            if not data:
+                return {"pcm_bytes": total, "nonzero_bytes": nonzero, "transport_ended": True}
+            total += len(data)
+            nonzero += len(data) - data.count(0)
+        return {"pcm_bytes": total, "nonzero_bytes": nonzero, "transport_ended": False}
+    finally:
+        try:
+            connection.close()
+        except OSError:
+            pass
 
 
 def check_gpu_logcat(adb, gpu_enabled, package=PACKAGE):
@@ -811,20 +846,21 @@ def terminal_probe_for(adb, terminal_name, deadline, forwards=None):
         return None
 
 
-def pcm_probe_for(adb, window_seconds=10.0):
-    factory, port = socket_factory_for(adb, CONSUMER_SOCKET)
+def pcm_probe_for(adb, window_seconds=10.0, socket_name=CONSUMER_SOCKET):
+    factory, port = socket_factory_for(adb, socket_name)
     if factory is None:
-        return {"status": "blocked", "reason": "AUDIO_CONSUMER_SOCKET_ABSENT"}
+        return {"status": "blocked", "reason": "AUDIO_CONSUMER_SOCKET_ABSENT", "socket": socket_name}
     try:
         counts = count_consumer_pcm(factory, window_seconds)
+        counts["socket"] = socket_name
         counts["status"] = "pass" if counts["pcm_bytes"] > 0 else "fail"
         counts["reason"] = ("PCM_BYTES_COUNTED" if counts["pcm_bytes"] > 0
                             else "NO_PCM_WITHIN_WINDOW")
-        counts["caveat"] = ("This probe attached as the single @droidlayer-audio consumer and "
+        counts["caveat"] = ("This probe attached as the single @" + socket_name + " consumer and "
                             "replaced the app player link; re-enter the desktop screen to re-probe audio.")
         return counts
     except OSError:
-        return {"status": "blocked", "reason": "AUDIO_CONSUMER_CONNECT_FAILED"}
+        return {"status": "blocked", "reason": "AUDIO_CONSUMER_CONNECT_FAILED", "socket": socket_name}
     finally:
         try:
             adb.remove_forward(port)
@@ -882,12 +918,15 @@ def run_audio_section(args, adb, sections):
         probe_events = parse_audio_events(adb.logcat("AudioSource"))
         audio["relay_events"] = [event for event in relay_events if event["source"] == "audio-relay"][-40:]
         audio["probe_events"] = [event for event in probe_events if event["source"] == "audio-probe"][-40:]
+        consumer_socket = resolve_audio_socket(args, audio["relay_events"])
+        audio["consumer_socket"] = consumer_socket
         events = {event["event"] for event in audio["relay_events"]}
-        audio["host_listener_observed"] = bool({"consumer-attached", "transport-ready"} & events)
+        audio["host_listener_observed"] = bool(
+            {"consumer-listening", "consumer-attached", "transport-ready"} & events)
         audio["guest_ready_observed"] = "transport-ready" in events
         audio["relay_failed_observed"] = bool({"relay-failed", "relay-closed", "token-unavailable"} & events)
         if args.pcm_probe:
-            audio["pcm"] = pcm_probe_for(adb)
+            audio["pcm"] = pcm_probe_for(adb, socket_name=consumer_socket)
         audio["status"], audio["reason"] = audio_verdict(audio)
     except Rejected as error:
         audio = {"status": "blocked", "reason": str(error)}
@@ -1071,6 +1110,8 @@ def check(args):
     alias(args.device_alias)
     token_value(args.bridge_token)
     instance_value(args.instance_id)
+    if getattr(args, "audio_socket", None) is not None:
+        audio_socket_value(args.audio_socket)
     token_sha256 = hashlib.sha256(args.bridge_token.encode("ascii")).hexdigest()
 
     package = package_value(getattr(args, "package", PACKAGE) or PACKAGE)
@@ -1261,7 +1302,9 @@ def main(argv=None):
     check_command.add_argument("--gpu-benchmark", action="store_true",
                                help="run the guest glmark2 (Ticket58 surface) after a passing GPU log verdict")
     check_command.add_argument("--pcm-probe", action="store_true",
-                               help="attach as the @droidlayer-audio consumer and count PCM bytes")
+                               help="attach as the audio consumer and count PCM bytes")
+    check_command.add_argument("--audio-socket", default=None,
+                               help="override abstract audio consumer socket name (defaults to per-instance derivation)")
     check_command.add_argument("--deadline", type=int, default=1800)
     check_command.add_argument("--install-deadline", type=int, default=900)
     check_command.add_argument("--start-deadline", type=int, default=240)
