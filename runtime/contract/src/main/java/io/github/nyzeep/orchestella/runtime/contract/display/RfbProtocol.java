@@ -8,8 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.BitSet;
 
-/** Original, deliberately small RFB 3.8 decoder. No compression, clipboard or CopyRect capability. */
-final class RfbProtocol {
+/** RFB 3.8 decoder supporting Raw and optional ZRLE pixel encodings. */
+final class RfbProtocol implements AutoCloseable {
     static final int MAX_EDGE = DisplayViewportBudget.MAX_EDGE;
     static final int MAX_PIXELS = (int) DisplayViewportBudget.MAX_PIXELS;
     static final int MAX_BYTES = (int) DisplayViewportBudget.MAX_BYTES;
@@ -35,6 +35,7 @@ final class RfbProtocol {
     }
 
     private final DataInputStream input;
+    private final RfbZrleDecoder zrleDecoder;
     private byte[] pixels;
     private byte[] rawRowBuffer = new byte[0];
     private boolean pixelsPublished;
@@ -46,13 +47,23 @@ final class RfbProtocol {
     private long updates;
     private long rectangles;
     private long sizeGeneration;
+    private long decodeNanos;
 
-    private RfbProtocol(DataInputStream input, int width, int height) throws IOException {
+    private RfbProtocol(
+            DataInputStream input, int width, int height, boolean experimentalZrleEnabled)
+            throws IOException {
         this.input = input;
         resize(width, height);
+        this.zrleDecoder = experimentalZrleEnabled ? new RfbZrleDecoder() : null;
     }
 
     static RfbProtocol negotiate(DataInputStream input, Sender sender, String token) throws IOException {
+        return negotiate(input, sender, token, false);
+    }
+
+    static RfbProtocol negotiate(
+            DataInputStream input, Sender sender, String token, boolean experimentalZrleEnabled)
+            throws IOException {
         sender.send(ascii("ORCHESTELLA/DISPLAY 1 " + token + "\n"));
         if (!"ORCHESTELLA/DISPLAY READY 1\n".equals(readLine(input, 128))) {
             throw new Rejected("display authentication or relay readiness rejected");
@@ -94,11 +105,15 @@ final class RfbProtocol {
         byte[] setFormat = new byte[20];
         System.arraycopy(PIXEL_FORMAT, 0, setFormat, 4, PIXEL_FORMAT.length);
         sender.send(setFormat);
-        sender.send(new byte[] {2, 0, 0, 2, 0, 0, 0, 0, (byte) 255, (byte) 255, (byte) 255, 33});
-        return new RfbProtocol(input, width, height);
+        if (experimentalZrleEnabled) {
+            sender.send(new byte[] {2, 0, 0, 3, 0, 0, 0, 16, 0, 0, 0, 0, (byte) 255, (byte) 255, (byte) 255, 33});
+        } else {
+            sender.send(new byte[] {2, 0, 0, 2, 0, 0, 0, 0, (byte) 255, (byte) 255, (byte) 255, 33});
+        }
+        return new RfbProtocol(input, width, height, experimentalZrleEnabled);
     }
 
-    /** Only a complete framebuffer whose every pixel came from Raw payload can be published. */
+    /** Only a complete framebuffer whose every pixel came from decoded payload can be published. */
     boolean readMessage(Runnable beginUpdate) throws IOException {
         int type = input.readUnsignedByte();
         if (type == 2) { // Bell: no pixel update and no additional update request
@@ -119,7 +134,7 @@ final class RfbProtocol {
         if (count > MAX_RECTANGLES) {
             throw new Rejected("rectangle count exceeds limit");
         }
-        boolean raw = false;
+        boolean hasPixels = false;
         boolean resized = false;
         long updateBytes = 0;
         for (int index = 0; index < count; index++) {
@@ -133,29 +148,40 @@ final class RfbProtocol {
                     throw new Rejected("invalid or repeated DesktopSize rectangle");
                 }
                 resize(rectangleWidth, rectangleHeight);
-                raw = false;
+                hasPixels = false;
                 resized = true;
             } else if (encoding == 0) {
-                dimensions(rectangleWidth, rectangleHeight);
-                if ((long) x + rectangleWidth > width || (long) y + rectangleHeight > height) {
-                    throw new Rejected("Raw rectangle outside framebuffer");
-                }
-                updateBytes += (long) rectangleWidth * rectangleHeight * 4;
-                if (updateBytes > MAX_BYTES) {
-                    throw new Rejected("update pixel bytes exceed limit");
-                }
+                updateBytes = validatePixelRectangle(x, y, rectangleWidth, rectangleHeight, updateBytes, "Raw");
                 readRaw(x, y, rectangleWidth, rectangleHeight);
-                raw = true;
+                hasPixels = true;
+            } else if (encoding == 16 && zrleDecoder != null) {
+                updateBytes = validatePixelRectangle(x, y, rectangleWidth, rectangleHeight, updateBytes, "ZRLE");
+                readZrle(x, y, rectangleWidth, rectangleHeight);
+                hasPixels = true;
             } else {
                 throw new Rejected("unsupported RFB encoding: " + encoding);
             }
             rectangles++;
         }
         updates++;
-        return raw && complete();
+        return hasPixels && complete();
     }
 
-    private void readRaw(int x, int y, int rectangleWidth, int rectangleHeight) throws IOException {
+    private long validatePixelRectangle(
+            int x, int y, int rectangleWidth, int rectangleHeight, long updateBytes, String encodingName)
+            throws Rejected {
+        dimensions(rectangleWidth, rectangleHeight);
+        if ((long) x + rectangleWidth > width || (long) y + rectangleHeight > height) {
+            throw new Rejected(encodingName + " rectangle outside framebuffer");
+        }
+        long nextUpdateBytes = updateBytes + (long) rectangleWidth * rectangleHeight * 4;
+        if (nextUpdateBytes > MAX_BYTES) {
+            throw new Rejected("update pixel bytes exceed limit");
+        }
+        return nextUpdateBytes;
+    }
+
+    private void ensureWritablePixels(int x, int y, int rectangleWidth, int rectangleHeight) {
         if (pixelsPublished) {
             if (x == 0 && y == 0 && rectangleWidth == width && rectangleHeight == height) {
                 pixels = new byte[width * height * 4];
@@ -164,13 +190,10 @@ final class RfbProtocol {
             }
             pixelsPublished = false;
         }
-        int rowBytes = rectangleWidth * 4;
-        if (rawRowBuffer.length < rowBytes) {
-            rawRowBuffer = new byte[rowBytes];
-        }
+    }
+
+    private void markKnownRegion(int x, int y, int rectangleWidth, int rectangleHeight) {
         for (int dy = 0; dy < rectangleHeight; dy++) {
-            input.readFully(rawRowBuffer, 0, rowBytes);
-            pixelBytes += rowBytes;
             int start = (y + dy) * width + x;
             int end = start + rectangleWidth;
             for (int missing = knownPixels.nextClearBit(start); missing < end;
@@ -178,14 +201,45 @@ final class RfbProtocol {
                 knownCount++;
             }
             knownPixels.set(start, end);
-            for (int pixel = 0; pixel < rectangleWidth; pixel++) {
-                int source = pixel * 4;
-                int destination = (start + pixel) * 4;
-                pixels[destination] = rawRowBuffer[source + 2];
-                pixels[destination + 1] = rawRowBuffer[source + 1];
-                pixels[destination + 2] = rawRowBuffer[source];
-                pixels[destination + 3] = (byte) 255;
+        }
+    }
+
+    private void readRaw(int x, int y, int rectangleWidth, int rectangleHeight) throws IOException {
+        long t0 = System.nanoTime();
+        try {
+            ensureWritablePixels(x, y, rectangleWidth, rectangleHeight);
+            int rowBytes = rectangleWidth * 4;
+            if (rawRowBuffer.length < rowBytes) {
+                rawRowBuffer = new byte[rowBytes];
             }
+            for (int dy = 0; dy < rectangleHeight; dy++) {
+                input.readFully(rawRowBuffer, 0, rowBytes);
+                pixelBytes += rowBytes;
+                int start = (y + dy) * width + x;
+                for (int pixel = 0; pixel < rectangleWidth; pixel++) {
+                    int source = pixel * 4;
+                    int destination = (start + pixel) * 4;
+                    pixels[destination] = rawRowBuffer[source + 2];
+                    pixels[destination + 1] = rawRowBuffer[source + 1];
+                    pixels[destination + 2] = rawRowBuffer[source];
+                    pixels[destination + 3] = (byte) 255;
+                }
+            }
+            markKnownRegion(x, y, rectangleWidth, rectangleHeight);
+        } finally {
+            decodeNanos += System.nanoTime() - t0;
+        }
+    }
+
+    private void readZrle(int x, int y, int rectangleWidth, int rectangleHeight) throws IOException {
+        long t0 = System.nanoTime();
+        try {
+            ensureWritablePixels(x, y, rectangleWidth, rectangleHeight);
+            zrleDecoder.decodeRectangle(input, pixels, width, x, y, rectangleWidth, rectangleHeight);
+            pixelBytes += (long) rectangleWidth * rectangleHeight * 4;
+            markKnownRegion(x, y, rectangleWidth, rectangleHeight);
+        } finally {
+            decodeNanos += System.nanoTime() - t0;
         }
     }
 
@@ -217,7 +271,16 @@ final class RfbProtocol {
     long updates() { return updates; }
     long rectangles() { return rectangles; }
     long sizeGeneration() { return sizeGeneration; }
+    long decodeNanos() { return decodeNanos; }
+    RfbZrleDecoder zrleDecoder() { return zrleDecoder; }
     private boolean complete() { return knownCount == width * height; }
+
+    @Override
+    public void close() {
+        if (zrleDecoder != null) {
+            zrleDecoder.close();
+        }
+    }
 
     private static void dimensions(int width, int height) throws Rejected {
         if (width <= 0 || height <= 0 || width > MAX_EDGE || height > MAX_EDGE

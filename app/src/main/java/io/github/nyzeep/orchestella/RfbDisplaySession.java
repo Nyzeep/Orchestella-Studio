@@ -8,6 +8,7 @@ import io.github.nyzeep.orchestella.runtime.contract.InputEvent;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import io.github.nyzeep.orchestella.runtime.contract.display.DisplayViewportBudget;
 import io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -23,9 +24,11 @@ import java.util.function.Supplier;
  * abstraction stays protocol-neutral.
  */
 public final class RfbDisplaySession implements DisplayChannel, DisplayControl {
+    static final long DEFAULT_RECONNECT_SETTLE_MS = 350L;
     private final RfbDisplayChannel.StreamConnector connector;
     private final String token;
     private final Supplier<BridgeClient> control;
+    private final long reconnectSettleMs;
     private final Set<StateListener> states = new CopyOnWriteArraySet<>();
     private final Set<FrameListener> frames = new CopyOnWriteArraySet<>();
     private final Set<DisplayListener> displays = new CopyOnWriteArraySet<>();
@@ -44,9 +47,15 @@ public final class RfbDisplaySession implements DisplayChannel, DisplayControl {
 
     public RfbDisplaySession(RfbDisplayChannel.StreamConnector connector, String token,
             Supplier<BridgeClient> control) {
+        this(connector, token, control, DEFAULT_RECONNECT_SETTLE_MS);
+    }
+
+    RfbDisplaySession(RfbDisplayChannel.StreamConnector connector, String token,
+            Supplier<BridgeClient> control, long reconnectSettleMs) {
         this.connector = connector;
         this.token = token;
         this.control = control;
+        this.reconnectSettleMs = Math.max(0L, reconnectSettleMs);
     }
 
     public synchronized boolean connect(RfbDisplayChannel.InputCapabilities capabilities) {
@@ -54,13 +63,35 @@ public final class RfbDisplaySession implements DisplayChannel, DisplayControl {
     }
 
     public synchronized boolean connect(RfbDisplayChannel.InputCapabilities capabilities, boolean force) {
+        RfbDisplayChannel.Options options =
+                BuildConfig.IS_ISOLATED_QA_BUILD && DesktopEntryPolicy.isQaExperimentalZrleEnabled()
+                        ? new RfbDisplayChannel.Options(64, 15_000, 30_000, true)
+                        : RfbDisplayChannel.Options.DEFAULT;
+        return connect(capabilities, force, options);
+    }
+
+    public synchronized boolean connect(RfbDisplayChannel.InputCapabilities capabilities, boolean force,
+            RfbDisplayChannel.Options options) {
         if (closed) return false;
         if (!force && stream != null && stream.isConnected()) return true;
         latestFrame = null;
         RfbDisplayChannel previous = stream;
         stream = null;
-        if (previous != null) previous.close();
-        RfbDisplayChannel next = new RfbDisplayChannel(connector, token, capabilities);
+        if (previous != null) {
+            logBenchmark(previous);
+            previous.close();
+            if (reconnectSettleMs > 0L) {
+                try {
+                    Thread.sleep(reconnectSettleMs);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+        }
+        RfbDisplayChannel.Options resolvedOptions =
+                options != null ? options : RfbDisplayChannel.Options.DEFAULT;
+        RfbDisplayChannel next = new RfbDisplayChannel(connector, token, capabilities, resolvedOptions);
         stream = next;
         next.addStateListener((state, detail) -> {
             synchronized (this) {
@@ -73,11 +104,18 @@ public final class RfbDisplaySession implements DisplayChannel, DisplayControl {
             }
         });
         next.registerFrameListener(frame -> {
+            long frameCount = 0L;
             synchronized (this) {
                 if (stream != next || closed) return;
                 latestFrame = frame;
                 width = frame.width();
                 height = frame.height();
+                if (BuildConfig.IS_ISOLATED_QA_BUILD) {
+                    frameCount = next.statistics().frames();
+                }
+            }
+            if (BuildConfig.IS_ISOLATED_QA_BUILD && frameCount > 0 && frameCount % 30L == 0L) {
+                logBenchmark(next);
             }
             for (FrameListener listener : frames) {
                 if (stream != next || closed) break;
@@ -85,6 +123,48 @@ public final class RfbDisplaySession implements DisplayChannel, DisplayControl {
             }
         });
         return next.connect();
+    }
+
+    public RfbDisplayChannel.Statistics statistics() {
+        RfbDisplayChannel current = stream;
+        return current == null
+                ? new RfbDisplayChannel.Statistics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                : current.statistics();
+    }
+
+    public long totalDecodeNanos() {
+        RfbDisplayChannel current = stream;
+        return current == null ? 0L : current.totalDecodeNanos();
+    }
+
+    public boolean isExperimentalZrleEnabled() {
+        RfbDisplayChannel current = stream;
+        return current != null && current.isExperimentalZrleEnabled();
+    }
+
+    private static void logBenchmark(RfbDisplayChannel channel) {
+        if (!BuildConfig.IS_ISOLATED_QA_BUILD || channel == null) {
+            return;
+        }
+        RfbDisplayChannel.Statistics stats = channel.statistics();
+        long decodeMs = channel.totalDecodeNanos() / 1_000_000L;
+        double fps = stats.averageReceiveFps().orElse(0.0);
+        String line = String.format(
+                Locale.US,
+                "zrle=%b frames=%d updates=%d rects=%d receivedBytes=%d pixelBytes=%d decodeMs=%d fps=%.2f",
+                channel.isExperimentalZrleEnabled(),
+                stats.frames(),
+                stats.updates(),
+                stats.rectangles(),
+                stats.receivedBytes(),
+                stats.pixelBytes(),
+                decodeMs,
+                fps);
+        try {
+            android.util.Log.i("OrchestellaRfbBench", line);
+        } catch (RuntimeException ignored) {
+            // Plain JVM unit tests use the unmocked android.jar stub.
+        }
     }
 
     public String message() { return message; }
@@ -140,6 +220,9 @@ public final class RfbDisplaySession implements DisplayChannel, DisplayControl {
     @Override public synchronized void close() {
         closed = true;
         RfbDisplayChannel previous = stream;
+        if (previous != null) {
+            logBenchmark(previous);
+        }
         stream = null;
         if (previous != null) previous.close();
         requests.getQueue().clear();

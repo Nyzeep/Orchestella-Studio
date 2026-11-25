@@ -54,6 +54,7 @@ class GuestFeaturesActivity : AppCompatActivity() {
     private lateinit var id: String
     private var token: String? = null
     private val statusMap = mutableStateMapOf<String, String>()
+    private val recoveryRequiredMap = mutableStateMapOf<String, Boolean>()
     private var busy by mutableStateOf(false)
     private var active = false
 
@@ -99,14 +100,17 @@ class GuestFeaturesActivity : AppCompatActivity() {
         val toolchainCommand = DEVTOOLCHAIN_COMMANDS[distro] ?: DEVTOOLCHAIN_COMMANDS.getValue("ubuntu")
 
         setOe3HostContent {
-            val desktopRunning = ExecutionSessionRegistry.get(id) != null
-            val desktopEnabled = DesktopEntryPolicy.canLaunchDesktop(desktopRunning)
+            val session = ExecutionSessionRegistry.get(id)
+            val desktopRunning = session != null
+            val supportsRfb = session?.capabilityMatrix()?.supportsRfbDisplay() == true
+            val desktopEnabled = DesktopEntryPolicy.effectiveCanLaunchDesktop(desktopRunning, supportsRfb)
             val desktopDisabledReason = stringResource(DesktopEntryPolicy.disabledReasonRes(desktopRunning))
 
             GuestFeaturesScreen(
                 toolchainCommand = toolchainCommand,
                 profiles = visibleProfiles,
                 statusMap = statusMap,
+                recoveryRequiredMap = recoveryRequiredMap,
                 busy = busy,
                 desktopEnabled = desktopEnabled,
                 desktopDisabledReason = desktopDisabledReason,
@@ -146,6 +150,7 @@ class GuestFeaturesActivity : AppCompatActivity() {
         busy = true
         worker.execute {
             val result = mutableMapOf<String, String>()
+            val recoveryUpdates = mutableMapOf<String, Boolean>()
             try {
                 val client = ExecutionSessionRegistry.get(id)?.bridgeClient()
                     ?: throw IllegalStateException("实例未运行，请先返回终端启动实例")
@@ -156,28 +161,28 @@ class GuestFeaturesActivity : AppCompatActivity() {
                         throw IllegalStateException("会话已变更，请返回终端重新连接")
                     }
                     val response = client.feature(action, profile)
-                    result[profile] = if (!response.accepted()) {
-                        "请求未受理：${response.responseKind()}"
+                    if (!response.accepted()) {
+                        result[profile] = "请求未受理：${response.responseKind()}"
+                        recoveryUpdates[profile] = false
                     } else {
                         val state = JSONObject(response.payload() ?: "{}")
-                        val reason = state.optString("reason", "未提供")
-                        val identityHint = if (reason in IDENTITY_REASONS) {
-                            "\n需要操作：请使用创建时配置的普通 Linux 用户。旧 root 实例可返回终端配置普通用户并显式设置身份；不会使用 root 替代或重置密码。"
-                        } else {
-                            ""
-                        }
-                        "状态：${state.optString("state", "unknown")}\n阶段：${state.optString("phase", state.optString("stage", "未提供"))}" +
-                            "\n原因：$reason" + identityHint
+                        val (formatted, needsRecovery) = GuestFeaturesRecoveryPolicy.formatStatus(state)
+                        result[profile] = formatted
+                        recoveryUpdates[profile] = needsRecovery
                     }
                 }
             } catch (failure: Exception) {
                 (if (selected == null) statusMap.keys else setOf(selected)).forEach {
                     result[it] = failure.message ?: "连接失败"
+                    recoveryUpdates[it] = false
                 }
             }
             main.post {
                 if (!isDestroyed) {
                     result.forEach { (profile, text) -> statusMap[profile] = text }
+                    recoveryUpdates.forEach { (profile, needsRecovery) ->
+                        recoveryRequiredMap[profile] = needsRecovery
+                    }
                 }
                 busy = false
             }
@@ -205,13 +210,6 @@ class GuestFeaturesActivity : AppCompatActivity() {
 
     companion object {
         private const val POLL_INTERVAL_MS = 2500L
-        private val IDENTITY_REASONS = setOf(
-            "ordinary-user-action-required",
-            "ordinary-user-missing",
-            "unsafe-instance-identity",
-            "unsafe-ordinary-user",
-            "profile-identity-action-required",
-        )
         private val DEVTOOLCHAIN_COMMANDS = mapOf(
             "ubuntu" to "apt-get update && apt-get install -y --no-install-recommends build-essential python3 python3-venv vim",
             "debian" to "apt-get update && apt-get install -y --no-install-recommends build-essential python3 python3-venv vim",
@@ -225,12 +223,53 @@ class GuestFeaturesActivity : AppCompatActivity() {
     }
 }
 
+internal object GuestFeaturesRecoveryPolicy {
+    private val IDENTITY_REASONS = setOf(
+        "ordinary-user-action-required",
+        "ordinary-user-missing",
+        "unsafe-instance-identity",
+        "unsafe-ordinary-user",
+        "profile-identity-action-required",
+    )
+    private val RECOVERY_REASONS = setOf("interrupted", "busy")
+
+    fun needsRecovery(state: String, phase: String, reason: String): Boolean =
+        state == "failed" || phase == "recovery-required" || reason in RECOVERY_REASONS
+
+    fun installButtonLabel(needsRecovery: Boolean): String =
+        if (needsRecovery) "清理并重试安装" else "安装/重试"
+
+    fun formatStatus(state: String, phase: String, reason: String): Pair<String, Boolean> {
+        val identityHint = if (reason in IDENTITY_REASONS) {
+            "\n需要操作：请使用创建时配置的普通 Linux 用户。旧 root 实例可返回终端配置普通用户并显式设置身份；不会使用 root 替代或重置密码。"
+        } else {
+            ""
+        }
+        val recovery = needsRecovery(state, phase, reason)
+        val recoveryHint = if (recovery) {
+            "\n提示：检测到未完成或陈旧安装锁，点击「清理并重试安装」将自动清理并恢复。"
+        } else {
+            ""
+        }
+        val text = "状态：$state\n阶段：$phase\n原因：$reason" + identityHint + recoveryHint
+        return text to recovery
+    }
+
+    fun formatStatus(stateJson: JSONObject): Pair<String, Boolean> {
+        val state = stateJson.optString("state", "unknown")
+        val phase = stateJson.optString("phase", stateJson.optString("stage", "未提供"))
+        val reason = stateJson.optString("reason", "未提供")
+        return formatStatus(state, phase, reason)
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GuestFeaturesScreen(
     toolchainCommand: String,
     profiles: Map<String, String>,
     statusMap: Map<String, String>,
+    recoveryRequiredMap: Map<String, Boolean> = emptyMap(),
     busy: Boolean,
     desktopEnabled: Boolean,
     desktopDisabledReason: String,
@@ -337,7 +376,9 @@ private fun GuestFeaturesScreen(
                         verticalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
                     ) {
                         listOf(
-                            "INSTALL" to "安装/重试",
+                            "INSTALL" to GuestFeaturesRecoveryPolicy.installButtonLabel(
+                                recoveryRequiredMap[profile] == true,
+                            ),
                             "START" to "启动",
                             "STOP" to "停止",
                             "CANCEL" to "取消任务",

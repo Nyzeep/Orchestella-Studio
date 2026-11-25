@@ -1,33 +1,20 @@
 #!/usr/bin/env python3
 """Orchestella guest feature CLI, v1. Fixed commands; no host content transport."""
-import argparse
 from contextlib import contextmanager
 import errno
-import hashlib
-import http.client
-import ipaddress
 import json
-import math
-import socket
-import stat
-import tarfile
-import threading
-import urllib.parse
-import urllib.request
-from http.cookies import SimpleCookie
 import os
 from pathlib import Path, PurePosixPath
-import platform
 import re
-import secrets
-import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 
 PROFILES = ("desktop-labwc", "podman", "code-server", "docker-cli")
-ACTIONS = ("probe", "install", "status", "start", "stop", "cancel", "confirm-frame", "resize", "expose", "unexpose")
+ACTIONS = ("probe", "install", "status", "start", "stop", "cancel", "confirm-frame", "resize", "expose", "unexpose", "recover")
 PACKAGES = {
     # DW-04: pulseaudio belongs to the desktop profile. Without it the audio-relay
     # unit restart-loops against a missing 127.0.0.1:9104 endpoint (PCM=0); the
@@ -102,21 +89,22 @@ class Cancelled(Failure):
         super().__init__("cancelled")
 
 
-def atomic_json(path, value):
-    atomic_bytes(path, (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode(), 0o600)
+def atomic_json(path, value, sync=True):
+    atomic_bytes(path, (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode(), 0o600, sync=sync)
 
 
-def atomic_bytes(path, value, mode=0o600):
+def atomic_bytes(path, value, mode=0o600, sync=True):
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    temporary = path.parent / ("." + path.name + "." + secrets.token_hex(8))
+    temporary = path.parent / ("." + path.name + "." + os.urandom(8).hex())
     try:
         with temporary.open("xb") as output:
             os.chmod(temporary, mode)
             output.write(value)
-            output.flush()
-            os.fsync(output.fileno())
+            if sync:
+                output.flush()
+                os.fsync(output.fileno())
         os.replace(temporary, path)
-        if os.name == "posix":
+        if sync and os.name == "posix":
             descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
             try:
                 os.fsync(descriptor)
@@ -218,9 +206,14 @@ class Controller:
         return self.fixture.get("boot_id", "synthetic-boot") if self.testing else Path("/proc/sys/kernel/random/boot_id").read_text().strip()
 
     def save(self, **changes):
+        return self._save(changes)
+
+    def _save(self, changes, require_idle_job=False):
         if changes.get("state") in ("ready", "awaiting-frame"):
             changes["verified_boot"] = self.boot_id()
         with self.mutex():
+            if require_idle_job and self.live_job(self.job_owner(allow_corrupt=True)):
+                raise Failure("busy")
             state = self.state()
             state.update(changes)
             state["updated_at"] = int(time.time())
@@ -239,7 +232,7 @@ class Controller:
             try:
                 lock.mkdir(mode=0o700)
                 try:
-                    atomic_json(lock / "owner.json", {"pid": os.getpid(), "identity": process_identity(os.getpid())})
+                    atomic_json(lock / "owner.json", {"pid": os.getpid(), "identity": process_identity(os.getpid())}, sync=False)
                 except BaseException:
                     # Only the lock this call just created; owner I/O failed before yield.
                     (lock / "owner.json").unlink(missing_ok=True)
@@ -247,17 +240,27 @@ class Controller:
                     raise
                 break
             except FileExistsError:
-                owner = read_json(lock / "owner.json", {})
+                if lock.is_symlink() or (lock.exists() and not lock.is_dir()):
+                    raise Failure("unsafe-state-directory")
+                try:
+                    pre_stat = lock.stat()
+                    owner = read_json(lock / "owner.json", {})
+                except FileNotFoundError:
+                    continue
+                except Failure as error:
+                    if error.reason in ("corrupt-state", "oversized-state"):
+                        owner = {}
+                    else:
+                        raise
                 stale = owner.get("pid") and process_identity(owner["pid"]) != owner.get("identity")
                 if not owner:
-                    try:
-                        stale = time.time() - lock.stat().st_mtime > 30
-                    except FileNotFoundError:
-                        stale = False
+                    stale = time.time() - pre_stat.st_mtime > 30
                 if stale:
-                    (lock / "owner.json").unlink(missing_ok=True)
                     try:
-                        lock.rmdir()
+                        # Re-verify lock directory identity before removing so another waiter's fresh lock is untouched.
+                        cur_stat = lock.stat()
+                        if (cur_stat.st_dev, cur_stat.st_ino) == (pre_stat.st_dev, pre_stat.st_ino):
+                            self._remove_lock_dir(lock)
                     except OSError:
                         pass
                 time.sleep(0.025)
@@ -279,7 +282,10 @@ class Controller:
             if "=" in line:
                 key, value = line.split("=", 1)
                 values[key] = value.strip().strip('"')
-        arch = self.fixture.get("arch", platform.machine())
+        arch = self.fixture.get("arch")
+        if arch is None:
+            import platform
+            arch = platform.machine()
         if arch not in ("aarch64", "arm64"):
             raise Failure("unsupported-architecture")
         distro = (values.get("ID"), values.get("VERSION_ID"))
@@ -300,7 +306,7 @@ class Controller:
                     listening = False
                 result["audio_relay"] = "verified" if listening else "unverified"
                 result["audio_relay_reason"] = "none" if listening else "audio-endpoint-unavailable"
-        for key in ("pid", "process_identity", "operation", "config_sha256"):
+        for key in ("pid", "process_identity", "operation", "config_sha256", "resize_width", "resize_height", "resize_scale"):
             result.pop(key, None)
         verified = (result["state"] in ("awaiting-frame", "ready") and result.get("generation") == result.get("capture_generation") and result["capture"] == "verified" and result["protocols"] == "verified")
         result["input"] = {"keyboard": verified, "unicodeText": False, "pointer": verified}
@@ -323,12 +329,22 @@ class Controller:
         if self.job and (self.directory / (self.job + ".cancel")).exists():
             raise Cancelled()
 
-    def run(self, args, timeout=30, required=True, reason="command-failed", cancellable=True):
+    def run(self, args, timeout=30, required=True, reason="command-failed", cancellable=True,
+            user=None, group=None, extra_env=None, merge_stderr=True):
         if cancellable:
             self.check_cancel()
         command = [sys.executable, "-B", self.runner, str(self.root), *args] if self.testing else args
-        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   start_new_session=True, env={**os.environ, "LC_ALL": "C", "DEBIAN_FRONTEND": "noninteractive", "PYTHONDONTWRITEBYTECODE": "1"})
+        env = {**os.environ, "LC_ALL": "C", "DEBIAN_FRONTEND": "noninteractive", "PYTHONDONTWRITEBYTECODE": "1"}
+        if extra_env:
+            env.update(extra_env)
+        popen_kwargs = {}
+        if not self.testing and user is not None:
+            popen_kwargs["user"] = user
+            popen_kwargs["group"] = group
+            popen_kwargs["extra_groups"] = []
+        stderr_target = subprocess.STDOUT if merge_stderr else subprocess.DEVNULL
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=stderr_target,
+                                   start_new_session=True, env=env, **popen_kwargs)
         tail = bytearray()
         deadline = time.monotonic() + timeout
         descriptor = process.stdout.fileno()
@@ -353,7 +369,11 @@ class Controller:
                         if len(tail) > MAX_OUTPUT:
                             del tail[:-MAX_OUTPUT]
                         continue
-                time.sleep(0.025)
+                if not eof and os.name == "posix":
+                    import select
+                    select.select([descriptor], [], [], 0.025)
+                else:
+                    time.sleep(0.005 if eof else 0.025)
         except BaseException:
             self.terminate(process)
             raise
@@ -438,6 +458,8 @@ class Controller:
 
     def user(self, create=False):
         # Account creation belongs to baseline provisioning. A profile never guesses another user.
+        if not self.testing and hasattr(self, "_user_ids"):
+            return self._user_ids
         name = self.username
         if self.testing:
             entries = self.path("/etc/passwd").read_text().splitlines() if self.path("/etc/passwd").exists() else []
@@ -457,6 +479,8 @@ class Controller:
         groups = self.fixture.get("groups", [gid]) if self.testing else os.getgrouplist(name, gid)
         if uid < 1000 or uid == 65534 or gid <= 0 or gid == 65534 or 0 in groups or home != self.home or shell not in ("/bin/bash", "/bin/sh", "/usr/bin/bash"):
             raise Failure("unsafe-ordinary-user")
+        if not self.testing:
+            self._user_ids = (uid, gid)
         return uid, gid
 
     def private_dir(self, guest, uid=0, gid=0):
@@ -516,11 +540,18 @@ class Controller:
         return display
 
     def as_user(self, args, timeout=30, required=True, reason="runtime-probe-failed"):
-        uid, _ = self.user()
+        uid, gid = self.user()
         display = self.display_name() if self.profile == "desktop-labwc" else "wayland-0"
-        return self.run(["runuser", "--user", self.username, "--", "env", "HOME=" + self.home,
-                         "XDG_RUNTIME_DIR=/run/user/%d" % uid, "WAYLAND_DISPLAY=" + display,
-                         "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%d/bus" % uid, *args], timeout, required, reason)
+        user_env = {
+            "HOME": self.home,
+            "XDG_RUNTIME_DIR": "/run/user/%d" % uid,
+            "WAYLAND_DISPLAY": display,
+            "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/%d/bus" % uid,
+        }
+        if not self.testing:
+            return self.run(list(args), timeout, required, reason, user=uid, group=gid, extra_env=user_env)
+        return self.run(["runuser", "--user", self.username, "--", "env",
+                         *(f"{k}={v}" for k, v in user_env.items()), *args], timeout, required, reason)
 
     def installed_packages(self):
         versions = {}
@@ -538,7 +569,11 @@ class Controller:
 
     def ensure_disk(self):
         minimum = {"desktop-labwc": 700 << 20, "podman": 600 << 20, "code-server": 1800 << 20, "docker-cli": 400 << 20}[self.profile]
-        free = self.fixture.get("free_bytes", shutil.disk_usage(self.root).free) if self.testing else shutil.disk_usage("/").free
+        if self.testing and "free_bytes" in self.fixture:
+            free = self.fixture["free_bytes"]
+        else:
+            import shutil
+            free = shutil.disk_usage(self.root if self.testing else "/").free
         if free < minimum:
             raise Failure("disk-full")
 
@@ -625,12 +660,36 @@ class Controller:
         if proof.strip() != "Linger=yes":
             raise Failure("linger-enable-failed")
 
-    def user_systemctl(self, args, timeout=30, required=True, reason="command-failed", cancellable=True):
-        uid, _ = self.user()
-        return self.run(["runuser", "--user", self.username, "--", "env", "HOME=" + self.home,
-                         "XDG_RUNTIME_DIR=/run/user/%d" % uid,
-                         "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%d/bus" % uid,
-                         "systemctl", "--user", *args], timeout, required, reason, cancellable)
+    def user_systemctl(self, args, timeout=30, required=True, reason="command-failed", cancellable=True,
+                       merge_stderr=True):
+        uid, gid = self.user()
+        user_env = {
+            "HOME": self.home,
+            "XDG_RUNTIME_DIR": "/run/user/%d" % uid,
+            "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/%d/bus" % uid,
+        }
+        if not self.testing:
+            return self.run(["systemctl", "--user", *args], timeout, required, reason, cancellable,
+                            user=uid, group=gid, extra_env=user_env, merge_stderr=merge_stderr)
+        return self.run(["runuser", "--user", self.username, "--", "env",
+                         *(f"{k}={v}" for k, v in user_env.items()), "systemctl", "--user", *args],
+                        timeout, required, reason, cancellable, merge_stderr=merge_stderr)
+
+    def desktop_units_active(self, timeout=0.6):
+        _, out_user = self.user_systemctl(["is-active", *DESKTOP_USER_UNITS], timeout=timeout, required=False,
+                                          merge_stderr=False)
+        lines = [line.strip() for line in out_user.splitlines() if line.strip()]
+        user_states = [i < len(lines) and lines[i] == "active" for i in range(len(DESKTOP_USER_UNITS))]
+        rc_sys, _ = self.run(["systemctl", "is-active", "--quiet", UNITS["desktop-labwc"][2]],
+                             timeout=timeout, required=False)
+        return [*user_states, rc_sys == 0]
+
+    def units_active(self, profile, timeout=0.6):
+        if profile == "desktop-labwc" and not self.testing:
+            return self.desktop_units_active(timeout=timeout)
+        count = 3 if profile == "desktop-labwc" else 1
+        return [self.unit_ctl(["is-active", "--quiet", unit], timeout=timeout, required=False)[0] == 0
+                for unit in UNITS[profile][:count]]
 
     def unit_ctl(self, args, timeout=30, required=True, reason="command-failed", cancellable=True):
         # Route every unit operation to the manager that owns the unit named by the
@@ -707,13 +766,13 @@ class Controller:
         elif self.profile == "podman":
             self.configure_subids()
         elif self.profile == "code-server":
-            self.config(self.home + "/.config/code-server/config.yaml", "bind-addr: 127.0.0.1:8080\nauth: password\npassword: " + secrets.token_hex(32) + "\ncert: false\n")
+            self.config(self.home + "/.config/code-server/config.yaml", "bind-addr: 127.0.0.1:8080\nauth: password\npassword: " + os.urandom(32).hex() + "\ncert: false\n")
             self.credentials()
             pin = self.code_pin()
             cookie_path = self.directory / "code-server-cookie.json"
             cookie = read_json(cookie_path)
             if cookie is None:
-                cookie = {"suffix": secrets.token_hex(16)}
+                cookie = {"suffix": os.urandom(16).hex()}
                 atomic_json(cookie_path, cookie)
             if not re.fullmatch("[0-9a-f]{32}", cookie.get("suffix", "")):
                 raise Failure("invalid-cookie-suffix")
@@ -791,6 +850,8 @@ class Controller:
         return password
 
     def install_code(self):
+        import hashlib
+        import shutil
         pin = self.code_pin()
         self.save(phase="verified-download")
         cache = self.private_dir("/var/cache/orchestella/features")
@@ -806,6 +867,10 @@ class Controller:
             if archive.stat().st_size != pin["size"] or digest.hexdigest() != pin["sha256"]:
                 raise Failure("cached-input-mismatch")
         else:
+            import urllib.error
+            import urllib.parse
+            import urllib.request
+
             part = cache / (".code-server-" + self.job + ".part")
             try:
                 if self.testing:
@@ -882,6 +947,8 @@ class Controller:
             total = 0
             members = []
             try:
+                import tarfile
+
                 with tarfile.open(archive, "r:gz") as tar:
                     for entry in tar:
                         self.check_cancel()
@@ -949,6 +1016,7 @@ class Controller:
 
     @staticmethod
     def port_open(port, address="127.0.0.1"):
+        import socket
         try:
             with socket.create_connection((address, port), timeout=0.3):
                 return True
@@ -956,6 +1024,7 @@ class Controller:
             return False
 
     def listener_present(self, address, port):
+        import socket
         # Passive observation: no connection, accept, or listener consumption.
         endpoint = socket.inet_aton(address)[::-1].hex().upper() + ":%04X" % port
         file = self.path("/proc/net/tcp")
@@ -969,6 +1038,8 @@ class Controller:
         return False
 
     def http(self, method, path, port, headers=None, body=None, address="127.0.0.1"):
+        import http.client
+
         if not path.startswith("/") or "?" in path or "#" in path:
             raise Failure("unsafe-health-endpoint")
         connection = http.client.HTTPConnection(address, port, timeout=1)
@@ -983,6 +1054,9 @@ class Controller:
             connection.close()
 
     def code_health(self):
+        from http.cookies import SimpleCookie
+        import urllib.parse
+
         password = self.credentials()
         port = self.code_port()
         status, _, _ = self.http("GET", "/", port, {"Accept": "text/html"})
@@ -1006,6 +1080,7 @@ class Controller:
             raise Failure("code-server-auth-failed")
 
     def start_code(self):
+        import hashlib
         self.credentials()
         pin = self.code_pin()
         installed = self.path("/opt/orchestella/code-server/" + pin["version"])
@@ -1104,6 +1179,7 @@ class Controller:
             else:
                 rc, _ = self.unit_ctl(["is-active", "--quiet", UNITS[self.profile][2]], required=False)
                 if rc:
+                    import socket
                     try:
                         with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as probe:
                             probe.bind((socket.VMADDR_CID_ANY, 9103))
@@ -1133,10 +1209,12 @@ class Controller:
         except OSError:
             raise Failure("display-device-unavailable") from None
 
-    def capture_desktop(self):
+    def capture_desktop(self, extra_updates=None, save_intermediate=True, require_idle_job=False):
+        import hashlib
         uid, _ = self.user()
         capture = self.path("/run/user/%d/orchestella/capture-%s.ppm" % (uid, self.job))
-        self.save(phase="guest-capture", capture="unverified")
+        if save_intermediate:
+            self.save(phase="guest-capture", capture="unverified")
         try:
             self.as_user(["grim", "-t", "ppm", str(capture)], timeout=20, reason="capture-unverified")
             if capture.is_symlink():
@@ -1150,13 +1228,34 @@ class Controller:
             if not match:
                 raise Failure("capture-unverified")
             width, height = int(match[1]), int(match[2])
-            pixels = data[match.end():]
-            if not 1 <= width <= 4096 or not 1 <= height <= 4096 or width * height > 4194304 or len(pixels) != width * height * 3:
+            view = memoryview(data)[match.end():]
+            if not 1 <= width <= 4096 or not 1 <= height <= 4096 or width * height > 4194304 or len(view) != width * height * 3:
                 raise Failure("capture-unverified")
-            if pixels == pixels[:3] * (width * height):
+            first = bytes(view[:3])
+            tile_block = first * 1024
+            step = len(tile_block)
+            solid = True
+            for offset in range(0, len(view), step):
+                chunk = view[offset:offset + step]
+                expected = tile_block if len(chunk) == step else first * (len(chunk) // 3)
+                if chunk != expected:
+                    solid = False
+                    break
+            if solid:
                 raise Failure("capture-no-client-content")
             self.check_cancel()
-            self.save(capture="verified", capture_generation=self.job, capture_sha256=hashlib.sha256(data).hexdigest(), width=width, height=height, capture_width=width, capture_height=height)
+            updates = {
+                "capture": "verified",
+                "capture_generation": self.job,
+                "capture_sha256": hashlib.sha256(data).hexdigest(),
+                "width": width,
+                "height": height,
+                "capture_width": width,
+                "capture_height": height,
+            }
+            if extra_updates:
+                updates.update(extra_updates)
+            self._save(updates, require_idle_job=require_idle_job)
         finally:
             capture.unlink(missing_ok=True)
 
@@ -1306,6 +1405,7 @@ class Controller:
             if content != "orchestella-volume-acceptance\n":
                 raise Failure("container-volume-failed")
             self.save(container_volume="verified", phase="container-port")
+            import socket
             with socket.socket() as reservation:
                 reservation.bind(("127.0.0.1", 0))
                 port = reservation.getsockname()[1]
@@ -1348,6 +1448,7 @@ class Controller:
         if self.profile == "desktop-labwc":
             for name in ("wayvnc.sock", "desktop-clients.json"):
                 self.path("/run/user/%d/orchestella/%s" % (uid, name)).unlink(missing_ok=True)
+            self.save(resize_width=0, resize_height=0, resize_scale=0.0)
         elif self.profile == "code-server":
             # Any remaining listener is reported; do not kill a foreign process.
             if self.port_open(self.code_port()) or self.listener_present("192.168.127.15", 18080):
@@ -1355,7 +1456,9 @@ class Controller:
             self.path("/run/user/%d/orchestella/code-server-relay.json" % uid).unlink(missing_ok=True)
 
     def resize(self):
-        if self.profile != "desktop-labwc" or self.state()["state"] not in ("awaiting-frame", "ready"):
+        import math
+        current = self.state()
+        if self.profile != "desktop-labwc" or current["state"] not in ("awaiting-frame", "ready"):
             raise Failure("desktop-not-running")
         try:
             width, height = int(self.options.arguments[0]), int(self.options.arguments[1])
@@ -1364,15 +1467,78 @@ class Controller:
             raise Failure("invalid-display-size") from None
         if not 1 <= width <= 4096 or not 1 <= height <= 4096 or width * height > 4194304 or not math.isfinite(scale) or not 0.1 <= scale <= 5:
             raise Failure("invalid-display-size")
-        self.as_user(["wlr-randr", "--output", "HEADLESS-1", "--custom-mode", "%dx%d" % (width, height), "--scale", str(scale)], timeout=2, reason="resize-unavailable")
+        active = self.units_active(self.profile, timeout=0.6)
+        if all(active):
+            if (current["state"] in ("awaiting-frame", "ready")
+                    and current.get("capture") == "verified"
+                    and current.get("generation") == current.get("capture_generation")
+                    and current.get("resize_width") == width
+                    and current.get("resize_height") == height
+                    and current.get("resize_scale") == scale
+                    and current.get("verified_boot") == self.boot_id()):
+                return self.public(current)
+            if self.live_job(self.job_owner(allow_corrupt=True)):
+                raise Failure("busy")
+            self.as_user(["wlr-randr", "--output", "HEADLESS-1", "--custom-mode", "%dx%d" % (width, height), "--scale", str(scale)],
+                         timeout=2, reason="resize-unavailable")
+            new_generation = os.urandom(16).hex()
+            self.job = new_generation
+            try:
+                self.capture_desktop(
+                    save_intermediate=False,
+                    require_idle_job=True,
+                    extra_updates={
+                        "state": "awaiting-frame",
+                        "phase": "host-frame-confirmation",
+                        "reason": "awaiting-host-frame",
+                        "generation": new_generation,
+                        "resize_width": width,
+                        "resize_height": height,
+                        "resize_scale": scale,
+                    },
+                )
+            finally:
+                self.job = None
+            return self.public(self.state())
+        if active[0]:
+            self.as_user(["wlr-randr", "--output", "HEADLESS-1", "--custom-mode", "%dx%d" % (width, height), "--scale", str(scale)],
+                         timeout=2, reason="resize-unavailable")
         state, _ = self.launch("start")
         return state
 
-    def job_owner(self):
+    def job_owner(self, allow_corrupt=False):
         lock = self.directory / "install.lock"
+        owner_file = lock / "owner.json"
+        if lock.is_symlink() or owner_file.is_symlink():
+            raise Failure("unsafe-state-directory")
+        try:
+            return read_json(owner_file, {})
+        except Failure as error:
+            if allow_corrupt and error.reason in ("corrupt-state", "oversized-state"):
+                return {}
+            raise
+
+    def _remove_lock_dir(self, lock):
         if lock.is_symlink():
             raise Failure("unsafe-state-directory")
-        return read_json(lock / "owner.json", {})
+        if not lock.exists():
+            return
+        if not lock.is_dir():
+            raise Failure("unsafe-state-directory")
+        for child in lock.iterdir():
+            if child.is_symlink() or child.is_dir():
+                raise Failure("unsafe-state-directory")
+            child.unlink(missing_ok=True)
+        lock.rmdir()
+
+    def clean_stale_lock(self):
+        lock = self.directory / "install.lock"
+        if lock.is_symlink() or (lock.exists() and not lock.is_dir()):
+            raise Failure("unsafe-state-directory")
+        if lock.exists():
+            if self.live_job(self.job_owner(allow_corrupt=True)):
+                raise Failure("busy")
+            self._remove_lock_dir(lock)
 
     def live_job(self, owner):
         return isinstance(owner, dict) and owner.get("pid") and owner.get("identity") is not None and process_identity(owner["pid"]) == owner["identity"]
@@ -1384,25 +1550,24 @@ class Controller:
         if operation == "start" and self.state().get("user") != self.username:
             raise Failure("profile-identity-action-required")
         with self.mutex():
-            owner = self.job_owner()
+            owner = self.job_owner(allow_corrupt=True)
             if self.live_job(owner):
                 if owner.get("profile") == self.profile and owner.get("operation") == operation:
                     return self.public(), 0
                 raise Failure("busy")
+            self.clean_stale_lock()
             lock = self.directory / "install.lock"
-            if lock.exists():
-                (lock / "owner.json").unlink(missing_ok=True)
-                lock.rmdir()
             initial = self.state()
             lock.mkdir(mode=0o700)
             process = None
             try:
-                job = secrets.token_hex(16)
+                job = os.urandom(16).hex()
                 state = dict(initial)
                 state.update(state="installing" if operation == "install" else "starting", phase=operation, reason="none", job_id=job,
                              generation=job if operation == "start" else initial["generation"] if operation in ("expose", "unexpose") else "none", operation=operation, updated_at=int(time.time()))
                 if operation in ("start", "stop"):
-                    state.update(capture="unverified", protocols="unverified", health="unverified", authenticationConfigured=False)
+                    state.update(capture="unverified", protocols="unverified", health="unverified", authenticationConfigured=False,
+                                 resize_width=0, resize_height=0, resize_scale=0.0)
                 atomic_json(self.directory / (self.profile + ".json"), state)
                 args = [sys.executable, "-B", str(Path(__file__).resolve())]
                 if self.testing:
@@ -1496,13 +1661,17 @@ class Controller:
                 if state["state"] in ("awaiting-frame", "ready") and state.get("verified_boot") != self.boot_id():
                     state.update(state="installed", reason="restart-required", generation="none", health="unverified", capture="unverified", authenticationConfigured=False, guest_relay=False, audio_relay="unverified", audio_relay_reason="none")
                     changed = True
-                if state["state"] in ("installing", "starting") and not self.live_job(self.job_owner()):
+                if state["state"] in ("installing", "starting") and not self.live_job(self.job_owner(allow_corrupt=True)):
                     state.update(state="failed", reason="interrupted", phase="recovery-required")
+                    self.clean_stale_lock()
                     changed = True
+                elif state["state"] == "failed" and state.get("phase") == "recovery-required" and not self.live_job(self.job_owner(allow_corrupt=True)):
+                    self.clean_stale_lock()
                 if changed:
                     state["updated_at"] = int(time.time())
                     atomic_json(self.directory / (self.profile + ".json"), state)
             if state["state"] == "ready" and self.profile == "code-server":
+                import hashlib
                 try:
                     self.credentials()
                     if hashlib.sha256(self.path(self.home + "/.config/code-server/config.yaml").read_bytes()).hexdigest() != state.get("config_sha256"):
@@ -1510,11 +1679,8 @@ class Controller:
                 except (Failure, OSError):
                     state = self.save(state="failed", reason="auth-unverified", authenticationConfigured=False, health="unverified")
             if state["state"] in ("awaiting-frame", "ready") and self.profile in ("desktop-labwc", "code-server"):
-                for unit in UNITS[self.profile][:3 if self.profile == "desktop-labwc" else 1]:
-                    rc, _ = self.unit_ctl(["is-active", "--quiet", unit], timeout=0.7, required=False)
-                    if rc:
-                        state = self.save(state="failed", reason="service-not-active", health="unverified", capture="unverified")
-                        break
+                if not all(self.units_active(self.profile, timeout=0.7)):
+                    state = self.save(state="failed", reason="service-not-active", health="unverified", capture="unverified")
             if self.profile == "code-server" and state.get("guest_relay"):
                 rc, _ = self.run(["systemctl", "is-active", "--quiet", UNITS[self.profile][1]], timeout=0.5, required=False)
                 relay_live = not rc and self.listener_present("192.168.127.15", 18080)
@@ -1563,23 +1729,22 @@ class Controller:
             if action == "install" and current["state"] in ("installed", "ready", "awaiting-frame") and current["installed"] and current.get("user") == self.username and current["units_version"] == self.inputs()["units_version"] and (self.profile != "code-server" or current.get("input_sha256") == self.code_pin()["sha256"]):
                 return self.public(), 0
             if action == "start" and current["state"] in ("ready", "awaiting-frame") and current.get("user") == self.username and current.get("verified_boot") == self.boot_id():
-                running = True
-                for unit in UNITS[self.profile][:3 if self.profile == "desktop-labwc" else 1]:
-                    rc, _ = self.unit_ctl(["is-active", "--quiet", unit], timeout=0.6, required=False)
-                    running = running and not rc
+                running = all(self.units_active(self.profile, timeout=0.6))
                 if self.profile == "code-server":
+                    import hashlib
                     self.credentials()
                     running = running and hashlib.sha256(self.path(self.home + "/.config/code-server/config.yaml").read_bytes()).hexdigest() == current.get("config_sha256")
                 if running:
                     return self.public(), 0
-            if action == "stop" and current["state"] == "planned":
-                return self.public(), 0
-            owner = self.job_owner()
-            if action == "stop" and self.live_job(owner):
-                if owner.get("profile") != self.profile:
-                    raise Failure("busy")
-                atomic_json(self.directory / (owner["job_id"] + ".cancel"), {"cancel": True})
-                return self.public(self.save(state="cancelled", reason="cancelled", phase="cancelling")), 0
+            if action == "stop":
+                if current["state"] == "planned":
+                    return self.public(), 0
+                owner = self.job_owner(allow_corrupt=True)
+                if self.live_job(owner):
+                    if owner.get("profile") != self.profile:
+                        raise Failure("busy")
+                    atomic_json(self.directory / (owner["job_id"] + ".cancel"), {"cancel": True})
+                    return self.public(self.save(state="cancelled", reason="cancelled", phase="cancelling")), 0
             return self.launch(action)
         if action == "cancel":
             owner = self.job_owner()
@@ -1597,8 +1762,8 @@ class Controller:
             # required dependency here; the audio relay is reported through its own
             # state fields and must never hold awaiting-frame/ready hostage. The
             # stale-generation/mutex commit proof below is unchanged.
-            for unit in UNITS[self.profile][:3]:
-                self.unit_ctl(["is-active", "--quiet", unit], timeout=0.6, reason="service-not-active")
+            if not all(self.units_active(self.profile, timeout=0.6)):
+                raise Failure("service-not-active")
             with self.mutex():
                 # Service probes above may race STOP/CANCEL/RESIZE. Commit the same proof only.
                 current = self.state()
@@ -1615,25 +1780,75 @@ class Controller:
             return self.public(current), 0
         if action == "resize":
             return self.resize(), 0
+        if action == "recover":
+            with self.mutex():
+                if self.live_job(self.job_owner(allow_corrupt=True)):
+                    raise Failure("busy")
+                self.clean_stale_lock()
+                state = self.state()
+                job_id = state.get("job_id")
+                if isinstance(job_id, str) and re.fullmatch("[0-9a-f]{32}", job_id):
+                    (self.directory / (job_id + ".cancel")).unlink(missing_ok=True)
+                if state["state"] in ("failed", "cancelled", "installing", "starting") or state.get("phase") == "recovery-required":
+                    state.update(state="installed" if state["installed"] else "planned",
+                                 phase="recovered", reason="none", job_id="none",
+                                 updated_at=int(time.time()))
+                    atomic_json(self.directory / (self.profile + ".json"), state)
+                return self.public(state), 0
         raise Failure("unknown-action")
 
 
-class SafeParser(argparse.ArgumentParser):
-    def error(self, message):
-        raise Failure("malformed-command")
-
-
 def parse():
-    parser = SafeParser(add_help=False, exit_on_error=False)
-    parser.add_argument("--test-root")
-    parser.add_argument("--test-runner")
-    parser.add_argument("--format", choices=("json", "kv"), default="json")
-    parser.add_argument("--worker", action="store_true")
-    parser.add_argument("--job-id")
-    parser.add_argument("action")
-    parser.add_argument("profile")
-    parser.add_argument("arguments", nargs="*")
-    value = parser.parse_args()
+    opts = {"test_root": None, "test_runner": None, "format": "json", "worker": False, "job_id": None}
+    positional = []
+    args = sys.argv[1:]
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token == "--":
+            positional.extend(args[index + 1:])
+            break
+        if token == "--worker":
+            opts["worker"] = True
+            index += 1
+            continue
+        if token.startswith("--"):
+            if "=" in token:
+                key, val = token.split("=", 1)
+            else:
+                if index + 1 >= len(args):
+                    raise Failure("malformed-command")
+                key, val = token, args[index + 1]
+                index += 1
+            if key == "--test-root":
+                opts["test_root"] = val
+            elif key == "--test-runner":
+                opts["test_runner"] = val
+            elif key == "--format":
+                if val not in ("json", "kv"):
+                    raise Failure("malformed-command")
+                opts["format"] = val
+            elif key == "--job-id":
+                opts["job_id"] = val
+            else:
+                raise Failure("malformed-command")
+            index += 1
+            continue
+        positional.append(token)
+        index += 1
+    if len(positional) < 2:
+        raise Failure("malformed-command")
+    value = SimpleNamespace(
+        test_root=opts["test_root"],
+        test_runner=opts["test_runner"],
+        format=opts["format"],
+        worker=opts["worker"],
+        job_id=opts["job_id"],
+        action=positional[0],
+        profile=positional[1],
+        arguments=positional[2:],
+        generation=None,
+    )
     value.generation = value.arguments[0] if value.action == "confirm-frame" and len(value.arguments) == 1 else None
     if value.action == "confirm-frame" and len(value.arguments) != 1 or value.action == "resize" and len(value.arguments) != 3 or value.action not in ("confirm-frame", "resize") and value.arguments:
         raise Failure("malformed-command")
@@ -1685,7 +1900,7 @@ def main():
         if reason in ("ordinary-user-action-required", "ordinary-user-missing", "unsafe-ordinary-user", "unsafe-instance-identity", "profile-identity-action-required"):
             result["phase"] = "action-required"
         code = 1
-    except (argparse.ArgumentError, SystemExit, ValueError, KeyError, TypeError):
+    except (SystemExit, ValueError, KeyError, TypeError):
         result = safe_error("none", "malformed-command")
         code = 1
     emit(result, options.format if options else "json")

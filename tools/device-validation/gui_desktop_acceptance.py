@@ -192,6 +192,13 @@ def token_value(value):
     return value
 
 
+def package_value(value):
+    if (not isinstance(value, str) or len(value) > 255
+            or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+", value)):
+        raise Rejected("PACKAGE_REJECTED")
+    return value
+
+
 def output_path(root_value, relative, *, extensions=(".json",)):
     root = Path(root_value)
     if not root.is_absolute():
@@ -651,13 +658,13 @@ def count_consumer_pcm(connect_factory, window_seconds, clock=time.monotonic):
     return {"pcm_bytes": total, "transport_ended": False}
 
 
-def check_gpu_logcat(adb, gpu_enabled):
+def check_gpu_logcat(adb, gpu_enabled, package=PACKAGE):
     raw = adb.logcat("OrchestellaQemu")
     statuses = parse_gpu_lines(raw)
     launch_seen = launch_observed(raw)
     result = {"launch_seen": launch_seen, "statuses": statuses,
               "native_packaged": None, "native_library_dir_recorded": False}
-    dumpsys = adb.native_library_dir(PACKAGE)
+    dumpsys = adb.native_library_dir(package)
     match = re.search(r"nativeLibraryDir=(/data/app/[^\s]+)", dumpsys)
     if match:
         result["native_library_dir_recorded"] = True
@@ -1066,6 +1073,7 @@ def check(args):
     instance_value(args.instance_id)
     token_sha256 = hashlib.sha256(args.bridge_token.encode("ascii")).hexdigest()
 
+    package = package_value(getattr(args, "package", PACKAGE) or PACKAGE)
     sections = {name: {"status": "not-tested", "reason": "SECTION_NOT_REQUESTED"}
                 for name in SECTION_ORDER}
     preconditions = {"device_ready": False, "app_installed": False,
@@ -1073,7 +1081,7 @@ def check(args):
     report = {"schema_version": 1, "kind": "gui_desktop_acceptance",
               "device_alias": args.device_alias,
               "instance_alias": "instance-" + args.instance_id[:8],
-              "package": PACKAGE, "profile": PROFILE,
+              "package": package, "profile": PROFILE,
               "bridge_token_sha256": token_sha256,
               "serials_recorded": False, "raw_output_recorded": False, "tokens_recorded": False,
               "preconditions": preconditions, "sections": sections, "missing": MISSING,
@@ -1094,7 +1102,7 @@ def check(args):
                          "Provide --adb (absolute adb path) and --serial of exactly one ready device.")
             return finish(report, args, 2, started)
         try:
-            if "package:" in adb.package_path(PACKAGE):
+            if "package:" in adb.package_path(package):
                 preconditions["app_installed"] = True
             else:
                 raise Rejected("APP_NOT_INSTALLED")
@@ -1122,7 +1130,7 @@ def check(args):
         # ---- Section 6 (GPU; logcat surfaces available without the channels) --
         if section_requested(args.sections, "gpu"):
             try:
-                gpu_result, gpu_verdict = check_gpu_logcat(adb, gpu_enabled=args.gpu_enabled)
+                gpu_result, gpu_verdict = check_gpu_logcat(adb, gpu_enabled=args.gpu_enabled, package=package)
                 sections["gpu"] = {"status": gpu_verdict["status"], "reason": gpu_verdict["reason"],
                                    "evidence": gpu_result}
                 if gpu_verdict["status"] == "fail":
@@ -1241,6 +1249,8 @@ def main(argv=None):
     check_command.add_argument("--serial", required=True)
     check_command.add_argument("--instance-id", required=True)
     check_command.add_argument("--bridge-token", required=True)
+    check_command.add_argument("--package", default=PACKAGE,
+                               help="target Android applicationId to inspect")
     check_command.add_argument("--sections", default="all",
                                help="comma list of profile,compositor,display,capture,audio,gpu")
     check_command.add_argument("--fail-fast", action="store_true")

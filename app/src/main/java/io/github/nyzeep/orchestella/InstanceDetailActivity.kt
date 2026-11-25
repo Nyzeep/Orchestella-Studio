@@ -1054,8 +1054,11 @@ class InstanceDetailActivity : AppCompatActivity() {
 
     private fun currentSupportsDesktop(): Boolean {
         // G-04：判定收敛到 DesktopEntryPolicy 单源（与 instances sheet / 终端抽屉 /
-        // GuestFeatures 同源）。Phase 5 真机验收 guest 图形帧与输入前，本门恒为 false。
-        return DesktopEntryPolicy.supportsDesktop()
+        // GuestFeatures 同源）。Phase 5 真机验收 guest 图形帧与输入前，生产门恒为 false。
+        val instanceId = intent?.getStringExtra(EXTRA_INSTANCE_ID)
+        val supportsRfb = instanceId != null &&
+            ExecutionSessionRegistry.get(instanceId)?.capabilityMatrix()?.supportsRfbDisplay() == true
+        return DesktopEntryPolicy.effectiveSupportsDesktop(supportsRfb)
     }
 
     private fun deviceProfile(): DeviceCapabilityEvaluator.DeviceProfile {

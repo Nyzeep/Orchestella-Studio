@@ -998,6 +998,225 @@ class ProfileContracts(unittest.TestCase):
         self.assertEqual("unknown-profile", status["reason"])
         self.assertFalse((self.root / "commands.jsonl").exists())
 
+    def test_dw07_stale_install_lock_recovers_via_status_recover_and_install(self):
+        features = self.root / "var/lib/orchestella/features"
+        features.mkdir(parents=True, exist_ok=True)
+        state_file = features / "desktop-labwc.json"
+        lock = features / "install.lock"
+        dead_proc = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead_proc.wait(timeout=5)
+        dead_owner = {"pid": dead_proc.pid, "identity": "dead-boot:0", "job_id": "1" * 32,
+                      "profile": "desktop-labwc", "operation": "install"}
+
+        def plant_stale_lock(state_payload):
+            state_file.write_text(json.dumps(state_payload), encoding="utf-8")
+            lock.mkdir(exist_ok=True)
+            (lock / "owner.json").write_text(json.dumps(dead_owner), encoding="utf-8")
+            (lock / "stale.tmp").write_text("partial\n", encoding="utf-8")
+
+        # 1. Interrupted installing state + stale lock -> status marks recovery-required and cleans lock.
+        plant_stale_lock({"version": 1, "profile": "desktop-labwc", "state": "installing",
+                          "installed": False, "phase": "packages", "reason": "none", "job_id": "1" * 32})
+        rc, status = self.ctl("status", "desktop-labwc")
+        self.assertEqual(0, rc)
+        self.assertEqual("failed", status["state"])
+        self.assertEqual("interrupted", status["reason"])
+        self.assertEqual("recovery-required", status["phase"])
+        self.assertFalse(lock.exists())
+
+        # 2. Already failed + recovery-required + stale lock -> status also cleans lock.
+        plant_stale_lock({"version": 1, "profile": "desktop-labwc", "state": "failed",
+                          "installed": False, "phase": "recovery-required", "reason": "interrupted", "job_id": "1" * 32})
+        rc, status = self.ctl("status", "desktop-labwc")
+        self.assertEqual(0, rc)
+        self.assertEqual("failed", status["state"])
+        self.assertEqual("recovery-required", status["phase"])
+        self.assertFalse(lock.exists())
+
+        # 3. failed + recovery-required + stale lock + .cancel -> recover cleans lock/cancel and resets state.
+        cancel_file = features / ("1" * 32 + ".cancel")
+        cancel_file.write_text("{}\n", encoding="utf-8")
+        plant_stale_lock({"version": 1, "profile": "desktop-labwc", "state": "failed",
+                          "installed": False, "phase": "recovery-required", "reason": "interrupted", "job_id": "1" * 32})
+        rc, recovered = self.ctl("recover", "desktop-labwc")
+        self.assertEqual(0, rc)
+        self.assertEqual("planned", recovered["state"])
+        self.assertEqual("recovered", recovered["phase"])
+        self.assertEqual("none", recovered["reason"])
+        self.assertEqual("none", recovered["job_id"])
+        self.assertFalse(lock.exists())
+        self.assertFalse(cancel_file.exists())
+
+        # Installed profile recovers to installed rather than planned.
+        plant_stale_lock({"version": 1, "profile": "desktop-labwc", "state": "failed",
+                          "installed": True, "phase": "recovery-required", "reason": "interrupted", "job_id": "2" * 32})
+        rc, recovered = self.ctl("recover", "desktop-labwc")
+        self.assertEqual(0, rc)
+        self.assertEqual("installed", recovered["state"])
+        self.assertEqual("recovered", recovered["phase"])
+        self.assertFalse(lock.exists())
+
+        # 4. Direct install from failed + recovery-required + stale lock cleans lock and completes installed.
+        plant_stale_lock({"version": 1, "profile": "desktop-labwc", "state": "failed",
+                          "installed": False, "phase": "recovery-required", "reason": "interrupted", "job_id": "3" * 32})
+        rc, accepted = self.ctl("install", "desktop-labwc")
+        self.assertEqual(0, rc)
+        final = self.wait("desktop-labwc", {"installed", "failed"}, require_inactive=True)
+        self.assertEqual("installed", final["state"])
+        self.assertFalse(lock.exists())
+
+        # 5. CLI validation: recover rejects extra args and --worker.
+        rc, bad = self.ctl("recover", "desktop-labwc", "extra")
+        self.assertNotEqual(0, rc)
+        self.assertEqual("malformed-command", bad["reason"])
+        rc, bad = self.ctl("--worker", "--job-id", "a" * 32, "recover", "desktop-labwc")
+        self.assertNotEqual(0, rc)
+        self.assertEqual("malformed-command", bad["reason"])
+
+    def test_dw07_live_install_lock_pid_causes_busy_and_preserves_lock(self):
+        features = self.root / "var/lib/orchestella/features"
+        features.mkdir(parents=True, exist_ok=True)
+        lock = features / "install.lock"
+        live_proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            if os.name == "posix":
+                boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+                fields = Path("/proc", str(live_proc.pid), "stat").read_text().rsplit(")", 1)[1].split()
+                identity = boot + ":" + fields[19]
+            else:
+                identity = str(live_proc.pid)
+            lock.mkdir(exist_ok=True)
+            owner_file = lock / "owner.json"
+            owner_bytes = json.dumps({"pid": live_proc.pid, "identity": identity, "job_id": "4" * 32,
+                                      "profile": "podman", "operation": "install"}).encode("utf-8")
+            owner_file.write_bytes(owner_bytes)
+
+            rc, install_res = self.ctl("install", "desktop-labwc")
+            self.assertNotEqual(0, rc)
+            self.assertEqual("busy", install_res["reason"])
+            self.assertTrue(lock.exists())
+            self.assertEqual(owner_bytes, owner_file.read_bytes())
+
+            rc, recover_res = self.ctl("recover", "desktop-labwc")
+            self.assertNotEqual(0, rc)
+            self.assertEqual("busy", recover_res["reason"])
+            self.assertTrue(lock.exists())
+            self.assertEqual(owner_bytes, owner_file.read_bytes())
+        finally:
+            live_proc.terminate()
+            live_proc.wait(timeout=5)
+
+    def test_live_resize_skips_service_restart_rotates_generation_and_is_idempotent(self):
+        self.ctl("install", "desktop-labwc")
+        self.wait("desktop-labwc", {"installed"})
+        rc, started = self.ctl("start", "desktop-labwc")
+        self.assertEqual(0, rc)
+        gen1 = started["generation"]
+        self.wait("desktop-labwc", {"awaiting-frame"}, require_inactive=True)
+        rc, ready = self.ctl("confirm-frame", "desktop-labwc", gen1)
+        self.assertEqual(0, rc)
+        self.assertEqual("ready", ready["state"])
+
+        def command_list():
+            return [json.loads(line) for line in (self.root / "commands.jsonl").read_text().splitlines()]
+
+        def is_unit_start(cmd):
+            return "systemctl" in cmd and "start" in cmd and any(
+                arg.startswith("orchestella-desktop-") or arg.startswith("orchestella-display-") for arg in cmd
+            )
+
+        def is_wlr_randr(cmd):
+            return cmd[:1] == ["runuser"] and "wlr-randr" in cmd
+
+        starts_before = sum(1 for cmd in command_list() if is_unit_start(cmd))
+        self.assertEqual(0, sum(1 for cmd in command_list() if is_wlr_randr(cmd)))
+
+        # Live resize: calls wlr-randr, does NOT restart services, rotates generation to awaiting-frame.
+        rc, resized = self.ctl("resize", "desktop-labwc", "1280", "720", "1")
+        self.assertEqual(0, rc)
+        self.assertEqual("awaiting-frame", resized["state"])
+        gen2 = resized["generation"]
+        self.assertNotEqual(gen1, gen2)
+        self.assertEqual(gen2, resized["capture_generation"])
+        self.assertEqual("verified", resized["capture"])
+        self.assertEqual(starts_before, sum(1 for cmd in command_list() if is_unit_start(cmd)))
+        self.assertEqual(1, sum(1 for cmd in command_list() if is_wlr_randr(cmd)))
+
+        # Old generation rejected, new generation confirmed.
+        rc, rejected = self.ctl("confirm-frame", "desktop-labwc", gen1)
+        self.assertNotEqual(0, rc)
+        self.assertEqual("stale-frame", rejected["reason"])
+        rc, confirmed = self.ctl("confirm-frame", "desktop-labwc", gen2)
+        self.assertEqual(0, rc)
+        self.assertEqual("ready", confirmed["state"])
+
+        # Idempotent repeat resize at ready with same width/height/scale: no wlr-randr, same generation, stays ready.
+        rc, repeated = self.ctl("resize", "desktop-labwc", "1280", "720", "1")
+        self.assertEqual(0, rc)
+        self.assertEqual("ready", repeated["state"])
+        self.assertEqual(gen2, repeated["generation"])
+        self.assertEqual(1, sum(1 for cmd in command_list() if is_wlr_randr(cmd)))
+        self.assertEqual(starts_before, sum(1 for cmd in command_list() if is_unit_start(cmd)))
+
+        # Fresh stop + start resets stored resize state so the next resize applies again.
+        self.ctl("stop", "desktop-labwc")
+        self.wait("desktop-labwc", {"installed"}, require_inactive=True)
+        rc, restarted = self.ctl("start", "desktop-labwc")
+        self.assertEqual(0, rc)
+        gen3 = restarted["generation"]
+        self.wait("desktop-labwc", {"awaiting-frame"}, require_inactive=True)
+        rc, ready2 = self.ctl("confirm-frame", "desktop-labwc", gen3)
+        self.assertEqual(0, rc)
+        self.assertEqual("ready", ready2["state"])
+        rc, resized2 = self.ctl("resize", "desktop-labwc", "1280", "720", "1")
+        self.assertEqual(0, rc)
+        self.assertEqual("awaiting-frame", resized2["state"])
+        self.assertNotEqual(gen3, resized2["generation"])
+        self.assertEqual(2, sum(1 for cmd in command_list() if is_wlr_randr(cmd)))
+
+    def test_dw07_stale_command_lock_with_orphan_temp_and_corrupt_owner_recovers(self):
+        features = self.root / "var/lib/orchestella/features"
+        features.mkdir(parents=True, exist_ok=True)
+        cmd_lock = features / "command.lock"
+        cmd_lock.mkdir()
+        orphan = cmd_lock / ".owner.json.dd2cb610656fc6f0"
+        orphan.write_text('{"pid":9999}', encoding="utf-8")
+        stale_ts = time.time() - 60
+        os.utime(cmd_lock, (stale_ts, stale_ts))
+
+        rc, status = self.ctl("status", "desktop-labwc")
+        self.assertEqual(0, rc)
+        self.assertEqual("planned", status["state"])
+        self.assertFalse(cmd_lock.exists())
+
+        cmd_lock.mkdir()
+        (cmd_lock / "owner.json").write_text("{corrupt", encoding="utf-8")
+        os.utime(cmd_lock, (stale_ts, stale_ts))
+        rc, status = self.ctl("status", "desktop-labwc")
+        self.assertEqual(0, rc)
+        self.assertFalse(cmd_lock.exists())
+
+        cmd_lock.mkdir()
+        (cmd_lock / "bad-link").symlink_to(features)
+        os.utime(cmd_lock, (stale_ts, stale_ts))
+        rc, bad = self.ctl("status", "desktop-labwc")
+        self.assertNotEqual(0, rc)
+        self.assertEqual("unsafe-state-directory", bad["reason"])
+
+    def test_dw07_corrupt_install_lock_owner_does_not_block_install_recovery(self):
+        features = self.root / "var/lib/orchestella/features"
+        features.mkdir(parents=True, exist_ok=True)
+        install_lock = features / "install.lock"
+        install_lock.mkdir()
+        (install_lock / "owner.json").write_text("{corrupt", encoding="utf-8")
+
+        rc, accepted = self.ctl("install", "desktop-labwc")
+        self.assertEqual(0, rc)
+        self.assertEqual("installing", accepted["state"])
+        installed = self.wait("desktop-labwc", {"installed"})
+        self.assertEqual("installed", installed["state"])
+        self.assertFalse(install_lock.exists())
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

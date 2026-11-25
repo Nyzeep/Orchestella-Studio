@@ -166,6 +166,8 @@ def relay_bytes(host_read_fd, host_write_fd, backend, stall_timeout=WRITE_TIMEOU
                 except BlockingIOError:
                     continue
                 if not data:
+                    if index == 0 and host_read_fd == host_write_fd:
+                        return RelayStats(reads[0], reads[1], writes[0], writes[1], maximum)
                     ended = True
                     continue
                 if not buffers[index]:
@@ -367,6 +369,25 @@ class _Arguments(argparse.ArgumentParser):
         raise Rejected("arguments")
 
 
+def wait_virtio_host_ready(fd, poll_interval=0.05):
+    """Wait while virtio-serial reports POLLHUP (including POLLIN|POLLHUP) or idle without exiting."""
+    if not hasattr(select, "poll"):
+        return
+    poller = select.poll()
+    poller.register(fd, select.POLLIN)
+    while True:
+        events = poller.poll(int(poll_interval * 1000))
+        if not events:
+            continue
+        _fd, mask = events[0]
+        if mask & select.POLLNVAL:
+            raise Rejected("device-invalid")
+        if mask & (select.POLLHUP | select.POLLERR):
+            time.sleep(poll_interval)
+            continue
+        return
+
+
 def main(argv=None):
     parser = _Arguments(description="Private authenticated display relay; CPU-copy bytes, capture unverified.")
     parser.add_argument("--user", default="orchestella")
@@ -399,7 +420,11 @@ def main(argv=None):
     if args.transport == "virtio":
         fd = open_display_device()
         try:
-            return supervisor(fd, fd)
+            while True:
+                wait_virtio_host_ready(fd)
+                code = supervisor(fd, fd)
+                if code == 2:
+                    time.sleep(0.2)
         finally:
             os.close(fd)
     with create_vsock_listener() as listener:

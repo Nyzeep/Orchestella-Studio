@@ -441,6 +441,45 @@ class NativePrivilegeTests(unittest.TestCase):
                 with contextlib.suppress(OSError):
                     os.close(fd)
 
+    def test_wait_virtio_host_ready_waits_through_pollhup_until_pollin(self):
+        class FakePoller:
+            def __init__(self, responses):
+                self.responses = list(responses)
+                self.registered = []
+
+            def register(self, fd, mask):
+                self.registered.append((fd, mask))
+
+            def poll(self, _timeout):
+                return self.responses.pop(0)
+
+        poller = FakePoller([[(7, select.POLLIN | select.POLLHUP)], [], [(7, select.POLLHUP)], [(7, select.POLLIN)]])
+        with patch.object(relay.select, "poll", return_value=poller, create=True), \
+             patch.object(relay.select, "POLLIN", 1, create=True), \
+             patch.object(relay.select, "POLLHUP", 16, create=True), \
+             patch.object(relay.select, "POLLERR", 8, create=True), \
+             patch.object(relay.select, "POLLNVAL", 32, create=True), \
+             patch.object(relay.time, "sleep") as sleep_mock:
+            relay.wait_virtio_host_ready(7, poll_interval=0.05)
+        self.assertEqual([(7, 1)], poller.registered)
+        self.assertEqual([], poller.responses)
+        self.assertEqual(2, sleep_mock.call_count)
+
+    def test_bidirectional_host_eof_returns_immediately_without_stalling_pending_backend_buffer(self):
+        host_fd, host_peer = socket.socketpair()
+        backend, backend_peer = socket.socketpair()
+        host_peer.close()
+        try:
+            # Fill host write direction partially or keep backend buffer buffered; host peer already closed.
+            backend_peer.sendall(b"queued-backend-frame")
+            raw_host_fd = host_fd.fileno()
+            stats = relay.relay_bytes(raw_host_fd, raw_host_fd, backend, stall_timeout=2.0)
+            self.assertEqual(0, stats.host_read_bytes)
+        finally:
+            host_fd.close()
+            backend_peer.close()
+            backend.close()
+
 
 if __name__ == "__main__" and "--wire-peer" in sys.argv:
     backend = socket.socket(fileno=int(sys.argv[2]))

@@ -20,6 +20,7 @@ import java.util.Arrays;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.Deflater;
 import org.junit.Test;
 
 /** Synthetic wire tests: these do not claim a real guest, compositor capture or GPU result. */
@@ -471,6 +472,131 @@ public final class RfbDisplayChannelTest {
         }
     }
 
+    @Test(timeout = 5000)
+    public void defaultOptionsDisableZrleAndRejectEncoding16() throws Exception {
+        assertFalse(RfbDisplayChannel.Options.DEFAULT.experimentalZrleEnabled());
+        assertFalse(new RfbDisplayChannel.Options(8, 1000, 1000).experimentalZrleEnabled());
+        try (Wire wire = new Wire()) {
+            assertFalse(wire.channel.isExperimentalZrleEnabled());
+            assertEquals(0L, wire.channel.totalDecodeNanos());
+            wire.channel.connect();
+            wire.handshake(2, 1);
+            wire.expectRequest(false, 2, 1);
+            wire.out.write(new byte[] {0, 0, 0, 1});
+            wire.rectangle(0, 0, 1, 1, 16);
+            wire.out.flush();
+            wire.error("unsupported RFB encoding: 16");
+            assertNull(wire.channel.activeProtocol().zrleDecoder());
+        }
+    }
+
+    @Test(timeout = 5000)
+    public void experimentalZrleNegotiatesEncoding16PreservesCowAndPersistentStreamAndClosesInflater() throws Exception {
+        RfbDisplayChannel.Options opts = new RfbDisplayChannel.Options(8, 1000, 1000, true);
+        assertTrue(opts.experimentalZrleEnabled());
+        Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, false);
+        try (Wire wire = new Wire(RfbDisplayChannel.InputCapabilities.NONE, opts)) {
+            assertTrue(wire.channel.isExperimentalZrleEnabled());
+            wire.channel.connect();
+            wire.handshakeZrle(2, 2);
+            wire.expectRequest(false, 2, 2);
+
+            // Frame 1: Solid ZRLE tile (B=10, G=20, R=30 -> RGBA 30, 20, 10, 255)
+            wire.zrle(0, 0, 2, 2, deflateZrle(deflater, new byte[] {1, 10, 20, 30}));
+            DisplayChannel.FrameData first = wire.frame();
+            assertEquals(DisplayChannel.ConnectionState.CONNECTED, wire.channel.state());
+            assertEquals(16L, wire.channel.statistics().pixelBytes());
+            assertTrue(wire.channel.totalDecodeNanos() > 0L);
+            byte[] firstSnapshot = first.data();
+            assertArrayEquals(new byte[] {
+                30, 20, 10, (byte) 255, 30, 20, 10, (byte) 255,
+                30, 20, 10, (byte) 255, 30, 20, 10, (byte) 255
+            }, firstSnapshot);
+
+            // Frame 2: Partial ZRLE update on same persistent zlib stream; CoW preserves first frame
+            wire.expectRequest(true, 2, 2);
+            wire.zrle(1, 0, 1, 1, deflateZrle(deflater, new byte[] {1, 40, 50, 60}));
+            DisplayChannel.FrameData second = wire.frame();
+            assertArrayEquals(firstSnapshot, first.data());
+            assertArrayEquals(new byte[] {
+                30, 20, 10, (byte) 255, 60, 50, 40, (byte) 255,
+                30, 20, 10, (byte) 255, 30, 20, 10, (byte) 255
+            }, second.data());
+
+            // DesktopSize (-223) resize MUST NOT reset persistent ZRLE zlib stream
+            wire.expectRequest(true, 2, 2);
+            wire.out.write(new byte[] {0, 0, 0, 1});
+            wire.rectangle(0, 0, 1, 2, -223);
+            wire.out.flush();
+            wire.expectRequest(false, 1, 2);
+            assertEquals(DisplayChannel.ConnectionState.DISCONNECTED, wire.channel.state());
+
+            // Continue using the SAME deflater (no reset) after DesktopSize resize
+            wire.zrle(0, 0, 1, 2, deflateZrle(deflater, new byte[] {0, 1, 2, 3, 4, 5, 6}));
+            DisplayChannel.FrameData resized = wire.frame();
+            assertEquals(1, resized.width());
+            assertEquals(2, resized.height());
+            assertArrayEquals(new byte[] {
+                3, 2, 1, (byte) 255,
+                6, 5, 4, (byte) 255
+            }, resized.data());
+
+            RfbZrleDecoder decoder = wire.channel.activeProtocol().zrleDecoder();
+            assertNotNull(decoder);
+            assertFalse(decoder.isClosed());
+            wire.channel.close();
+            assertTrue(decoder.isClosed());
+        } finally {
+            deflater.end();
+        }
+    }
+
+    @Test(timeout = 5000)
+    public void zrleRejectsOutOfBoundsRectangleAndReleasesInflaterOnSessionFailure() throws Exception {
+        RfbDisplayChannel.Options opts = new RfbDisplayChannel.Options(8, 1000, 1000, true);
+        try (Wire wire = new Wire(RfbDisplayChannel.InputCapabilities.NONE, opts)) {
+            wire.channel.connect();
+            wire.handshakeZrle(2, 2);
+            wire.expectRequest(false, 2, 2);
+            RfbZrleDecoder decoder = wire.channel.activeProtocol().zrleDecoder();
+            assertNotNull(decoder);
+            assertFalse(decoder.isClosed());
+            wire.out.write(new byte[] {0, 0, 0, 1});
+            wire.rectangle(2, 0, 1, 1, 16);
+            wire.out.flush();
+            wire.error("ZRLE rectangle outside framebuffer");
+            assertTrue(decoder.isClosed());
+        }
+    }
+
+    @Test(timeout = 5000)
+    public void rawUpdatesAccumulateTotalDecodeNanos() throws Exception {
+        try (Wire wire = new Wire()) {
+            wire.channel.connect();
+            wire.handshake(2, 1);
+            wire.expectRequest(false, 2, 1);
+            wire.raw(0, 0, 2, 1, new byte[] {0, 0, (byte) 255, 0, 0, (byte) 255, 0, 0});
+            wire.frame();
+            assertTrue(wire.channel.totalDecodeNanos() > 0L);
+        }
+    }
+
+    private static byte[] deflateZrle(Deflater deflater, byte[] uncompressed) {
+        deflater.setInput(uncompressed);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[1024];
+        while (true) {
+            int n = deflater.deflate(buf, 0, buf.length, Deflater.SYNC_FLUSH);
+            if (n > 0) {
+                out.write(buf, 0, n);
+            }
+            if (deflater.needsInput() && n < buf.length) {
+                break;
+            }
+        }
+        return out.toByteArray();
+    }
+
     private static final class Gate extends OutputStream {
         final OutputStream delegate;
         final CountDownLatch entered = new CountDownLatch(1);
@@ -586,6 +712,20 @@ public final class RfbDisplayChannelTest {
             assertEquals(-223, in.readInt());
         }
 
+        void handshakeZrle(int width, int height) throws IOException {
+            beginHandshake();
+            serverInit(width, height, FORMAT, 4, "test".getBytes(StandardCharsets.US_ASCII));
+            byte[] format = new byte[20];
+            in.readFully(format);
+            assertArrayEquals(new byte[] {0, 0, 0, 0, 32, 24, 0, 1, 0, (byte) 255, 0, (byte) 255, 0, (byte) 255, 16, 8, 0, 0, 0, 0}, format);
+            assertEquals(2, in.readUnsignedByte());
+            assertEquals(0, in.readUnsignedByte());
+            assertEquals(3, in.readUnsignedShort());
+            assertEquals(16, in.readInt());
+            assertEquals(0, in.readInt());
+            assertEquals(-223, in.readInt());
+        }
+
         String line() throws IOException {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             for (int next; (next = in.read()) != -1;) {
@@ -610,6 +750,16 @@ public final class RfbDisplayChannelTest {
             out.writeShort(1);
             rectangle(x, y, width, height, 0);
             out.write(pixels);
+            out.flush();
+        }
+
+        void zrle(int x, int y, int width, int height, byte[] compressed) throws IOException {
+            out.writeByte(0);
+            out.writeByte(0);
+            out.writeShort(1);
+            rectangle(x, y, width, height, 16);
+            out.writeInt(compressed.length);
+            out.write(compressed);
             out.flush();
         }
 

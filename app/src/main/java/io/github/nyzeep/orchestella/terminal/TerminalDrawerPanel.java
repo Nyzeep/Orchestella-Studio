@@ -13,6 +13,8 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import io.github.nyzeep.orchestella.ExecutionSession;
+import io.github.nyzeep.orchestella.ExecutionSessionRegistry;
 import io.github.nyzeep.orchestella.ui.design.components.OeDialogs;
 import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle;
 import io.github.nyzeep.orchestella.ui.theme.AppTheme;
@@ -214,8 +216,13 @@ public final class TerminalDrawerPanel extends LinearLayout {
     private void refreshDesktopEntry() {
         boolean hasBoundInstance = instanceId != null;
         boolean running = instanceRunningProvider != null && instanceRunningProvider.getAsBoolean();
+        ExecutionSession session = instanceId != null ? ExecutionSessionRegistry.get(instanceId) : null;
+        boolean supportsRfb = session != null
+                && session.capabilityMatrix() != null
+                && session.capabilityMatrix().supportsRfbDisplay();
         io.github.nyzeep.orchestella.DesktopEntryPolicy.EntryState state =
-                io.github.nyzeep.orchestella.DesktopEntryPolicy.drawerEntry(hasBoundInstance, running);
+                io.github.nyzeep.orchestella.DesktopEntryPolicy.effectiveDrawerEntry(
+                        hasBoundInstance, running, supportsRfb);
         int visibility = state.visible ? View.VISIBLE : View.GONE;
         btnDesktopMode.setVisibility(visibility);
         btnDesktopMode.setEnabled(state.enabled);

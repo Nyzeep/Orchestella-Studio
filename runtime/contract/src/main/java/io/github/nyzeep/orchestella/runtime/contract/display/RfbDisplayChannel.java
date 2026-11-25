@@ -110,8 +110,16 @@ public final class RfbDisplayChannel implements DisplayChannel {
     }
 
     /** Fixed protocol quotas. firstFrameTimeoutMillis also bounds resize, partial reads and writes. */
-    public record Options(int inputQueueCapacity, long handshakeTimeoutMillis, long firstFrameTimeoutMillis) {
-        public static final Options DEFAULT = new Options(64, 15_000, 30_000);
+    public record Options(
+            int inputQueueCapacity,
+            long handshakeTimeoutMillis,
+            long firstFrameTimeoutMillis,
+            boolean experimentalZrleEnabled) {
+        public static final Options DEFAULT = new Options(64, 15_000, 30_000, false);
+
+        public Options(int inputQueueCapacity, long handshakeTimeoutMillis, long firstFrameTimeoutMillis) {
+            this(inputQueueCapacity, handshakeTimeoutMillis, firstFrameTimeoutMillis, false);
+        }
 
         public Options {
             if (inputQueueCapacity < 1 || inputQueueCapacity > 1024
@@ -178,6 +186,17 @@ public final class RfbDisplayChannel implements DisplayChannel {
     @Override public ConnectionState state() { return state; }
     public String message() { return message; }
     public InputCapabilities inputCapabilities() { return capabilities; }
+    public boolean isExperimentalZrleEnabled() { return options.experimentalZrleEnabled(); }
+
+    public long totalDecodeNanos() {
+        Session current = session;
+        return current == null ? 0L : current.totalDecodeNanos();
+    }
+
+    RfbProtocol activeProtocol() {
+        Session current = session;
+        return current == null ? null : current.activeProtocol;
+    }
 
     public List<StateChange> history() {
         synchronized (lifecycle) {
@@ -298,6 +317,7 @@ public final class RfbDisplayChannel implements DisplayChannel {
         final Thread reader = daemon(this::read, "display-reader");
         final Thread writer = daemon(this::write, "display-writer");
         volatile Streams streams;
+        volatile RfbProtocol activeProtocol;
         volatile Command writing;
         volatile ScheduledFuture<?> deadline;
         volatile ScheduledFuture<?> updateDeadline;
@@ -305,6 +325,7 @@ public final class RfbDisplayChannel implements DisplayChannel {
         long updates;
         long rectangles;
         long pixelBytes;
+        long decodeNanos;
         long firstFrameNs;
         long lastFrameNs;
 
@@ -338,10 +359,15 @@ public final class RfbDisplayChannel implements DisplayChannel {
                         return result;
                     }
                 });
-                protocol = RfbProtocol.negotiate(input, this::send, token);
+                protocol = RfbProtocol.negotiate(
+                        input, this::send, token, options.experimentalZrleEnabled());
+                activeProtocol = protocol;
+                if (stopped.get()) {
+                    closeProtocol();
+                    return;
+                }
                 width = protocol.width();
                 height = protocol.height();
-                if (stopped.get()) { return; }
                 deadline.cancel(false);
                 deadline = timer.schedule(() -> failure(this, "complete display pixel frame timed out"), options.firstFrameTimeoutMillis(), TimeUnit.MILLISECONDS);
                 status(this, ConnectionState.DISCONNECTED, "authenticated RFB; awaiting complete pixels; capture not verified");
@@ -400,6 +426,15 @@ public final class RfbDisplayChannel implements DisplayChannel {
             } catch (RuntimeException failed) {
                 recordDecoder(protocol);
                 failure(this, "display stream or connector failed");
+            } finally {
+                closeProtocol();
+            }
+        }
+
+        void closeProtocol() {
+            RfbProtocol protocol = activeProtocol;
+            if (protocol != null) {
+                protocol.close();
             }
         }
 
@@ -415,7 +450,14 @@ public final class RfbDisplayChannel implements DisplayChannel {
                     updates = protocol.updates();
                     rectangles = protocol.rectangles();
                     pixelBytes = protocol.pixelBytes();
+                    decodeNanos = protocol.decodeNanos();
                 }
+            }
+        }
+
+        long totalDecodeNanos() {
+            synchronized (statsLock) {
+                return decodeNanos;
             }
         }
 
@@ -498,6 +540,7 @@ public final class RfbDisplayChannel implements DisplayChannel {
             Command command = writing;
             if (command != null) { command.done.countDown(); }
             drain();
+            closeProtocol();
         }
 
         private void drain() {

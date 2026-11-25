@@ -100,4 +100,107 @@ class DesktopEntryPolicyTest {
         // 两个原因档位必须是不同的文案键（统一单源，不允许三档各自措辞）。
         assertNotEquals(DesktopEntryPolicy.REASON_CHANNEL_NOT_READY_RES, DesktopEntryPolicy.REASON_INSTANCE_NOT_RUNNING_RES)
     }
+
+    // ---------- W4-02 QA 实验性桌面入口与 ZRLE 开关契约 ----------
+
+    @Test
+    fun resolveChannelReady_requiresAllThreeQaGatesAndNeverUnlocksNonQa() {
+        for (qaSwitch in listOf(false, true)) {
+            for (rfb in listOf(false, true)) {
+                assertFalse(
+                    DesktopEntryPolicy.resolveChannelReady(
+                        isolatedQaBuild = false,
+                        qaSwitchEnabled = qaSwitch,
+                        supportsRfbDisplay = rfb,
+                    ),
+                )
+            }
+        }
+        assertFalse(DesktopEntryPolicy.resolveChannelReady(isolatedQaBuild = true, qaSwitchEnabled = false, supportsRfbDisplay = true))
+        assertFalse(DesktopEntryPolicy.resolveChannelReady(isolatedQaBuild = true, qaSwitchEnabled = true, supportsRfbDisplay = false))
+        assertTrue(DesktopEntryPolicy.resolveChannelReady(isolatedQaBuild = true, qaSwitchEnabled = true, supportsRfbDisplay = true))
+    }
+
+    @Test
+    fun canLaunchDesktopInQa_requiresRunningAndAllQaGates() {
+        assertFalse(DesktopEntryPolicy.canLaunchDesktopInQa(instanceRunning = true, isolatedQaBuild = false, qaSwitchEnabled = true, supportsRfbDisplay = true))
+        assertFalse(DesktopEntryPolicy.canLaunchDesktopInQa(instanceRunning = false, isolatedQaBuild = true, qaSwitchEnabled = true, supportsRfbDisplay = true))
+        assertFalse(DesktopEntryPolicy.canLaunchDesktopInQa(instanceRunning = true, isolatedQaBuild = true, qaSwitchEnabled = false, supportsRfbDisplay = true))
+        assertFalse(DesktopEntryPolicy.canLaunchDesktopInQa(instanceRunning = true, isolatedQaBuild = true, qaSwitchEnabled = true, supportsRfbDisplay = false))
+        assertTrue(DesktopEntryPolicy.canLaunchDesktopInQa(instanceRunning = true, isolatedQaBuild = true, qaSwitchEnabled = true, supportsRfbDisplay = true))
+    }
+
+    @Test
+    fun drawerEntryInQa_matchesBoundRunningAndQaChannelGates() {
+        val hidden = DesktopEntryPolicy.drawerEntryInQa(
+            hasBoundInstance = false,
+            instanceRunning = true,
+            isolatedQaBuild = true,
+            qaSwitchEnabled = true,
+            supportsRfbDisplay = true,
+        )
+        assertFalse(hidden.visible)
+        assertFalse(hidden.enabled)
+
+        val blockedNonQa = DesktopEntryPolicy.drawerEntryInQa(
+            hasBoundInstance = true,
+            instanceRunning = true,
+            isolatedQaBuild = false,
+            qaSwitchEnabled = true,
+            supportsRfbDisplay = true,
+        )
+        assertTrue(blockedNonQa.visible)
+        assertFalse(blockedNonQa.enabled)
+        assertEquals(DesktopEntryPolicy.REASON_CHANNEL_NOT_READY_RES, blockedNonQa.reasonRes)
+
+        val blockedNoRfb = DesktopEntryPolicy.drawerEntryInQa(
+            hasBoundInstance = true,
+            instanceRunning = true,
+            isolatedQaBuild = true,
+            qaSwitchEnabled = true,
+            supportsRfbDisplay = false,
+        )
+        assertTrue(blockedNoRfb.visible)
+        assertFalse(blockedNoRfb.enabled)
+        assertEquals(DesktopEntryPolicy.REASON_CHANNEL_NOT_READY_RES, blockedNoRfb.reasonRes)
+
+        val unlocked = DesktopEntryPolicy.drawerEntryInQa(
+            hasBoundInstance = true,
+            instanceRunning = true,
+            isolatedQaBuild = true,
+            qaSwitchEnabled = true,
+            supportsRfbDisplay = true,
+        )
+        assertTrue(unlocked.visible)
+        assertTrue(unlocked.enabled)
+        assertNull(unlocked.reasonRes)
+    }
+
+    @Test
+    fun qaSwitches_respectBuildChannelIsolationGuard() {
+        try {
+            val desktopResult = DesktopEntryPolicy.setQaDesktopEntryEnabled(true)
+            val zrleResult = DesktopEntryPolicy.setQaExperimentalZrleEnabled(true)
+            if (!BuildConfig.IS_ISOLATED_QA_BUILD) {
+                assertFalse(desktopResult)
+                assertFalse(DesktopEntryPolicy.isQaDesktopEntryEnabled())
+                assertFalse(DesktopEntryPolicy.effectiveSupportsDesktop(supportsRfbDisplay = true))
+                assertFalse(DesktopEntryPolicy.effectiveCanLaunchDesktop(instanceRunning = true, supportsRfbDisplay = true))
+                assertFalse(zrleResult)
+                assertFalse(DesktopEntryPolicy.isQaExperimentalZrleEnabled())
+            } else {
+                assertTrue(desktopResult)
+                assertTrue(DesktopEntryPolicy.isQaDesktopEntryEnabled())
+                assertTrue(DesktopEntryPolicy.effectiveSupportsDesktop(supportsRfbDisplay = true))
+                assertFalse(DesktopEntryPolicy.effectiveSupportsDesktop(supportsRfbDisplay = false))
+                assertTrue(DesktopEntryPolicy.effectiveCanLaunchDesktop(instanceRunning = true, supportsRfbDisplay = true))
+                assertFalse(DesktopEntryPolicy.effectiveCanLaunchDesktop(instanceRunning = false, supportsRfbDisplay = true))
+                assertTrue(zrleResult)
+                assertTrue(DesktopEntryPolicy.isQaExperimentalZrleEnabled())
+            }
+        } finally {
+            DesktopEntryPolicy.setQaDesktopEntryEnabled(false)
+            DesktopEntryPolicy.setQaExperimentalZrleEnabled(false)
+        }
+    }
 }

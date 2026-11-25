@@ -50,10 +50,12 @@ class FakeAdb:
         self.native_listing = native_listing
         self.devices_output = devices_output
         self.history = []
+        self.commands = []
         self.forwards = []
 
     def run(self, label, argv, *, timeout_seconds=None, check=True):
         self.history.append(label)
+        self.commands.append((label, list(argv)))
         if label == "discover":
             return self.devices_output
         if label == "package-path":
@@ -873,6 +875,62 @@ class EndToEndDriveTest(unittest.TestCase):
             self.assertEqual("instance-running", g08.MISSING[0]["id"])
             self.assertEqual("INSTANCE_SOCKET_ABSENT", g08.MISSING[0]["reason"])
         g08.MISSING.clear()
+
+    def test_package_override_and_default_compatibility(self):
+        qa_package = "io.github.nyzeep.orchestella.qa.w402"
+        self.add_control([])
+        with tempfile.TemporaryDirectory() as root:
+            code = g08.main([
+                "check",
+                "--adb", "/fake/adb",
+                "--serial", SERIAL,
+                "--device-alias", "bench-a",
+                "--instance-id", INSTANCE,
+                "--bridge-token", TOKEN,
+                "--package", qa_package,
+                "--sections", "gpu",
+                "--output-root", root,
+                "--output", "evidence/qa-pkg.json",
+            ])
+            self.assertEqual(0, code)
+            document = json.loads(g08.output_path(root, "evidence/qa-pkg.json").read_text(encoding="utf-8"))
+            self.assertEqual(qa_package, document["package"])
+            self.assertIn(("package-path", ["shell", "pm", "path", qa_package]), self.adb.commands)
+            self.assertIn(("native-library-dir", ["shell", "dumpsys", "package", qa_package]), self.adb.commands)
+
+        self.adb.commands.clear()
+        self.add_control([])
+        with tempfile.TemporaryDirectory() as root:
+            code = g08.main([
+                "check",
+                "--adb", "/fake/adb",
+                "--serial", SERIAL,
+                "--device-alias", "bench-a",
+                "--instance-id", INSTANCE,
+                "--bridge-token", TOKEN,
+                "--sections", "gpu",
+                "--output-root", root,
+                "--output", "evidence/default-pkg.json",
+            ])
+            self.assertEqual(0, code)
+            document = json.loads(g08.output_path(root, "evidence/default-pkg.json").read_text(encoding="utf-8"))
+            self.assertEqual(g08.PACKAGE, document["package"])
+            self.assertIn(("package-path", ["shell", "pm", "path", g08.PACKAGE]), self.adb.commands)
+            self.assertIn(("native-library-dir", ["shell", "dumpsys", "package", g08.PACKAGE]), self.adb.commands)
+
+        with tempfile.TemporaryDirectory() as root:
+            code = g08.main([
+                "check",
+                "--adb", "/fake/adb",
+                "--serial", SERIAL,
+                "--device-alias", "bench-a",
+                "--instance-id", INSTANCE,
+                "--bridge-token", TOKEN,
+                "--package", "io.github.bad;id",
+                "--output-root", root,
+                "--output", "evidence/bad-pkg.json",
+            ])
+            self.assertEqual(2, code)
 
 
 class Glmark2ProbeTest(unittest.TestCase):

@@ -34,12 +34,97 @@ object DesktopEntryPolicy {
     @StringRes
     val REASON_INSTANCE_NOT_RUNNING_RES: Int = R.string.desktop_entry_reason_instance_not_running
 
+    @Volatile
+    private var qaDesktopEntryOverride: Boolean = false
+
+    @Volatile
+    private var qaExperimentalZrleOverride: Boolean = false
+
     /**
      * guest 图形帧/输入通道是否就绪——唯一判定处（当前恒 false：Phase 5 通道
      * 未真机验收）。三档入口的 enabled 全部经由此处或其派生重载。
      */
     @JvmStatic
     fun supportsDesktop(): Boolean = false
+
+    /**
+     * 仅隔离 QA 构建允许切换桌面入口实验开关；非 QA 构建强制保持 false。
+     */
+    @JvmStatic
+    fun setQaDesktopEntryEnabled(enabled: Boolean): Boolean {
+        if (!BuildConfig.IS_ISOLATED_QA_BUILD) {
+            qaDesktopEntryOverride = false
+            return false
+        }
+        qaDesktopEntryOverride = enabled
+        return enabled
+    }
+
+    @JvmStatic
+    fun isQaDesktopEntryEnabled(): Boolean = BuildConfig.IS_ISOLATED_QA_BUILD && qaDesktopEntryOverride
+
+    /**
+     * 仅隔离 QA 构建允许切换实验性 ZRLE 解码开关；非 QA 构建强制保持 false。
+     */
+    @JvmStatic
+    fun setQaExperimentalZrleEnabled(enabled: Boolean): Boolean {
+        if (!BuildConfig.IS_ISOLATED_QA_BUILD) {
+            qaExperimentalZrleOverride = false
+            return false
+        }
+        qaExperimentalZrleOverride = enabled
+        return enabled
+    }
+
+    @JvmStatic
+    fun isQaExperimentalZrleEnabled(): Boolean = BuildConfig.IS_ISOLATED_QA_BUILD && qaExperimentalZrleOverride
+
+    /** 纯 JVM 可测的 QA 通道就绪判定：生产口径不变，QA 仅在开关与 RFB 能力均就绪时放行。 */
+    @JvmStatic
+    fun resolveChannelReady(
+        isolatedQaBuild: Boolean,
+        qaSwitchEnabled: Boolean,
+        supportsRfbDisplay: Boolean,
+    ): Boolean = supportsDesktop() || (isolatedQaBuild && qaSwitchEnabled && supportsRfbDisplay)
+
+    @JvmStatic
+    fun canLaunchDesktopInQa(
+        instanceRunning: Boolean,
+        isolatedQaBuild: Boolean,
+        qaSwitchEnabled: Boolean,
+        supportsRfbDisplay: Boolean,
+    ): Boolean = canLaunchDesktop(
+        instanceRunning,
+        resolveChannelReady(isolatedQaBuild, qaSwitchEnabled, supportsRfbDisplay),
+    )
+
+    @JvmStatic
+    fun drawerEntryInQa(
+        hasBoundInstance: Boolean,
+        instanceRunning: Boolean,
+        isolatedQaBuild: Boolean,
+        qaSwitchEnabled: Boolean,
+        supportsRfbDisplay: Boolean,
+    ): EntryState = drawerEntry(
+        hasBoundInstance,
+        instanceRunning,
+        resolveChannelReady(isolatedQaBuild, qaSwitchEnabled, supportsRfbDisplay),
+    )
+
+    @JvmStatic
+    fun effectiveSupportsDesktop(supportsRfbDisplay: Boolean): Boolean =
+        resolveChannelReady(BuildConfig.IS_ISOLATED_QA_BUILD, qaDesktopEntryOverride, supportsRfbDisplay)
+
+    @JvmStatic
+    fun effectiveCanLaunchDesktop(instanceRunning: Boolean, supportsRfbDisplay: Boolean): Boolean =
+        canLaunchDesktop(instanceRunning, effectiveSupportsDesktop(supportsRfbDisplay))
+
+    @JvmStatic
+    fun effectiveDrawerEntry(
+        hasBoundInstance: Boolean,
+        instanceRunning: Boolean,
+        supportsRfbDisplay: Boolean,
+    ): EntryState = drawerEntry(hasBoundInstance, instanceRunning, effectiveSupportsDesktop(supportsRfbDisplay))
 
     /** 生产入口：三档共用 enabled 规则（实例运行中 且 通道就绪），绑定 [supportsDesktop]。 */
     @JvmStatic

@@ -1404,7 +1404,9 @@ class MainActivity : AppCompatActivity() {
         return InstanceCardUiModel.from(
             instance,
             runningStrategy,
-            supportsDesktop = DesktopEntryPolicy.supportsDesktop(),
+            supportsDesktop = DesktopEntryPolicy.effectiveSupportsDesktop(
+                session?.capabilityMatrix()?.supportsRfbDisplay() == true,
+            ),
             guestIp = guestIp,
             capabilityMatrix = session?.capabilityMatrix(),
         )
@@ -1592,11 +1594,14 @@ class MainActivity : AppCompatActivity() {
             false
         }
 
-    private fun isHeadless(@Suppress("UNUSED_PARAMETER") instance: InstanceLifecycle.Instance): Boolean {
+    private fun isHeadless(instance: InstanceLifecycle.Instance): Boolean {
         // G-04：headless 兜底判定与三档入口 enabled 同源（DesktopEntryPolicy）——
         // 生产通道尚不携带 guest 图形帧与输入（Phase 5 开发中，未真机验收），
         // 通道未就绪时入口禁用，这里保留同一判定驱动的 headless 引导弹窗。
-        return !DesktopEntryPolicy.supportsDesktop()
+        val session = ExecutionSessionRegistry.get(instance.id())
+        return !DesktopEntryPolicy.effectiveSupportsDesktop(
+            session?.capabilityMatrix()?.supportsRfbDisplay() == true,
+        )
     }
 
     private fun showHeadlessDesktopDialog(instance: InstanceLifecycle.Instance) {
@@ -1823,6 +1828,60 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleLaunchIntent(intent: Intent?) {
+        if (BuildConfig.IS_ISOLATED_QA_BUILD && intent != null) {
+            if (intent.hasExtra("qa_enable_desktop_entry")) {
+                DesktopEntryPolicy.setQaDesktopEntryEnabled(
+                    intent.getBooleanExtra("qa_enable_desktop_entry", false),
+                )
+                intent.removeExtra("qa_enable_desktop_entry")
+                if (::instanceStore.isInitialized) {
+                    loadDashboardSnapshot { snapshot -> updateOe3Pages(snapshot) }
+                }
+            }
+            if (intent.hasExtra("qa_enable_experimental_zrle")) {
+                DesktopEntryPolicy.setQaExperimentalZrleEnabled(
+                    intent.getBooleanExtra("qa_enable_experimental_zrle", false),
+                )
+                intent.removeExtra("qa_enable_experimental_zrle")
+            }
+            val targetDesktopId = intent.getStringExtra("qa_open_desktop_instance_id")
+            if (targetDesktopId != null && ::instanceStore.isInitialized) {
+                intent.removeExtra("qa_open_desktop_instance_id")
+                if (DesktopEntryPolicy.isQaDesktopEntryEnabled()) {
+                    val session = ExecutionSessionRegistry.get(targetDesktopId)
+                    if (session?.capabilityMatrix()?.supportsRfbDisplay() == true) {
+                        val store = instanceStore
+                        operations.execute {
+                            val loaded = try {
+                                store.load(targetDesktopId)
+                            } catch (failure: Exception) {
+                                android.util.Log.w("MainActivity", "QA desktop open failed to load instance", failure)
+                                null
+                            }
+                            if (loaded != null) {
+                                runOnUiThread {
+                                    if (isFinishing || isDestroyed) return@runOnUiThread
+                                    val liveSession = ExecutionSessionRegistry.get(loaded.id())
+                                    if (DesktopEntryPolicy.isQaDesktopEntryEnabled() &&
+                                        liveSession?.capabilityMatrix()?.supportsRfbDisplay() == true
+                                    ) {
+                                        startActivity(
+                                            DesktopLaunchIntent.create(
+                                                this@MainActivity,
+                                                loaded.id(),
+                                                loaded.bridgeToken(),
+                                                false,
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return
+            }
+        }
         // W3-01 / R-01：仅 `-Porchestella.buildChannel=qa` 构建允许经独立 QA 意图拉起
         // USER_MODE_KERNEL Alpine 临时闭环实例，不影响正式渠道与既有启动路由。
         if (BuildConfig.IS_ISOLATED_QA_BUILD &&

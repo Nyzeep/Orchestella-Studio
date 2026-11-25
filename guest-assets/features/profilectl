@@ -17,4 +17,4 @@ if [ "${1:-}" = status ] && [ "$#" -eq 2 ]; then
         fi ;;
     esac
 fi
-exec python3 -B /usr/local/lib/orchestella/profilectl.py "$@"
+exec python3 -S /usr/local/lib/orchestella/profilectl.py "$@"
