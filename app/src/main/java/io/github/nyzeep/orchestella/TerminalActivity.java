@@ -11,6 +11,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.activity.ComponentActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.GravityCompat;
@@ -18,6 +19,8 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
+import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
+import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.orchestella.ui.design.components.OeDialogs;
 import io.github.nyzeep.orchestella.ui.design.components.OeLegacyViewStyle;
@@ -31,6 +34,7 @@ import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import io.github.nyzeep.orchestella.terminal.MultiTerminalSessionManager;
 import io.github.nyzeep.orchestella.terminal.TerminalDrawerPanel;
 import io.github.nyzeep.orchestella.terminal.TerminalSessionInstance;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.function.Consumer;
@@ -103,6 +107,13 @@ public class TerminalActivity extends ComponentActivity {
     private DrawerLayout drawerLayout;
     private LinearLayout rootLayout;
     private TerminalDrawerPanel drawerPanel;
+    private Button drawerPowerButton;
+    private final java.util.concurrent.ExecutorService powerExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread thread = new Thread(r, "terminal-power");
+                thread.setDaemon(true);
+                return thread;
+            });
     /**
      * Floating session chip (2026-11-14 terminal round). The old 40dp header
      * row above the viewport is gone — the user asked for the output-view bar
@@ -344,6 +355,29 @@ public class TerminalActivity extends ComponentActivity {
         drawerPanel.setInstanceRunningProvider(() ->
                 instanceId != null && ExecutionSessionRegistry.get(instanceId) != null);
 
+        drawerPowerButton = new Button(this, null, android.R.attr.buttonStyleSmall);
+        drawerPowerButton.setText(R.string.console_btn_power);
+        OeLegacyViewStyle.action(drawerPowerButton);
+        drawerPowerButton.setOnClickListener(v -> showInstancePowerMenu());
+        drawerPanel.addView(drawerPowerButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        int drawerBottomPadding = drawerPanel.getPaddingBottom();
+        int drawerRightPadding = drawerPanel.getPaddingRight();
+        ViewCompat.setOnApplyWindowInsetsListener(drawerPanel, (view, insets) -> {
+            Insets safeArea = insets.getInsets(WindowInsetsCompat.Type.navigationBars()
+                    | WindowInsetsCompat.Type.displayCutout() | WindowInsetsCompat.Type.ime());
+            view.setPadding(view.getPaddingLeft(), view.getPaddingTop(),
+                    drawerRightPadding + safeArea.right, drawerBottomPadding + safeArea.bottom);
+            return insets;
+        });
+        refreshDrawerPower();
+        drawerLayout.addDrawerListener(new DrawerLayout.SimpleDrawerListener() {
+            @Override
+            public void onDrawerOpened(View drawerView) {
+                refreshDrawerPower();
+            }
+        });
+
         int drawerWidth = Math.min(dpToPx(300), (int) (getResources().getDisplayMetrics().widthPixels * 0.82f));
         DrawerLayout.LayoutParams drawerLp = new DrawerLayout.LayoutParams(
                 drawerWidth,
@@ -548,6 +582,10 @@ public class TerminalActivity extends ComponentActivity {
         if (btnOfflineBack != null) {
             btnOfflineBack.setTextColor(colors.getOnSurface());
             btnOfflineBack.setBackground(chromeSurface(colors.getSurfaceHigh(), pillRadius));
+        }
+        if (drawerPowerButton != null) {
+            drawerPowerButton.setTextColor(colors.getOnSurface());
+            drawerPowerButton.setBackground(chromeSurface(colors.getSurfaceHigh(), pillRadius));
         }
     }
 
@@ -772,6 +810,7 @@ public class TerminalActivity extends ComponentActivity {
         // The client belongs to the persistent session. Rotation must not interrupt an
         // in-flight request and thereby close that session's authenticated control stream.
         resizeExecutor.shutdown();
+        powerExecutor.shutdown();
     }
 
     private void reconcileAndConnect() {
@@ -780,6 +819,7 @@ public class TerminalActivity extends ComponentActivity {
             // 结果回来前先画错卡；绑定由解析回调统一驱动。
             return;
         }
+        refreshDrawerPower();
         if (instanceId == null || instanceId.isEmpty()) {
             showMissingPlaceholder("未提供实例 ID");
             return;
@@ -1108,6 +1148,75 @@ public class TerminalActivity extends ComponentActivity {
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         startActivity(intent);
         finish();
+    }
+
+    private void refreshDrawerPower() {
+        drawerPowerButton.setVisibility(ExecutionSessionRegistry.get(instanceId) != null
+                ? View.VISIBLE : View.GONE);
+    }
+
+    private void showInstancePowerMenu() {
+        String targetId = instanceId;
+        ExecutionSession owner = ExecutionSessionRegistry.get(targetId);
+        if (owner == null) {
+            refreshDrawerPower();
+            return;
+        }
+        drawerLayout.closeDrawer(GravityCompat.END);
+        WindowCompat.getInsetsController(getWindow(), drawerPowerButton).hide(WindowInsetsCompat.Type.ime());
+        String forceLabel = getString(R.string.console_btn_force_stop);
+        OeDialogs.choose(this, getString(R.string.console_btn_power),
+                new String[] {getString(R.string.console_btn_stop), forceLabel}, choice -> {
+                    if (choice == 0) {
+                        requestInstancePowerAsync(targetId, owner, false);
+                    } else if (choice == 1) {
+                        OeDialogs.confirm(this, forceLabel, getString(R.string.terminal_power_force_message),
+                                getString(R.string.terminal_power_force_confirm),
+                                getString(android.R.string.cancel), true,
+                                () -> requestInstancePowerAsync(targetId, owner, true));
+                    }
+                });
+    }
+
+    private void requestInstancePowerAsync(String targetId, ExecutionSession owner, boolean force) {
+        if (!targetId.equals(instanceId) || isFinishing() || isDestroyed()) return;
+        powerExecutor.execute(() -> {
+            int message;
+            try {
+                requestInstancePower(targetId, owner, force);
+                message = R.string.terminal_power_requested;
+            } catch (IOException | RuntimeException failure) {
+                android.util.Log.w("TerminalActivity", "instance stop request failed", failure);
+                message = force ? R.string.terminal_power_force_unconfirmed : R.string.toast_operation_failed;
+            }
+            int messageRes = message;
+            ui.post(() -> {
+                if (!isFinishing() && !isDestroyed() && targetId.equals(instanceId)) {
+                    Toast.makeText(this, messageRes, Toast.LENGTH_LONG).show();
+                }
+            });
+        });
+    }
+
+    // The instance page uses the same registry and exit supervisor. An accepted request
+    // records intent for this owner. Only the exit watcher can confirm the stop.
+    static void requestInstancePower(String targetId, ExecutionSession owner, boolean force) throws IOException {
+        PersistentTerminalSessionPool.StopIntent intent = force
+                ? PersistentTerminalSessionPool.StopIntent.FORCE
+                : PersistentTerminalSessionPool.StopIntent.GRACEFUL;
+        ExecutionSessionRegistry.requestStop(targetId, owner, intent, () -> {
+            if (force) {
+                owner.terminate();
+                return;
+            }
+            BridgeClient client = owner.bridgeClient();
+            if (client == null || !client.isReady()) {
+                throw new IOException("Guest power control is not ready");
+            }
+            if (!client.power(BridgeControl.PowerAction.SHUTDOWN).accepted()) {
+                throw new IOException("Guest rejected the shutdown request");
+            }
+        });
     }
 
     /**

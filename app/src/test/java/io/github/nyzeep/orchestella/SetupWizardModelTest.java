@@ -90,7 +90,7 @@ public final class SetupWizardModelTest {
         wizard.updateDiskCapacityBytes(8L * 1024L * 1024L * 1024L);
         wizard.updateGpuAcceleration(true);
 
-        assertEquals("4 vCPU · 3072 MB · 8 GB · GPU 加速", wizard.hardwareSpecsSummary());
+        assertEquals("4 vCPU · 3072 MB · 8 GB", wizard.hardwareSpecsSummary());
     }
 
     @Test

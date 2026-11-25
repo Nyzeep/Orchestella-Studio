@@ -3,7 +3,11 @@ package io.github.nyzeep.orchestella;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
+import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Clock;
 import org.junit.Rule;
@@ -36,7 +40,7 @@ public final class InstanceLaunchSequenceTest {
     private static final class UnconfirmedExitSession extends ExitSession implements RuntimeOwnedSession {
         int stopCalls;
         volatile boolean confirmed;
-        UnconfirmedExitSession() { super(0); }
+        UnconfirmedExitSession(int exitCode) { super(exitCode); }
         @Override public RuntimeProcessSupervisor.StopResult stopRuntime(long graceMs) {
             stopCalls++;
             return confirmed ? RuntimeProcessSupervisor.StopResult.CONFIRMED
@@ -54,7 +58,7 @@ public final class InstanceLaunchSequenceTest {
                 new InstanceLifecycle.DistroReference("debian", "13"), dir.resolve("never-opened.raw"));
         InstanceLaunchGuard.begin(instance.id());
         InstanceLaunchSequence.beforeLaunch(controller, instance);
-        UnconfirmedExitSession session = new UnconfirmedExitSession();
+        UnconfirmedExitSession session = new UnconfirmedExitSession(0);
         ExecutionSessionRegistry.register(instance.id(), session);
         java.util.concurrent.atomic.AtomicInteger feedback = new java.util.concurrent.atomic.AtomicInteger();
         try {
@@ -136,20 +140,25 @@ public final class InstanceLaunchSequenceTest {
     }
 
     @Test
-    public void acceptedForceStopMakesItsConfirmedNonzeroExitIntentional() throws Exception {
+    public void terminalForceStopMakesOnlyItsConfirmedNonzeroExitIntentional() throws Exception {
         Path dir = temporaryFolder.newFolder("force-stop").toPath();
         InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(dir);
         InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, Clock.systemUTC());
         InstanceLifecycle.Instance instance = controller.create(
                 new InstanceLifecycle.DistroReference("debian", "13"), dir.resolve("never-opened.raw"));
         InstanceLaunchSequence.beforeLaunch(controller, instance);
-        ExitSession session = new ExitSession(23);
+        UnconfirmedExitSession session = new UnconfirmedExitSession(23);
         ExecutionSessionRegistry.register(instance.id(), session);
         java.util.concurrent.atomic.AtomicInteger stopped = new java.util.concurrent.atomic.AtomicInteger();
         try {
-            ExecutionSessionRegistry.requestStop(instance.id(), session,
-                    PersistentTerminalSessionPool.StopIntent.FORCE, session::terminate);
-            assertEquals("An accepted stop request must not predict exit", InstanceLifecycle.State.RUNNING, store.load(instance.id()).state());
+            TerminalActivity.requestInstancePower(instance.id(), session, true);
+            assertEquals(InstanceLaunchSequence.ExitStatus.STOP_UNCONFIRMED,
+                    InstanceLaunchSequence.awaitGuestExit(controller, instance.id(), session,
+                            stopped::incrementAndGet).status());
+            assertEquals(InstanceLifecycle.State.RUNNING, store.load(instance.id()).state());
+            assertEquals(0, stopped.get());
+
+            session.confirmed = true;
             InstanceLaunchSequence.ExitResult result = InstanceLaunchSequence.awaitGuestExit(
                     controller, instance.id(), session, stopped::incrementAndGet);
             assertEquals(InstanceLaunchSequence.ExitStatus.NORMAL, result.status());
@@ -158,6 +167,7 @@ public final class InstanceLaunchSequenceTest {
             assertEquals(1, session.terminations);
             assertEquals(1, stopped.get());
         } finally {
+            session.confirmed = true;
             ExecutionSessionRegistry.unregister(instance.id());
         }
     }
@@ -204,8 +214,7 @@ public final class InstanceLaunchSequenceTest {
         ExecutionSessionRegistry.register(instance.id(), session);
         try {
             try {
-                ExecutionSessionRegistry.requestStop(instance.id(), old,
-                        PersistentTerminalSessionPool.StopIntent.FORCE, old::terminate);
+                TerminalActivity.requestInstancePower(instance.id(), old, true);
                 fail("stale action accepted");
             } catch (java.io.IOException expected) { }
             assertEquals(0, old.terminations);
@@ -226,22 +235,27 @@ public final class InstanceLaunchSequenceTest {
     }
 
     @Test
-    public void gracefulIntentWaitsForExitAndDoesNotMaskNonzeroFailure() throws Exception {
+    public void terminalGracefulShutdownUsesTheBridgeAndPreservesNonzeroExit() throws Exception {
         Path dir = temporaryFolder.newFolder("graceful-stop").toPath();
         InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(dir);
         InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, Clock.systemUTC());
         InstanceLifecycle.Instance instance = controller.create(
                 new InstanceLifecycle.DistroReference("debian", "13"), dir.resolve("never-opened.raw"));
         InstanceLaunchSequence.beforeLaunch(controller, instance);
-        ExitSession session = new ExitSession(23);
+        ByteArrayOutputStream wire = new ByteArrayOutputStream();
+        BridgeClient client = new BridgeClient(new ByteArrayInputStream(
+                "ORCHESTELLA/READY 1\nORCHESTELLA/OK power\n".getBytes(StandardCharsets.US_ASCII)), wire);
+        client.handshake("0".repeat(64));
+        wire.reset();
+        ExitSession session = new ExitSession(23) {
+            @Override public BridgeClient bridgeClient() { return client; }
+        };
         ExecutionSessionRegistry.register(instance.id(), session);
-        java.util.concurrent.atomic.AtomicInteger requests = new java.util.concurrent.atomic.AtomicInteger();
         try {
-            ExecutionSessionRegistry.requestStop(instance.id(), session,
-                    PersistentTerminalSessionPool.StopIntent.GRACEFUL, requests::incrementAndGet);
-            ExecutionSessionRegistry.requestStop(instance.id(), session,
-                    PersistentTerminalSessionPool.StopIntent.GRACEFUL, requests::incrementAndGet);
-            assertEquals(1, requests.get());
+            TerminalActivity.requestInstancePower(instance.id(), session, false);
+            TerminalActivity.requestInstancePower(instance.id(), session, false);
+            assertEquals("ORCHESTELLA/POWER shutdown\n", wire.toString(StandardCharsets.US_ASCII));
+            assertEquals(0, session.terminations);
             assertEquals(InstanceLifecycle.State.RUNNING, store.load(instance.id()).state());
             InstanceLaunchSequence.ExitResult result = InstanceLaunchSequence.awaitGuestExit(
                     controller, instance.id(), session, () -> {});

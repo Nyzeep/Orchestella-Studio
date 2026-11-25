@@ -3,11 +3,13 @@ package io.github.nyzeep.orchestella;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import io.github.nyzeep.orchestella.runtime.capability.GpuCapabilityEvaluator;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
+import io.github.nyzeep.orchestella.runtime.engineqemu.GpuAccelerationStatus;
+import io.github.nyzeep.orchestella.runtime.engineqemu.GpuFallbackReason;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -15,6 +17,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.EnumSet;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -94,8 +97,8 @@ public final class InstanceCardUiModelTest {
         assertEquals(4, model.getCpuCores());
         assertEquals(3072, model.getRamMb());
         assertEquals(16, model.getDiskGb());
-        assertTrue(model.getGpuEnabled());
-        assertEquals("4 vCPU · 3072 MB · 16 GB · GPU加速", model.getHardwareSpecsText());
+        assertFalse(model.getGpuEnabled());
+        assertEquals("4 vCPU · 3072 MB · 16 GB", model.getHardwareSpecsText());
 
         assertEquals("运行中", model.getIpAddress());
         InstanceCardUiModel qemuModel = InstanceCardUiModel.Companion.from(
@@ -171,6 +174,64 @@ public final class InstanceCardUiModelTest {
         assertTrue("Can delete crashed instance", model.getCanDelete());
         assertFalse("Cannot clone crashed instance", model.getCanClone());
         assertFalse("Cannot edit hardware directly on crashed instance", model.getCanConfigureHardware());
+    }
+
+    @Test
+    public void missingHardwareDefaultsToGpuOff() throws Exception {
+        Path rootVol = Files.createFile(tempDir.resolve("missing-hardware.raw"));
+        InstanceLifecycle.Instance instance = controller.create(
+                new InstanceLifecycle.DistroReference("alpine", "3.20"), rootVol);
+
+        // The production store normalizes missing hardware before creating the instance.
+        var hardwareConfig = InstanceLifecycle.Instance.class.getDeclaredField("hardwareConfig");
+        hardwareConfig.setAccessible(true);
+        hardwareConfig.set(instance, null);
+
+        InstanceCardUiModel model = InstanceCardUiModel.Companion.from(instance);
+        assertFalse(model.getGpuEnabled());
+        assertEquals("2 vCPU · 2048 MB · 8 GB", model.getHardwareSpecsText());
+    }
+
+    @Test
+    public void runningCardRequiresVerifiedGpuRenderingAndThePackagedPrerequisites() throws Exception {
+        Path rootVol = Files.createFile(tempDir.resolve("gpu-session.raw"));
+        InstanceLifecycle.Instance created = controller.create(
+                new InstanceLifecycle.DistroReference("alpine", "3.20"), rootVol,
+                VmHardwareConfig.defaultConfig(true));
+        controller.beginProvisioning(created.id());
+        controller.completeProvisioning(created.id());
+        InstanceLifecycle.Instance running = controller.start(created.id());
+        var supported = GpuCapabilityEvaluator.evaluate(true, true);
+        var unsupported = GpuCapabilityEvaluator.evaluate(true, false);
+        var baseline = FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline();
+        var capabilities = EnumSet.copyOf(baseline.capabilities());
+        capabilities.add(FullLinuxContract.Capability.GPU_HARDWARE_ACCELERATION);
+        var verified = new FullLinuxContract.CapabilityMatrix(
+                baseline.executionStrategy(), capabilities);
+
+        var active = GpuAccelerationStatus.active(1024);
+        var fallback = GpuAccelerationStatus.fallback(
+                GpuFallbackReason.QEMU_DEVICE_MODEL_UNSUPPORTED, 0, 1024);
+
+        var wiringOnly = InstanceCardUiModel.Companion.from(
+                running, "QEMU 软模拟", false, null, baseline, active, supported);
+        assertFalse(wiringOnly.getGpuEnabled());
+        assertFalse(wiringOnly.getHardwareSpecsText().contains("GPU加速"));
+
+        var incompatible = InstanceCardUiModel.Companion.from(
+                running, "QEMU 软模拟", false, null, verified, active, unsupported);
+        assertFalse(incompatible.getGpuEnabled());
+        assertFalse(incompatible.getHardwareSpecsText().contains("GPU加速"));
+
+        var software = InstanceCardUiModel.Companion.from(
+                running, "QEMU 软模拟", false, null, verified, fallback, unsupported);
+        assertFalse(software.getGpuEnabled());
+        assertTrue(software.getHardwareSpecsText().endsWith(" · 2D 回退"));
+
+        var accelerated = InstanceCardUiModel.Companion.from(
+                running, "QEMU 软模拟", false, null, verified, active, supported);
+        assertTrue(accelerated.getGpuEnabled());
+        assertTrue(accelerated.getHardwareSpecsText().endsWith(" · GPU加速"));
     }
 
     @Test

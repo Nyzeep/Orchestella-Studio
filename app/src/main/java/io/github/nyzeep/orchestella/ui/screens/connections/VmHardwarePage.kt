@@ -61,21 +61,20 @@ data class VmHardwareSelection(
 )
 
 /**
- * G-07 + DW-02: the honest state behind the GPU toggle subtitle. The toggle itself
- * stays a pure config field (runtime fallback is decided by the G-06 gate at
- * launch); this enum only picks what the UI may honestly claim.
+ * The GPU subtitle presents the latest launch outcome or the packaged build's
+ * pre-launch capability assessment.
  *
  * Resolution order: a live session's [GpuAccelerationStatus] wins
  * (ACTIVE / FALLBACK carry the launch's real outcome); DISABLED means the flag
  * was off at launch, so the subtitle falls back to the static copy. Without a
  * session the static capability declaration rules
- * ([GpuCapabilityEvaluator.available] — driver packaged AND QEMU device model
+ * ([GpuCapabilityEvaluator.Assessment.available] — driver packaged and QEMU device model
  * supported, DW-02).
  */
 enum class GpuToggleStatus {
-    /** No session: the full GL chain (driver + QEMU device model) is available. */
+    /** No session: both static prerequisites were detected. */
     NATIVE_AVAILABLE,
-    /** No session: the driver is not packaged, enabling falls back to 2D at launch. */
+    /** No session: the driver is unavailable and the form keeps the preference off. */
     NATIVE_UNAVAILABLE,
     /** No session: driver packaged but the packaged QEMU lacks the gl-device model (DW-01). */
     DEVICE_MODEL_UNSUPPORTED,
@@ -101,13 +100,23 @@ enum class GpuToggleStatus {
             nativeAvailable: Boolean,
             deviceModelSupported: Boolean,
             sessionStatus: GpuAccelerationStatus?,
+        ): GpuToggleStatus = resolve(
+            GpuCapabilityEvaluator.evaluate(nativeAvailable, deviceModelSupported),
+            sessionStatus,
+        )
+
+        internal fun resolve(
+            assessment: GpuCapabilityEvaluator.Assessment,
+            sessionStatus: GpuAccelerationStatus?,
         ): GpuToggleStatus {
-            val status = sessionStatus
-            if (status != null && status.state() != GpuAccelerationStatus.State.DISABLED) {
-                return if (status.gpuDeviceActive()) SESSION_ACTIVE else SESSION_FALLBACK
+            if (sessionStatus != null && sessionStatus.state() != GpuAccelerationStatus.State.DISABLED) {
+                return if (sessionStatus.gpuDeviceActive()) SESSION_ACTIVE else SESSION_FALLBACK
             }
-            if (!nativeAvailable) return NATIVE_UNAVAILABLE
-            return if (deviceModelSupported) NATIVE_AVAILABLE else DEVICE_MODEL_UNSUPPORTED
+            return when {
+                assessment.available() -> NATIVE_AVAILABLE
+                !assessment.virglNativeAvailable() -> NATIVE_UNAVAILABLE
+                else -> DEVICE_MODEL_UNSUPPORTED
+            }
         }
     }
 }
@@ -162,16 +171,24 @@ class VmHardwarePageState(
         private set
     var diskGb by mutableIntStateOf(currentDiskGb)
         private set
-    var gpuAccelerationEnabled by mutableStateOf(current.gpuAccelerationEnabled())
-        private set
+
+    private val gpuAssessment =
+        GpuCapabilityEvaluator.evaluate(gpuNativeAvailable, gpuDeviceModelSupported)
 
     /** G-07 + DW-02 副文案多态（构造时定一次；会话快照与静态能力声明在页内不变）。 */
     val gpuToggleStatus: GpuToggleStatus =
-        GpuToggleStatus.resolve(gpuNativeAvailable, gpuDeviceModelSupported, gpuSessionStatus)
+        GpuToggleStatus.resolve(gpuAssessment, gpuSessionStatus)
 
     /** [GpuToggleStatus.SESSION_FALLBACK] 时的降级原因；其余状态为 null。 */
     val gpuFallbackReason: GpuFallbackReason? =
         if (gpuToggleStatus == GpuToggleStatus.SESSION_FALLBACK) gpuSessionStatus?.reason() else null
+
+    val gpuToggleEnabled: Boolean = gpuAssessment.available() &&
+        gpuFallbackReason != GpuFallbackReason.NATIVE_UNAVAILABLE &&
+        gpuFallbackReason != GpuFallbackReason.QEMU_DEVICE_MODEL_UNSUPPORTED
+
+    var gpuAccelerationEnabled by mutableStateOf(gpuToggleEnabled && current.gpuAccelerationEnabled())
+        private set
 
     val ramIntervals: Int =
         ((maxRamMegabytes - minRamMegabytes) / RAM_STEP_MB).coerceAtLeast(1)
@@ -198,7 +215,7 @@ class VmHardwarePageState(
     }
 
     fun setGpuAcceleration(enabled: Boolean) {
-        gpuAccelerationEnabled = enabled
+        gpuAccelerationEnabled = gpuToggleEnabled && enabled
     }
 
     fun selection(): VmHardwareSelection {
@@ -224,11 +241,8 @@ class VmHardwarePageState(
  * colour come straight from [HostHardwareProfile.SafetyZone], so the old
  * "RED blocks saving" promise is preserved rather than re-invented.
  *
- * G-07: the GPU toggle's subtitle is honest — the host may pass the live
- * session's [GpuAccelerationStatus] (when the instance is running); without a
- * session the static capability declaration
- * ([GpuCapabilityEvaluator] + [VirglJniBridge], same JVM as the engine) picks
- * the copy. The toggle never pretends a checked box equals GPU acceleration.
+ * The GPU subtitle uses the live [GpuAccelerationStatus] when present.
+ * [GpuCapabilityEvaluator] gates edits against the packaged build.
  */
 @Composable
 fun VmHardwarePage(
@@ -240,9 +254,7 @@ fun VmHardwarePage(
     gpuAccelerationStatus: GpuAccelerationStatus? = null,
 ) {
     val current = instance.hardwareConfig() ?: VmHardwareConfig.defaultConfig()
-    val gpuNativeAvailable = androidx.compose.runtime.remember {
-        GpuCapabilityEvaluator.evaluate(VirglJniBridge.isAvailable()).virglNativeAvailable()
-    }
+    val gpuNativeAvailable = androidx.compose.runtime.remember { VirglJniBridge.isAvailable() }
     // DW-02：QEMU 设备模型因子来自 GpuDeviceModelProbeOwner 的后台预热快照
     // （严禁主线程 exec）；Compose State 读取让探测完成后副文案自动刷新，
     // 未完成/失败保守按不支持处理。
@@ -427,6 +439,7 @@ fun VmHardwareContent(
                     subtitle = gpuToggleSubtitle(state),
                     checked = state.gpuAccelerationEnabled,
                     onCheckedChange = onGpuChange,
+                    enabled = state.gpuToggleEnabled,
                     modifier = Modifier.testTag("connections:vm:gpu"),
                 )
             }

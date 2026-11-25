@@ -162,6 +162,9 @@ static int resize_terminal(const char *terminal_device, int terminal_columns, in
 #define MAX_IPC_CLIENTS 8
 
 static int setup_bridge_ipc_socket(void) {
+#if defined(ORCHESTELLA_TEST_POWER)
+    return -1;
+#else
     int server_fd;
     struct sockaddr_un address;
 
@@ -199,6 +202,7 @@ static int setup_bridge_ipc_socket(void) {
     }
 
     return server_fd;
+#endif
 }
 #endif
 
@@ -337,7 +341,51 @@ static int handle_features(int write_fd, const char *command) {
         && write_control_line_fd(write_fd, result) && write_control_line_fd(write_fd, "\n");
 }
 
-#if !defined(_WIN32) && !defined(ORCHESTELLA_TEST_POWER)
+enum power_action {
+    POWEROFF_GRACEFUL,
+    POWEROFF_FORCE,
+    POWER_ACTION_COUNT
+};
+
+#if !defined(_WIN32) && (!defined(ORCHESTELLA_TEST_POWER) || defined(ORCHESTELLA_TEST_POWER_PROGRAM))
+#define ORCHESTELLA_WATCH_POWER_JOBS
+#endif
+
+struct power_jobs {
+#if defined(ORCHESTELLA_WATCH_POWER_JOBS)
+    pid_t workers[POWER_ACTION_COUNT];
+#else
+    int unused;
+#endif
+};
+
+#if defined(ORCHESTELLA_WATCH_POWER_JOBS)
+enum power_init {
+    POWER_INIT_SYSTEMD,
+    POWER_INIT_TRADITIONAL,
+    POWER_INIT_RECOVERY
+};
+
+enum power_result {
+    POWER_DISPATCHED,
+    POWER_FAILED,
+    POWER_TIMEOUT
+};
+
+struct power_command {
+    const char *path;
+    char *args[4];
+};
+
+#if defined(ORCHESTELLA_TEST_POWER)
+#define POWER_GRACE_MS 500L
+#define POWER_FORCE_MS 500L
+#else
+#define POWER_GRACE_MS 30000L
+#define POWER_FORCE_MS 10000L
+#endif
+#define POWER_REAP_MS 1000L
+
 static int executable_power_program(const char *path) {
     struct stat info;
     unsigned char magic[4];
@@ -355,57 +403,182 @@ static int executable_power_program(const char *path) {
     return count == sizeof(magic) && magic[0] == 0x7fU
             && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F';
 }
+
+static int detect_power_init(enum power_init *init) {
+    const char *name;
+#if defined(ORCHESTELLA_TEST_POWER)
+    name = getenv("ORCHESTELLA_TEST_POWER_MODE");
+    if (name == NULL) name = "systemd";
+#else
+    char init_name[64] = {0};
+    FILE *init_comm;
+    if (geteuid() != 0 || (init_comm = fopen("/proc/1/comm", "rb")) == NULL) {
+        return 0;
+    }
+    if (fgets(init_name, sizeof(init_name), init_comm) == NULL) {
+        fclose(init_comm);
+        return 0;
+    }
+    fclose(init_comm);
+    init_name[strcspn(init_name, "\r\n")] = '\0';
+    name = init_name;
+#endif
+    if (strcmp(name, "systemd") == 0) {
+        *init = POWER_INIT_SYSTEMD;
+    } else if (strcmp(name, "init") == 0) {
+        *init = POWER_INIT_TRADITIONAL;
+    } else {
+        *init = POWER_INIT_RECOVERY;
+    }
+    return 1;
+}
+
+static struct power_command select_power_command(enum power_init init, enum power_action action) {
+    struct power_command command = {"/sbin/poweroff", {"poweroff", NULL}};
+    if (init == POWER_INIT_RECOVERY) {
+        command = (struct power_command){"/usr/lib/orchestella/busybox", {"busybox", "poweroff", "-f", NULL}};
+    } else if (action == POWEROFF_FORCE && init == POWER_INIT_SYSTEMD) {
+        /* One --force skips service shutdown but still allows systemd to unmount filesystems. */
+        command = (struct power_command){"/usr/bin/systemctl", {"systemctl", "--force", "poweroff", NULL}};
+    } else if (action == POWEROFF_FORCE) {
+        command.args[1] = "-f";
+    }
+#if defined(ORCHESTELLA_TEST_POWER)
+    /* The same argv and supervision run against an ELF fixture, even as host root. */
+    command.path = ORCHESTELLA_TEST_POWER_PROGRAM;
+#endif
+    return command;
+}
+
+static enum power_result wait_for_power_command(pid_t child, long timeout_ms) {
+    struct timespec start;
+    if (clock_gettime(CLOCK_MONOTONIC, &start) != 0) return POWER_TIMEOUT;
+
+    for (;;) {
+        int status;
+        pid_t completed = waitpid(child, &status, WNOHANG);
+        if (completed == child) {
+            return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? POWER_DISPATCHED : POWER_FAILED;
+        }
+        if (completed < 0 && errno != EINTR) return POWER_FAILED;
+        struct timespec now;
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0
+            || (now.tv_sec - start.tv_sec) * 1000L + (now.tv_nsec - start.tv_nsec) / 1000000L >= timeout_ms) {
+            return POWER_TIMEOUT;
+        }
+        poll(NULL, 0, 20);
+    }
+}
+
+static enum power_result run_power_command(const struct power_command *command, long timeout_ms) {
+    pid_t child = fork();
+    if (child < 0) return POWER_FAILED;
+    if (child == 0) {
+        if (setpgid(0, 0) == 0) execv(command->path, command->args);
+        _exit(71);
+    }
+
+    enum power_result result = wait_for_power_command(child, timeout_ms);
+    if (result == POWER_TIMEOUT) {
+        if (kill(-child, SIGKILL) != 0) kill(child, SIGKILL);
+        /* The forced path must still run if a dying helper is stuck in kernel I/O. */
+        if (wait_for_power_command(child, POWER_REAP_MS) == POWER_TIMEOUT) {
+            fputs("ORCHESTELLA_GUEST_POWER_ERROR stage=reap result=timeout\n", stderr);
+        }
+    }
+    return result;
+}
+
+static int reap_power_workers(struct power_jobs *jobs, int options) {
+    int running = 0;
+    for (int index = 0; index < POWER_ACTION_COUNT; ++index) {
+        pid_t worker = jobs->workers[index];
+        if (worker <= 0) continue;
+        pid_t completed;
+        do {
+            completed = waitpid(worker, NULL, options);
+        } while (completed < 0 && errno == EINTR);
+        if (completed == 0) {
+            running = 1;
+        } else {
+            jobs->workers[index] = 0;
+        }
+    }
+    return running;
+}
+
+static void execute_power_job(enum power_init init, enum power_action action,
+                              const struct power_command *command) {
+    int null_fd = open("/dev/null", O_RDWR);
+    if (null_fd < 0 || dup2(null_fd, STDIN_FILENO) < 0 || dup2(null_fd, STDOUT_FILENO) < 0) _exit(71);
+    /* No control sockets, IPC clients, or launcher descriptors reach the power utility. */
+    long bound = sysconf(_SC_OPEN_MAX);
+    if (bound < 0 || bound > 65536) bound = 65536;
+    for (int descriptor = 3; descriptor < bound; ++descriptor) close(descriptor);
+
+    struct power_command forced;
+    if (action == POWEROFF_GRACEFUL && init != POWER_INIT_RECOVERY) {
+        enum power_result result = run_power_command(command, POWER_GRACE_MS);
+        if (result == POWER_DISPATCHED) return;
+        fprintf(stderr, "ORCHESTELLA_GUEST_POWER_FALLBACK reason=%s\n",
+                result == POWER_TIMEOUT ? "timeout" : "graceful-failed");
+        forced = select_power_command(init, POWEROFF_FORCE);
+        if (!executable_power_program(forced.path)) {
+            fputs("ORCHESTELLA_GUEST_POWER_ERROR stage=force result=unavailable\n", stderr);
+            return;
+        }
+        command = &forced;
+    }
+    enum power_result result = run_power_command(command, POWER_FORCE_MS);
+    if (result != POWER_DISPATCHED) {
+        fprintf(stderr, "ORCHESTELLA_GUEST_POWER_ERROR stage=force result=%s\n",
+                result == POWER_TIMEOUT ? "timeout" : "failed");
+    }
+}
 #endif
 
 /* Returns 0 for an acknowledged dispatch, 1 when unavailable, or 70 on reply failure.
- * Both existing v1 actions shut down the guest. No request bytes reach argv or a shell. */
-static int dispatch_power_request(int write_fd) {
-#if defined(ORCHESTELLA_TEST_POWER)
-    /* Compile-time test seam: never executes power utilities, including on Windows. */
+ * Acknowledgement releases the worker. No request bytes reach argv or a shell. */
+static int dispatch_power_request(int write_fd, enum power_action action, struct power_jobs *jobs) {
+#if defined(ORCHESTELLA_TEST_POWER) && !defined(ORCHESTELLA_TEST_POWER_PROGRAM)
+    /* Preserve the record-only contract used by the cross-platform JVM process tests. */
+    (void)jobs;
     const char *fault = getenv("ORCHESTELLA_TEST_POWER_FAULT");
     const char *record_path = getenv("ORCHESTELLA_TEST_POWER_RECORD");
     const char *mode = getenv("ORCHESTELLA_TEST_POWER_MODE");
-    FILE *record;
     if (fault != NULL && (strcmp(fault, "access") == 0 || strcmp(fault, "fork") == 0
-                          || strcmp(fault, "pipe") == 0)) {
-        return 1;
-    }
-    if (record_path == NULL || (record = fopen(record_path, "ab")) == NULL) {
-        return 1;
-    }
+                          || strcmp(fault, "pipe") == 0)) return 1;
+    FILE *record = record_path == NULL ? NULL : fopen(record_path, "ab");
+    if (record == NULL) return 1;
     if ((fault != NULL && strcmp(fault, "reply") == 0)
         || !write_control_line_fd(write_fd, "ORCHESTELLA/OK power\n")) {
         fclose(record);
         return 70;
     }
-    fputs(mode != NULL && strcmp(mode, "recovery") == 0
-                  ? "/usr/lib/orchestella/busybox poweroff -f\n"
-                  : "/sbin/poweroff\n", record);
+    const char *command = "/sbin/poweroff\n";
+    if (mode != NULL && strcmp(mode, "recovery") == 0) {
+        command = "/usr/lib/orchestella/busybox poweroff -f\n";
+    } else if (action == POWEROFF_FORCE) {
+        command = mode != NULL && strcmp(mode, "init") == 0
+            ? "/sbin/poweroff -f\n" : "/usr/bin/systemctl --force poweroff\n";
+    }
+    fputs(command, record);
     fclose(record);
     return 0;
-#elif !defined(_WIN32)
-    const char *program;
-    char init_name[64] = {0};
-    FILE *init_comm;
-    int recovery;
+#elif defined(ORCHESTELLA_WATCH_POWER_JOBS)
+    const char *acknowledgement = "ORCHESTELLA/OK power\n";
+    reap_power_workers(jobs, WNOHANG);
+    if (jobs->workers[action] > 0 || jobs->workers[POWEROFF_FORCE] > 0) {
+        return write_control_line_fd(write_fd, acknowledgement) ? 0 : 70;
+    }
+    enum power_init init;
+    if (!detect_power_init(&init)) return 1;
+    struct power_command command = select_power_command(init, action);
     int gate[2];
-    pid_t worker;
-    char release = 'G';
-    if (geteuid() != 0 || (init_comm = fopen("/proc/1/comm", "rb")) == NULL) {
+    if (!executable_power_program(command.path) || pipe(gate) != 0) {
         return 1;
     }
-    if (fgets(init_name, sizeof(init_name), init_comm) == NULL) {
-        fclose(init_comm);
-        return 1;
-    }
-    fclose(init_comm);
-    init_name[strcspn(init_name, "\r\n")] = '\0';
-    recovery = strcmp(init_name, "systemd") != 0 && strcmp(init_name, "init") != 0;
-    program = recovery ? "/usr/lib/orchestella/busybox" : "/sbin/poweroff";
-    if (!executable_power_program(program) || pipe(gate) != 0) {
-        return 1;
-    }
-    worker = fork();
+    pid_t worker = fork();
     if (worker < 0) {
         close(gate[0]);
         close(gate[1]);
@@ -413,6 +586,7 @@ static int dispatch_power_request(int write_fd) {
     }
     if (worker == 0) {
         ssize_t received;
+        char release = '\0';
         struct timespec pause = {0, 250000000L};
         close(gate[1]);
         do {
@@ -423,27 +597,28 @@ static int dispatch_power_request(int write_fd) {
             _exit(0); /* No successful parent acknowledgement: do not shut down. */
         }
         while (nanosleep(&pause, &pause) != 0 && errno == EINTR) {}
-        close(write_fd); /* Utility output must not pollute the bridge protocol. */
-        if (recovery) {
-            execl(program, "busybox", "poweroff", "-f", (char *)NULL);
-        } else {
-            execl(program, "poweroff", (char *)NULL);
-        }
-        fputs("ORCHESTELLA_GUEST_POWER_ERROR stage=exec\n", stderr);
-        _exit(71);
+        execute_power_job(init, action, &command);
+        _exit(0);
     }
     close(gate[0]);
-    if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK power\n")) {
+    if (!write_control_line_fd(write_fd, acknowledgement)) {
         close(gate[1]); /* EOF cancels the child before exec. */
         while (waitpid(worker, NULL, 0) < 0 && errno == EINTR) {}
         return 70;
     }
-    /* The child cannot execute before the reply has been written. Allow it to drain. */
-    while (write(gate[1], &release, 1U) < 0 && errno == EINTR) {}
+    char release = 'G';
+    ssize_t released;
+    do {
+        released = write(gate[1], &release, 1U);
+    } while (released < 0 && errno == EINTR);
     close(gate[1]);
+    jobs->workers[action] = worker;
+    if (released != 1) return 70;
     return 0;
 #else
     (void)write_fd;
+    (void)action;
+    (void)jobs;
     return 1; /* Production Windows never invokes host power commands. */
 #endif
 }
@@ -476,8 +651,8 @@ static int answer_control_hello(int write_fd, const char *request, const char *e
     return write_control_line_fd(write_fd, "ORCHESTELLA/READY 1\n") ? 0 : 70;
 }
 
-static int serve_control_channel_fd(int read_fd, int write_fd, const char *terminal_device,
-                                    const char *expected_token) {
+static int serve_control_requests(int read_fd, int write_fd, const char *terminal_device,
+                                  const char *expected_token, struct power_jobs *power_jobs) {
     char *request = (char *)malloc(MAX_PAYLOAD_LINE);
     if (request == NULL) {
         return 71;
@@ -529,7 +704,11 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
             }
         }
 
-        int poll_res = poll(poll_fds, (nfds_t)num_poll_fds, -1);
+        int timeout = -1;
+#if defined(ORCHESTELLA_WATCH_POWER_JOBS)
+        if (reap_power_workers(power_jobs, WNOHANG)) timeout = 100;
+#endif
+        int poll_res = poll(poll_fds, (nfds_t)num_poll_fds, timeout);
         if (poll_res < 0) {
             if (errno == EINTR) {
                 continue;
@@ -633,7 +812,9 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
         if (strncmp(request, "ORCHESTELLA/POWER", sizeof("ORCHESTELLA/POWER") - 1U) == 0
             || strncmp(request, "DROIDLAYER/POWER", sizeof("DROIDLAYER/POWER") - 1U) == 0) {
             int power_status;
-            if (strcmp(request, "ORCHESTELLA/POWER shutdown") != 0
+            int force = strcmp(request, "ORCHESTELLA/POWER POWEROFF_FORCE") == 0
+                || strcmp(request, "DROIDLAYER/POWER POWEROFF_FORCE") == 0;
+            if (!force && strcmp(request, "ORCHESTELLA/POWER shutdown") != 0
                 && strcmp(request, "ORCHESTELLA/POWER poweroff") != 0
                 && strcmp(request, "DROIDLAYER/POWER shutdown") != 0
                 && strcmp(request, "DROIDLAYER/POWER poweroff") != 0) {
@@ -641,7 +822,8 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
                 free(request);
                 return 4;
             }
-            power_status = dispatch_power_request(write_fd);
+            power_status = dispatch_power_request(write_fd, force ? POWEROFF_FORCE : POWEROFF_GRACEFUL,
+                                                  power_jobs);
             if (power_status == 70) {
                 free(request);
                 return 70;
@@ -742,6 +924,17 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
             return 70;
         }
     }
+}
+
+static int serve_control_channel_fd(int read_fd, int write_fd, const char *terminal_device,
+                                    const char *expected_token) {
+    struct power_jobs jobs = {0};
+    int result = serve_control_requests(read_fd, write_fd, terminal_device, expected_token, &jobs);
+#if defined(ORCHESTELLA_WATCH_POWER_JOBS)
+    /* An acknowledged power request survives disconnect and still reaps its worker. */
+    reap_power_workers(&jobs, 0);
+#endif
+    return result;
 }
 
 /*

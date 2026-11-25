@@ -88,6 +88,7 @@ internal fun VmHardwareScreenshotSample(onBack: () -> Unit = {}) {
         VmHardwareConfig(4, 4096, 16L * GIB, true, null),
         profile,
         gpuNativeAvailable = true,
+        gpuDeviceModelSupported = false,
     )
     VmHardwareContent(
         state = state,

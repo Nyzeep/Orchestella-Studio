@@ -1,6 +1,9 @@
 package io.github.nyzeep.orchestella
 
+import io.github.nyzeep.orchestella.runtime.capability.GpuCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
+import io.github.nyzeep.orchestella.runtime.engineqemu.GpuAccelerationStatus
+import io.github.nyzeep.orchestella.runtime.engineqemu.VirglJniBridge
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 
 /**
@@ -45,6 +48,8 @@ data class InstanceCardUiModel(
             supportsDesktop: Boolean = false,
             guestIp: String? = null,
             capabilityMatrix: FullLinuxContract.CapabilityMatrix? = null,
+            gpuAccelerationStatus: GpuAccelerationStatus? = null,
+            gpuCapability: GpuCapabilityEvaluator.Assessment? = null,
         ): InstanceCardUiModel {
             val distroId = instance.distro().id()
             val distroDisplayName = distroId.replaceFirstChar { it.uppercase() }
@@ -81,12 +86,30 @@ data class InstanceCardUiModel(
             val cpuCores = hw?.cpuCores() ?: 2
             val ramMb = hw?.ramMegabytes() ?: 2048
             val diskGb = (hw?.diskCapacityBytes() ?: (8L * 1024L * 1024L * 1024L)).let { (it / (1024L * 1024L * 1024L)).toInt() }
-            val gpuEnabled = hw?.gpuAccelerationEnabled() ?: true
+            val gpuSession = if (isRunning && gpuAccelerationStatus == null) {
+                ExecutionSessionRegistry.get(instance.id())
+            } else {
+                null
+            }
+            val gpuStatus = if (isRunning) {
+                gpuAccelerationStatus ?: gpuSession?.gpuAccelerationStatus()
+            } else {
+                null
+            }
+            // ACTIVE reports device wiring. The badge also requires verified guest rendering.
+            val gpuEnabled = gpuStatus?.gpuDeviceActive() == true &&
+                (gpuSession?.capabilityMatrix() ?: capabilityMatrix)?.supportsGpuAcceleration() == true &&
+                (gpuCapability ?: GpuCapabilityEvaluator.evaluate(
+                    VirglJniBridge.isAvailable(),
+                    GpuDeviceModelProbeOwner.supportedOrConservativeFalse(),
+                )).available()
 
             val hwText = buildString {
                 append("$cpuCores vCPU · $ramMb MB · $diskGb GB")
                 if (gpuEnabled) {
                     append(" · GPU加速")
+                } else if (gpuStatus?.state() == GpuAccelerationStatus.State.FALLBACK) {
+                    append(" · 2D 回退")
                 }
             }
 

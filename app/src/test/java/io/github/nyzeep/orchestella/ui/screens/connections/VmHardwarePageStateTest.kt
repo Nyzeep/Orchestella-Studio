@@ -14,10 +14,8 @@ import org.junit.Test
  * VM hardware page contract: every safety decision stays with
  * [HostHardwareProfile]; the page only projects it. RED must keep save off.
  *
- * G-07 adds the GPU honesty contract: the toggle stays a pure config field,
- * while [GpuToggleStatus] only picks what the subtitle may honestly claim
- * (session status wins when a session is attached; static capability
- * declaration rules otherwise; DISABLED falls back to static).
+ * The GPU form can commit an enabled preference when the build's prerequisites
+ * are present. The subtitle uses the live outcome, with static copy for DISABLED.
  */
 class VmHardwarePageStateTest {
 
@@ -45,6 +43,7 @@ class VmHardwarePageStateTest {
         assertEquals(8, state.diskGb)
         assertEquals(8, state.maxCpuCores)
         assertEquals(64, state.maxDiskGb)
+        assertTrue(state.gpuToggleEnabled)
         assertTrue(state.gpuAccelerationEnabled)
         assertTrue(state.canSave)
     }
@@ -171,12 +170,13 @@ class VmHardwarePageStateTest {
     }
 
     @Test
-    fun theToggleFieldItselfStaysAPureConfigField() {
-        // The honesty state must not gate the toggle: runtime fallback is the G-06 gate's job.
+    fun missingNativeForcesLegacyGpuPreferenceOff() {
         val state = state(nativeAvailable = false)
+        assertFalse(state.gpuToggleEnabled)
+        assertFalse(state.gpuAccelerationEnabled)
         state.setGpuAcceleration(true)
-        assertTrue("the toggle stays usable even when the driver is missing", state.gpuAccelerationEnabled)
-        assertTrue(state.selection().gpuAccelerationEnabled)
+        assertFalse(state.gpuAccelerationEnabled)
+        assertFalse(state.selection().gpuAccelerationEnabled)
         assertEquals(GpuToggleStatus.NATIVE_UNAVAILABLE, state.gpuToggleStatus)
     }
 
@@ -226,6 +226,10 @@ class VmHardwarePageStateTest {
         val state = state(nativeAvailable = true, deviceModelSupported = false)
         assertEquals(GpuToggleStatus.DEVICE_MODEL_UNSUPPORTED, state.gpuToggleStatus)
         assertNull("no session means no per-launch fallback reason", state.gpuFallbackReason)
+        assertFalse(state.gpuToggleEnabled)
+        assertFalse(state.gpuAccelerationEnabled)
+        state.setGpuAcceleration(true)
+        assertFalse(state.selection().gpuAccelerationEnabled)
     }
 
     @Test

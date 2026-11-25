@@ -559,9 +559,8 @@ private fun MirrorSourceCard(state: WizardUiState, controller: WizardScreenModel
 // ---------------------------------------------------------------------------
 
 /**
- * DW-02：向导 GPU 标注三态取词（strings 单源，禁硬编码）。判定来自
- * [GpuCapabilityEvaluator.Assessment.available]——只有 VirGL 驱动已打包且
- * QEMU 设备模型受支持，才允许文案许诺「可用」。
+ * 向导只报告打包版本的探测结论。静态评估记录 VirGL 驱动和 QEMU 设备模型，
+ * 实际渲染状态由启动后的会话提供。
  */
 internal fun wizardGpuNoteRes(assessment: GpuCapabilityEvaluator.Assessment): Int = when {
     assessment.available() -> R.string.wizard_gpu_note_available
@@ -587,12 +586,7 @@ fun HardwareStepContent(state: WizardUiState, controller: WizardScreenModel) {
             style = Oe3Typography.style(Oe3TextRole.Caption),
             color = colors.onSurfaceVariant.oe3Color(),
         )
-        // G-07 + DW-02：GPU 诚实标注（能力声明单源 + QEMU 设备模型因子）。
-        // 向导本步没有 GPU 开关（开关在创建后的实例硬件页），这里按真实链路
-        // 三态取词：native 打包 + 设备模型支持 → 可用；native 缺失 → 驱动未
-        // 打包；native 有但设备模型缺失 → 设备模型不支持。设备模型探测由
-        // GpuDeviceModelProbeOwner 在后台线程预热（严禁主线程 exec），读取
-        // Compose State 响应式跟随探测结论；未完成/失败保守按不支持处理。
+        // 后台探测完成后刷新能力提示，未确认支持前使用 2D 回退口径。
         val gpuDeviceModelSupported = GpuDeviceModelProbeOwner.supportedOrConservativeFalse()
         val gpuAssessment = androidx.compose.runtime.remember(gpuDeviceModelSupported) {
             GpuCapabilityEvaluator.evaluate(VirglJniBridge.isAvailable(), gpuDeviceModelSupported)

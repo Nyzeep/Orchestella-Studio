@@ -1,5 +1,12 @@
 package io.github.nyzeep.orchestella.ui.screens.connections
 
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -22,10 +29,8 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
 /**
- * G-07 GPU 开关诚实副文案的零设备渲染契约：副文案随
- * [GpuToggleStatus] 三态取词（strings 单源，禁硬编码），开关本体保持纯配置
- * 字段。会话实时状态优先（DISABLED 落回静态）；无会话时按能力声明单源。
- * 向导硬件步的 GPU 标注同票锁定（JVM 无 native 库 → 不可用分支）。
+ * GPU 开关与硬件步提示反映打包版本的探测结论。会话回退副文案显示真实原因，
+ * 缺少静态前置条件时开关禁用并保持关闭。
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], qualifiers = "w412dp-h2000dp-mdpi")
@@ -35,6 +40,10 @@ class VmHardwareGpuHonestyTest {
     val compose = createComposeRule()
 
     private val gib = 1024L * 1024L * 1024L
+
+    private fun gpuToggle() = compose.onNode(
+        isToggleable() and hasAnyAncestor(hasTestTag("connections:vm:gpu")),
+    )
 
     private fun setContent(
         nativeAvailable: Boolean,
@@ -73,20 +82,21 @@ class VmHardwareGpuHonestyTest {
     @Test
     fun nativeAvailableDeclaresVirgl() {
         setContent(nativeAvailable = true, sessionStatus = null)
-        compose.onNodeWithTag("connections:vm:gpu").assertExists()
-        compose.onNodeWithText("GPU 加速（virgl）").assertExists()
+        gpuToggle().assertIsEnabled().assertIsOn()
+        compose.onNodeWithText("检测到 VirGL 驱动和 QEMU 3D 设备模型").assertExists()
     }
 
     @Test
     fun nativeUnavailableDisclosesTheTwoDFallback() {
         setContent(nativeAvailable = false, sessionStatus = null)
-        compose.onNodeWithText("GPU 加速（驱动未打包，将回退 2D 渲染）").assertExists()
+        gpuToggle().assertIsNotEnabled().assertIsOff()
+        compose.onNodeWithText("VirGL 驱动不可用，桌面将使用 2D 渲染").assertExists()
     }
 
     @Test
     fun activeSessionNamesTheLiveWiring() {
         setContent(nativeAvailable = false, sessionStatus = GpuAccelerationStatus.active(1024))
-        compose.onNodeWithText("GPU 加速（virgl · 当前会话已启用）").assertExists()
+        compose.onNodeWithText("VirGL 设备已接线，实际 3D 渲染未验证").assertExists()
     }
 
     @Test
@@ -95,7 +105,7 @@ class VmHardwareGpuHonestyTest {
             nativeAvailable = true,
             sessionStatus = GpuAccelerationStatus.fallback(GpuFallbackReason.NATIVE_UNAVAILABLE, 0, 1024),
         )
-        compose.onNodeWithText("GPU 加速（当前会话已回退 2D 渲染 · 驱动未打包）").assertExists()
+        compose.onNodeWithText("当前会话使用 2D 渲染 · 驱动未打包").assertExists()
     }
 
     @Test
@@ -104,13 +114,14 @@ class VmHardwareGpuHonestyTest {
             nativeAvailable = true,
             sessionStatus = GpuAccelerationStatus.fallback(GpuFallbackReason.INIT_FAILED, -1, 1024),
         )
-        compose.onNodeWithText("GPU 加速（当前会话已回退 2D 渲染 · 驱动初始化失败）").assertExists()
+        compose.onNodeWithText("当前会话使用 2D 渲染 · 驱动初始化失败").assertExists()
     }
 
     @Test
     fun disabledSessionFallsBackToTheStaticCopy() {
         setContent(nativeAvailable = false, sessionStatus = GpuAccelerationStatus.disabled())
-        compose.onNodeWithText("GPU 加速（驱动未打包，将回退 2D 渲染）").assertExists()
+        gpuToggle().assertIsNotEnabled().assertIsOff()
+        compose.onNodeWithText("VirGL 驱动不可用，桌面将使用 2D 渲染").assertExists()
     }
 
     // ---- DW-02：QEMU 设备模型因子进入副文案三态 ----
@@ -118,14 +129,14 @@ class VmHardwareGpuHonestyTest {
     @Test
     fun deviceModelUnsupportedStaticCopyDisclosesTheTwoDFallback() {
         setContent(nativeAvailable = true, sessionStatus = null, deviceModelSupported = false)
-        compose.onNodeWithTag("connections:vm:gpu").assertExists()
-        compose.onNodeWithText("GPU 加速（QEMU 设备模型不支持，将回退 2D 渲染）").assertExists()
+        gpuToggle().assertIsNotEnabled().assertIsOff()
+        compose.onNodeWithText("打包 QEMU 缺少 3D 设备模型，桌面将使用 2D 渲染").assertExists()
     }
 
     @Test
-    fun deviceModelSupportedStaticCopyKeepsTheAvailableClaim() {
+    fun deviceModelSupportedStaticCopyNamesThePrerequisites() {
         setContent(nativeAvailable = true, sessionStatus = null, deviceModelSupported = true)
-        compose.onNodeWithText("GPU 加速（virgl）").assertExists()
+        compose.onNodeWithText("检测到 VirGL 驱动和 QEMU 3D 设备模型").assertExists()
     }
 
     @Test
@@ -136,7 +147,8 @@ class VmHardwareGpuHonestyTest {
                 GpuFallbackReason.QEMU_DEVICE_MODEL_UNSUPPORTED, 0, 1024,
             ),
         )
-        compose.onNodeWithText("GPU 加速（当前会话已回退 2D 渲染 · QEMU 设备模型不支持）")
+        gpuToggle().assertIsNotEnabled().assertIsOff()
+        compose.onNodeWithText("当前会话使用 2D 渲染 · QEMU 设备模型不支持")
             .assertExists()
     }
 
@@ -178,6 +190,6 @@ class VmHardwareGpuHonestyTest {
             }
         }
         compose.onNodeWithTag("wizard:gpu-note").assertExists()
-        compose.onNodeWithText("GPU 加速（驱动未打包，创建后开启将回退 2D 渲染）").assertExists()
+        compose.onNodeWithText("VirGL 驱动不可用，桌面与图形将使用 2D 渲染").assertExists()
     }
 }

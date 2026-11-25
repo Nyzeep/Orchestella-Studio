@@ -257,7 +257,6 @@ class SetupWizardModel(
 
     fun hardwareSpecsSummary(): String {
         val diskGb = hardwareConfig.diskCapacityBytes() / (1024L * 1024L * 1024L)
-        val gpuText = if (hardwareConfig.gpuAccelerationEnabled()) " · GPU 加速" else ""
-        return "${hardwareConfig.cpuCores()} vCPU · ${hardwareConfig.ramMegabytes()} MB · ${diskGb} GB$gpuText"
+        return "${hardwareConfig.cpuCores()} vCPU · ${hardwareConfig.ramMegabytes()} MB · $diskGb GB"
     }
 }

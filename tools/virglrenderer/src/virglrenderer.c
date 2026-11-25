@@ -21,6 +21,12 @@
  * IN THE SOFTWARE.
  */
 
+/*
+ * App-process stub for GPU memory quotas and EGL robustness probes. The QEMU
+ * subprocess receives no render IPC from this stub. Command submission is
+ * limited to checking for and handling app EGL context resets.
+ */
+
 #include "virglrenderer.h"
 #include "virgl_hw.h"
 #include "virgl_android_gl_loader.h"

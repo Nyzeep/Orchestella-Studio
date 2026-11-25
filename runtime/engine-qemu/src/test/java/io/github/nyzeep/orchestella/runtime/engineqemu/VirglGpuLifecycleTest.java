@@ -219,7 +219,10 @@ public final class VirglGpuLifecycleTest {
     }
 
     @Test
-    public void deviceModelUnsupportedFallsBackWithoutCallingInit() {
+    public void appProcessEglProbeCannotEnableTheGlLessPackagedQemu() {
+        // The bundled bridge is an App-process quota and EGL probe stub with no
+        // render IPC to the QEMU subprocess. A loadable bridge alone proves neither
+        // the QEMU device model nor guest 3D rendering.
         RecordingBridge bridge = new RecordingBridge(true, true, false);
         VirglGpuLifecycle.useBridgeForTest(bridge);
         QemuDeviceModelProbe.useRunnerForTest(

@@ -39,6 +39,9 @@ jobs:
       - name: Test JVM tooling and process protocol
         run: ./guest-assets/scripts/test-local.sh
 
+      - name: Test guest-agent power escalation
+        run: GUEST_RUNTIME_TEST_ROOT="$TICKET26_WORK_ROOT" python3 ./guest-assets/scripts/test-guest-agent-power.py
+
       - name: Verify a required kernel capability cannot be disabled
         run: ./guest-assets/scripts/check-config-rejection.sh
 
@@ -52,8 +55,13 @@ jobs:
       - name: Run QEMU Provisioning smoke
         run: ./guest-assets/smoke/qemu-provisioning-smoke.sh
 
-      - name: Run Desktop smoke
-        run: ./guest-assets/smoke/desktop-smoke.sh
+      - name: Install headless desktop smoke dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: apt-get install --yes --no-install-recommends labwc swaybg wayvnc
+
+      - name: Run live Desktop smoke
+        run: ./guest-assets/smoke/desktop-smoke.sh --mode=live
 
       - name: Upload verified delivery
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

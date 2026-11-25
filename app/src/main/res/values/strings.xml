@@ -195,9 +195,9 @@
          实例硬件页），这里只按能力声明单源标注可用性，不冒充"已开启即加速"。DW-02
          增补 QEMU 设备模型三态：驱动已打包但打包 QEMU 缺 virtio-gpu-gl-device 设备
          模型时，不得许诺"可用"（该链路开不了机）。 -->
-    <string name="wizard_gpu_note_available">GPU 加速（virgl），创建后可在实例硬件页开关</string>
-    <string name="wizard_gpu_note_unavailable">GPU 加速（驱动未打包，创建后开启将回退 2D 渲染）</string>
-    <string name="wizard_gpu_note_device_model_unsupported">GPU 加速（QEMU 设备模型不支持，创建后开启将回退 2D 渲染）</string>
+    <string name="wizard_gpu_note_available">检测到 VirGL 驱动和 QEMU 3D 设备模型，可在实例硬件页配置</string>
+    <string name="wizard_gpu_note_unavailable">VirGL 驱动不可用，桌面与图形将使用 2D 渲染</string>
+    <string name="wizard_gpu_note_device_model_unsupported">当前打包 QEMU 未编入 3D 设备模型，桌面与图形将使用 2D 渲染</string>
     <string name="wizard_btn_create_instance">立即创建并部署实例</string>
 
     <!-- Headless desktop guard & user guidance -->
@@ -514,6 +514,10 @@
     <string name="terminal_drawer_close_title">关闭终端</string>
     <string name="terminal_drawer_desktop">桌面模式</string>
     <string name="terminal_drawer_desktop_content_desc">切换到桌面模式（可用性由 DesktopEntryPolicy 单源判定）</string>
+    <string name="terminal_power_force_message">强制断电会直接停止虚拟机，可能丢失未写入的数据。</string>
+    <string name="terminal_power_force_confirm">确认断电</string>
+    <string name="terminal_power_requested">关机请求已发送，等待实例退出</string>
+    <string name="terminal_power_force_unconfirmed">强制断电未确认，请查看运行日志</string>
 
     <!-- W2-02：终端设置两开关（高级设置页「诊断与开发者选项」卡内追加）。 -->
     <string name="terminal_setting_keep_screen_on_title">终端屏幕常亮（默认关）</string>
