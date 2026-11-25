@@ -1,5 +1,7 @@
 package io.github.nyzeep.orchestella.runtime.contract;
 
+import io.github.nyzeep.orchestella.runtime.contract.display.DisplayViewportBudget;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Objects;
 
@@ -114,12 +116,25 @@ public interface DisplayChannel extends AutoCloseable {
                 byte[] data,
                 long frameId,
                 long timestampNs) {
-            if (width <= 0 || width > 4096 || height <= 0 || height > 4096
-                    || (long) width * height > 4_194_304L) {
+            this(width, height, stride, format, data, frameId, timestampNs, true);
+        }
+
+        private FrameData(
+                int width,
+                int height,
+                int stride,
+                int format,
+                byte[] data,
+                long frameId,
+                long timestampNs,
+                boolean cloneData) {
+            if (width <= 0 || width > DisplayViewportBudget.MAX_EDGE
+                    || height <= 0 || height > DisplayViewportBudget.MAX_EDGE
+                    || (long) width * height > DisplayViewportBudget.MAX_PIXELS) {
                 throw new IllegalArgumentException("frame dimensions exceed the display budget");
             }
             if (stride < (long) width * 4 || (stride & 3) != 0
-                    || (long) stride * height > 16_777_216L) {
+                    || (long) stride * height > DisplayViewportBudget.MAX_BYTES) {
                 throw new IllegalArgumentException("invalid frame stride or byte budget");
             }
             if (format < FORMAT_RGBA_8888 || format > FORMAT_BGRX_8888) {
@@ -133,9 +148,25 @@ public interface DisplayChannel extends AutoCloseable {
             this.height = height;
             this.stride = stride;
             this.format = format;
-            this.data = Objects.requireNonNull(data, "data").clone();
+            this.data = cloneData ? data.clone() : data;
             this.frameId = frameId;
             this.timestampNs = timestampNs;
+        }
+
+        /**
+         * Wraps an exclusively owned pixel buffer without defensive copying.
+         *
+         * <p>Callers MUST NOT mutate {@code ownedData} after passing it to this factory.
+         */
+        public static FrameData fromOwned(
+                int width,
+                int height,
+                int stride,
+                int format,
+                byte[] ownedData,
+                long frameId,
+                long timestampNs) {
+            return new FrameData(width, height, stride, format, ownedData, frameId, timestampNs, false);
         }
 
         public int width() {
@@ -156,6 +187,56 @@ public interface DisplayChannel extends AutoCloseable {
 
         public byte[] data() {
             return data.clone();
+        }
+
+        /** Returns an uncloned read-only {@link ByteBuffer} view over the internal pixel array. */
+        public ByteBuffer asReadOnlyBuffer() {
+            return ByteBuffer.wrap(data).asReadOnlyBuffer();
+        }
+
+        /**
+         * Unpacks pixels into 32-bit ARGB integers ({@code 0xAARRGGBB}) without cloning {@code data}.
+         */
+        public void unpackArgbInto(int[] outPixels) {
+            Objects.requireNonNull(outPixels, "outPixels");
+            int requiredPixels = width * height;
+            if (outPixels.length < requiredPixels) {
+                throw new IllegalArgumentException(
+                        "outPixels length " + outPixels.length + " < " + requiredPixels);
+            }
+            for (int y = 0; y < height; y++) {
+                int rowStart = y * stride;
+                int destRowStart = y * width;
+                for (int x = 0; x < width; x++) {
+                    int src = rowStart + (x * 4);
+                    int dest = destRowStart + x;
+
+                    int b0 = data[src] & 0xFF;
+                    int b1 = data[src + 1] & 0xFF;
+                    int b2 = data[src + 2] & 0xFF;
+                    int b3 = data[src + 3] & 0xFF;
+
+                    int argb;
+                    switch (format) {
+                        case FORMAT_RGBA_8888:
+                            argb = (b3 << 24) | (b0 << 16) | (b1 << 8) | b2;
+                            break;
+                        case FORMAT_RGBX_8888:
+                            argb = (0xFF << 24) | (b0 << 16) | (b1 << 8) | b2;
+                            break;
+                        case FORMAT_BGRA_8888:
+                            argb = (b3 << 24) | (b2 << 16) | (b1 << 8) | b0;
+                            break;
+                        case FORMAT_BGRX_8888:
+                            argb = (0xFF << 24) | (b2 << 16) | (b1 << 8) | b0;
+                            break;
+                        default:
+                            argb = (b3 << 24) | (b0 << 16) | (b1 << 8) | b2;
+                            break;
+                    }
+                    outPixels[dest] = argb;
+                }
+            }
         }
 
         public long frameId() {

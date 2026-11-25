@@ -273,6 +273,14 @@ public final class WaylandSurfaceController {
         }
     }
 
+    private static final class ActiveBinding {
+        final DisplayChannel channel;
+
+        ActiveBinding(DisplayChannel channel) {
+            this.channel = channel;
+        }
+    }
+
     private final DoubleBufferedRenderer renderer;
     private final DisplayResizeDebounce resizeDebounce;
 
@@ -283,10 +291,10 @@ public final class WaylandSurfaceController {
     private DisplayChannel waylandChannel = null;
     private DisplayChannel.StateListener channelStateListener;
     private DisplayChannel.FrameListener channelFrameListener;
-    private long bindingEpoch;
-    private DisplayChannel.ConnectionState connectionState = DisplayChannel.ConnectionState.DISCONNECTED;
+    private volatile ActiveBinding activeBinding;
+    private volatile DisplayChannel.ConnectionState connectionState = DisplayChannel.ConnectionState.DISCONNECTED;
     private boolean isBound = false;
-    private double targetScale = 1.0;
+    private volatile double targetScale = 1.0;
 
     public WaylandSurfaceController(
             DoubleBufferedRenderer renderer,
@@ -333,7 +341,7 @@ public final class WaylandSurfaceController {
         }
     }
 
-    public synchronized double getTargetScale() {
+    public double getTargetScale() {
         return targetScale;
     }
 
@@ -352,19 +360,18 @@ public final class WaylandSurfaceController {
             displayControl.updateScale(targetScale);
         }
 
-        long expected = ++bindingEpoch;
+        ActiveBinding binding = new ActiveBinding(waylandChannel);
+        this.activeBinding = binding;
         renderer.reset();
         if (waylandChannel != null) {
             channelFrameListener = frame -> {
-                synchronized (WaylandSurfaceController.this) {
-                    if (bindingEpoch == expected && this.waylandChannel == waylandChannel)
-                        renderer.onFrameAvailable(frame);
+                if (this.activeBinding == binding) {
+                    renderer.onFrameAvailable(frame);
                 }
             };
             channelStateListener = (state, message) -> {
-                synchronized (WaylandSurfaceController.this) {
-                    if (bindingEpoch == expected && this.waylandChannel == waylandChannel)
-                        this.connectionState = state;
+                if (this.activeBinding == binding) {
+                    this.connectionState = state;
                 }
             };
             waylandChannel.registerFrameListener(channelFrameListener);
@@ -379,7 +386,7 @@ public final class WaylandSurfaceController {
      * Unbinds the channel and display control, unregistering all frame and state observers.
      */
     public synchronized void unbind() {
-        bindingEpoch++;
+        this.activeBinding = null;
         if (waylandChannel != null) {
             waylandChannel.unregisterFrameListener(channelFrameListener);
             waylandChannel.removeStateListener(channelStateListener);
@@ -388,7 +395,7 @@ public final class WaylandSurfaceController {
         channelFrameListener = null;
         channelStateListener = null;
         renderer.reset();
-        resizeDebounce.cancel();
+        resizeDebounce.reset();
 
         this.displayControl = null;
         this.waylandChannel = null;
@@ -457,6 +464,7 @@ public final class WaylandSurfaceController {
     public synchronized void onDestroy() {
         this.lifecycleState = LifecycleState.DESTROYED;
         unbind();
+        resizeDebounce.close();
         renderer.release();
     }
 
@@ -489,7 +497,7 @@ public final class WaylandSurfaceController {
         return waylandChannel;
     }
 
-    public synchronized HudBadgeInfo getHudBadgeInfo() {
+    public HudBadgeInfo getHudBadgeInfo() {
         DisplayChannel.FrameData front = renderer.getFrontBuffer();
         int contentWidth = front != null ? front.width() : 0;
         int contentHeight = front != null ? front.height() : 0;

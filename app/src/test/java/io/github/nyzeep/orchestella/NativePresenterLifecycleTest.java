@@ -28,7 +28,8 @@ public final class NativePresenterLifecycleTest {
 
     @Test public void testSurfaceHolderCallbackFlow() {
         assertFalse(presenter.isReady());
-        assertTrue(nativeAdapter.callbacks.callbacks.contains(presenter));
+        assertFalse("NativeGlesSurfacePresenter must not register duplicate SurfaceHolder.Callback",
+                nativeAdapter.callbacks.callbacks.contains(presenter));
         presenter.surfaceCreated(holder);
         assertTrue("Presenter should be ready after successful native surface initialization", presenter.isReady());
         assertEquals(1, nativeAdapter.initializeCalls);
@@ -86,7 +87,14 @@ public final class NativePresenterLifecycleTest {
         assertEquals(1, presenter.getPresentCallCount());
         assertTrue(presenter.lastPresentationSucceeded());
         assertEquals(1, confirmations[0]);
-        assertArrayEquals(new int[] {0xffff0000, 0xff00ff00, 0xff0000ff, 0xffffff00}, nativeAdapter.presentedPixels);
+        assertEquals(1, nativeAdapter.presentRgbaCalls);
+        assertEquals(0, nativeAdapter.presentArgbCalls);
+        assertArrayEquals(new byte[] {
+                (byte) 255, 0, 0, (byte) 255,
+                0, (byte) 255, 0, (byte) 255,
+                0, 0, (byte) 255, (byte) 255,
+                (byte) 255, (byte) 255, 0, (byte) 255
+        }, nativeAdapter.presentedRgba);
         assertEquals(2, nativeAdapter.presentedWidth);
         assertEquals(2, nativeAdapter.presentedHeight);
         assertEquals(nativeAdapter.presentTimeMs, presenter.getLastPresentTimeMs(), 0.001f);
@@ -190,5 +198,43 @@ public final class NativePresenterLifecycleTest {
         assertEquals(0, presenter.getNativeHandle());
         assertEquals(1, nativeAdapter.releaseCalls);
         assertEquals(1, nativeAdapter.initializeCalls);
+    }
+
+    @Test public void singleThreadRenderExecutorPinsAllEglCallsToOneDedicatedThread() throws Exception {
+        NativePresenterContractTest.NativeFixture fixture = new NativePresenterContractTest.NativeFixture();
+        NativeGlesSurfacePresenter.SingleThreadRenderExecutor executor =
+                new NativeGlesSurfacePresenter.SingleThreadRenderExecutor();
+        NativeGlesSurfacePresenter threadedPresenter =
+                new NativeGlesSurfacePresenter(fixture.holder, fixture, executor);
+        try {
+            threadedPresenter.surfaceCreated(fixture.holder);
+            threadedPresenter.surfaceChanged(fixture.holder, 0, 1080, 2400);
+
+            DoubleBufferedRenderer renderer = new DoubleBufferedRenderer(threadedPresenter, Runnable::run);
+            renderer.setViewportSize(1080, 2400);
+            java.util.concurrent.CountDownLatch presented = new java.util.concurrent.CountDownLatch(1);
+            renderer.setPresentationObserver(frame -> presented.countDown());
+            renderer.onFrameAvailable(coloredFrame());
+            assertTrue("async EGL render thread must present frame",
+                    presented.await(2, java.util.concurrent.TimeUnit.SECONDS));
+
+            threadedPresenter.clear(0xFF000000);
+            threadedPresenter.surfaceDestroyed(fixture.holder);
+            threadedPresenter.release();
+
+            assertEquals("all native EGL/GL hooks must run on one dedicated thread",
+                    1, fixture.nativeCallThreads.size());
+            Thread eglThread = fixture.nativeCallThreads.iterator().next();
+            assertFalse("EGL thread must differ from caller thread",
+                    eglThread == Thread.currentThread());
+            assertEquals("orchestella-gles", eglThread.getName());
+            assertEquals(1, fixture.presentRgbaCalls);
+            assertEquals(0, fixture.presentArgbCalls);
+            assertEquals(1, fixture.clearCalls);
+            assertEquals(1, fixture.destroyCalls);
+            assertEquals(1, fixture.releaseCalls);
+        } finally {
+            threadedPresenter.release();
+        }
     }
 }

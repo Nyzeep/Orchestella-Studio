@@ -381,4 +381,84 @@ public final class WaylandSurfaceViewLifecycleTest {
         view.surfaceDestroyed(holder);
         assertEquals(WaylandSurfaceController.SurfaceState.DESTROYED, controller.getSurfaceState());
     }
+
+    @Test
+    public void surfaceCallbacksFireExactlyOnceOnNativePresenterWithoutDoubleRegistration() {
+        NativePresenterContractTest.NativeFixture fixture = new NativePresenterContractTest.NativeFixture();
+        NativeGlesSurfacePresenter presenter = new NativeGlesSurfacePresenter(fixture.holder, fixture);
+        DoubleBufferedRenderer renderer = new DoubleBufferedRenderer(presenter, Runnable::run);
+        TestScheduler scheduler = new TestScheduler();
+        WaylandSurfaceController controller = new WaylandSurfaceController(renderer, scheduler);
+        WaylandSurfaceView view = new WaylandSurfaceView(null, controller);
+
+        assertFalse("presenter must not add a second SurfaceHolder.Callback",
+                fixture.callbacks.callbacks.contains(presenter));
+
+        view.surfaceCreated(fixture.holder);
+        view.surfaceChanged(fixture.holder, 0, 1440, 3120);
+        view.surfaceDestroyed(fixture.holder);
+
+        assertEquals(1, fixture.initializeCalls);
+        assertEquals(1, fixture.changeCalls);
+        assertEquals(1, fixture.destroyCalls);
+
+        // Controller keeps physical viewport 1440x3120 while resize debounce dispatches budgeted 1390x3014.
+        assertEquals(1440, renderer.getViewportWidth());
+        assertEquals(3120, renderer.getViewportHeight());
+        FakeDisplayControl displayControl = new FakeDisplayControl();
+        controller.bind(displayControl, new FakeDisplayChannel());
+        view.surfaceChanged(fixture.holder, 0, 1440, 3120);
+        scheduler.fire();
+        assertEquals(1390, displayControl.lastResizeWidth);
+        assertEquals(3014, displayControl.lastResizeHeight);
+
+        view.onDestroy();
+        assertTrue(controller.getResizeDebounce().isClosed());
+    }
+
+    @Test
+    public void surfaceChangedPrefersArrivedFrameDimensionsOverStaleDisplayModeForTouchMapping() {
+        TestPresenter presenter = new TestPresenter();
+        DoubleBufferedRenderer renderer = new DoubleBufferedRenderer(presenter, Runnable::run);
+        WaylandSurfaceController controller = new WaylandSurfaceController(renderer, new TestScheduler());
+        WaylandSurfaceView view = new WaylandSurfaceView(null, controller);
+
+        FakeDisplayControl displayControl = new FakeDisplayControl(); // starts at 1280x720
+        FakeDisplayChannel channel = new FakeDisplayChannel();
+        view.bind(displayControl, channel);
+        FakeSurfaceHolder holder = new FakeSurfaceHolder();
+        view.surfaceCreated(holder);
+
+        // Deliver a portrait frame while displayControl.currentMode() still reports stale 1280x720.
+        DisplayChannel.FrameData portraitFrame = DisplayChannel.FrameData.fromOwned(
+                1080, 2400, 1080 * 4, DisplayChannel.FrameData.FORMAT_RGBA_8888,
+                new byte[1080 * 2400 * 4], 1L, 100L);
+        for (DisplayChannel.FrameListener listener : channel.frameListeners) {
+            listener.onFrameAvailable(portraitFrame);
+        }
+
+        view.surfaceChanged(holder, 0, 1080, 2400);
+        ViewportAspectCalculator.ViewportMapping mapping = view.getTouchGestureMapper().getViewportMapping();
+        assertEquals(1080, mapping.contentWidth());
+        assertEquals(2400, mapping.contentHeight());
+        assertTrue(mapping.isExactFit());
+        view.onDestroy();
+    }
+
+    @Test
+    public void desktopSurfaceControllerProvidesBudgetNegotiationAndIdempotentTeardown() {
+        TestPresenter presenter = new TestPresenter();
+        DoubleBufferedRenderer renderer = new DoubleBufferedRenderer(presenter, Runnable::run);
+        WaylandSurfaceController controller = new WaylandSurfaceController(renderer, new TestScheduler());
+        WaylandSurfaceView view = new WaylandSurfaceView(null, controller);
+
+        DesktopSurfaceController surfaceController =
+                new DesktopSurfaceController(view, null, null, 2.0, null);
+        assertEquals(1390, surfaceController.negotiatedViewport(1440, 3120).width());
+        assertEquals(3014, surfaceController.negotiatedViewport(1440, 3120).height());
+
+        surfaceController.onActivityDestroyed();
+        surfaceController.onActivityDestroyed();
+        assertTrue(controller.getResizeDebounce().isClosed());
+    }
 }

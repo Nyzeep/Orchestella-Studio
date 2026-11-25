@@ -1,23 +1,26 @@
 package io.github.nyzeep.orchestella;
 
 import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
+import java.nio.ByteBuffer;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * High-performance double-buffered graphics presentation engine for Wayland frame data.
+ * Lock-free latest-frame double-buffered graphics presentation scheduler for display frame data.
  *
  * <p>Conforms to ADR-0017 and Ticket 39:
  * <ul>
- *   <li>Ping-pong front/back buffer swapping to eliminate rendering tearing and contention;</li>
- *   <li>Unpacks RGBA_8888, RGBX_8888, BGRA_8888, and BGRX_8888 pixel formats with stride support;</li>
+ *   <li>Lock-free O(1) {@link #onFrameAvailable(DisplayChannel.FrameData)} latest-frame exchange so
+ *       the RFB reader thread is never blocked by pixel unpacking or GLES upload;</li>
+ *   <li>Zero-clone RGBA pass-through via {@link SurfacePresenter#presentRgba} when the channel
+ *       delivers {@code FORMAT_RGBA_8888}, with automatic fallback bridge for legacy presenters;</li>
  *   <li>Maintains aspect-ratio-preserving viewport geometry (letterboxing / pillarboxing);</li>
- *   <li>Synchronized with VSYNC; idle scenes skip rendering to maintain near-zero CPU usage;</li>
- *   <li>Drops stale intermediate frames if production outpaces presentation;</li>
- *   <li>Bounded reusable pixel buffers to prevent memory leaks and GC pressure.</li>
+ *   <li>Synchronized with VSYNC and single-flight presentation scheduling so slow consumers drop
+ *       stale intermediate frames without queuing backlogs.</li>
  * </ul>
- *
- * <p>The class name is retained for historical product naming (View layer); the frame data it
- * renders is {@link DisplayChannel.FrameData} (see ADR-0017).
  */
 public class DoubleBufferedRenderer implements DisplayChannel.FrameListener {
 
@@ -28,6 +31,51 @@ public class DoubleBufferedRenderer implements DisplayChannel.FrameListener {
         boolean isReady();
         default void setReady(boolean ready) {}
         void present(int[] pixels, int width, int height, ViewportAspectCalculator.ViewportMapping mapping);
+
+        /**
+         * Presents a read-only RGBA_8888 buffer directly to the underlying surface without an
+         * intermediate {@code int[]} conversion. Legacy presenters inherit a bridge to
+         * {@link #present(int[], int, int, ViewportAspectCalculator.ViewportMapping)}.
+         */
+        default void presentRgba(
+                ByteBuffer rgbaPixels,
+                int width,
+                int height,
+                int strideBytes,
+                ViewportAspectCalculator.ViewportMapping mapping) {
+            if (rgbaPixels == null || mapping == null || width <= 0 || height <= 0
+                    || strideBytes < width * 4) {
+                return;
+            }
+            ByteBuffer ro = rgbaPixels.slice();
+            if (ro.remaining() < strideBytes * height) {
+                return;
+            }
+            int[] argb = new int[width * height];
+            for (int y = 0; y < height; y++) {
+                int rowBase = y * strideBytes;
+                int destBase = y * width;
+                for (int x = 0; x < width; x++) {
+                    int off = rowBase + (x * 4);
+                    int r = ro.get(off) & 0xFF;
+                    int g = ro.get(off + 1) & 0xFF;
+                    int b = ro.get(off + 2) & 0xFF;
+                    int a = ro.get(off + 3) & 0xFF;
+                    argb[destBase + x] = (a << 24) | (r << 16) | (g << 8) | b;
+                }
+            }
+            present(argb, width, height, mapping);
+        }
+
+        /**
+         * Dispatches a frame presentation task on the presenter's owning execution context
+         * (e.g., dedicated single-thread EGL worker). Synchronous presenters run inline.
+         */
+        default boolean submitPresentation(Runnable task) {
+            task.run();
+            return true;
+        }
+
         default boolean lastPresentationSucceeded() { return isReady(); }
         void clear(int color);
         void release();
@@ -44,35 +92,35 @@ public class DoubleBufferedRenderer implements DisplayChannel.FrameListener {
 
     private final SurfacePresenter presenter;
     private final VsyncScheduler vsyncScheduler;
+    private final Object consumerLock = new Object();
 
-    private int viewportWidth = 1920;
-    private int viewportHeight = 1080;
+    private final AtomicInteger viewportWidth = new AtomicInteger(1920);
+    private final AtomicInteger viewportHeight = new AtomicInteger(1080);
 
-    // Buffer slots for double-buffering ping-pong
-    private DisplayChannel.FrameData backBuffer = null;
-    private DisplayChannel.FrameData frontBuffer = null;
-    private boolean hasNewFrame = false;
+    private final AtomicReference<DisplayChannel.FrameData> pendingFrame = new AtomicReference<>();
+    private final AtomicReference<DisplayChannel.FrameData> frontBuffer = new AtomicReference<>();
 
-    // Pre-allocated reusable int[] pixel buffers to avoid GC allocations during 60 FPS streaming
+    private final AtomicBoolean vsyncRequested = new AtomicBoolean(false);
+    private final AtomicBoolean presentInFlight = new AtomicBoolean(false);
+    private final AtomicBoolean active = new AtomicBoolean(true);
+    private final AtomicBoolean released = new AtomicBoolean(false);
+
+    // Consumer-only reusable int[] buffer for non-RGBA formats; guarded exclusively by consumerLock.
     private int[] pixelBuffer = null;
     private int pixelBufferCapacity = 0;
 
-    // Frame metrics & accounting
-    private int renderedFramesCount = 0;
-    private int droppedFramesCount = 0;
-    private long lastFrameTimestampNs = 0;
+    private final AtomicInteger renderedFramesCount = new AtomicInteger(0);
+    private final AtomicInteger droppedFramesCount = new AtomicInteger(0);
+    private final AtomicLong lastFrameTimestampNs = new AtomicLong(0);
+    private final AtomicInteger currentFps = new AtomicInteger(0);
 
-    // Rolling FPS tracking
+    // Consumer-only FPS window tracking; guarded exclusively by consumerLock.
     private long fpsWindowStartNs = 0;
     private int fpsFrameCount = 0;
-    private int currentFps = 0;
 
-    private boolean isVsyncRequested = false;
-    private boolean active = true;
-    private boolean released;
-    private java.util.function.Consumer<DisplayChannel.FrameData> presentationObserver;
+    private volatile java.util.function.Consumer<DisplayChannel.FrameData> presentationObserver;
 
-    public synchronized void setPresentationObserver(java.util.function.Consumer<DisplayChannel.FrameData> observer) {
+    public void setPresentationObserver(java.util.function.Consumer<DisplayChannel.FrameData> observer) {
         presentationObserver = observer;
     }
 
@@ -82,95 +130,149 @@ public class DoubleBufferedRenderer implements DisplayChannel.FrameListener {
     }
 
     public DoubleBufferedRenderer(SurfacePresenter presenter) {
-        this(presenter, callback -> callback.run());
+        this(presenter, Runnable::run);
     }
 
     public SurfacePresenter getPresenter() {
         return presenter;
     }
 
-    public synchronized void setViewportSize(int width, int height) {
+    public void setViewportSize(int width, int height) {
         if (width > 0 && height > 0) {
-            this.viewportWidth = width;
-            this.viewportHeight = height;
+            viewportWidth.set(width);
+            viewportHeight.set(height);
         }
     }
 
-    public synchronized int getViewportWidth() {
-        return viewportWidth;
+    public int getViewportWidth() {
+        return viewportWidth.get();
     }
 
-    public synchronized int getViewportHeight() {
-        return viewportHeight;
+    public int getViewportHeight() {
+        return viewportHeight.get();
     }
 
     /**
-     * Producer callback invoked when a new frame is decoded from the Wayland channel.
-     * Enqueues into back-buffer; if previous back-buffer was unconsumed, discards it to prevent latency.
+     * Lock-free O(1) producer callback invoked when a new frame arrives from the display channel.
+     * Atomically exchanges the latest pending slot; any overwritten unconsumed frame is counted as dropped.
      */
     @Override
-    public synchronized void onFrameAvailable(DisplayChannel.FrameData frame) {
-        if (frame == null || !active || released) {
+    public void onFrameAvailable(DisplayChannel.FrameData frame) {
+        if (frame == null || !active.get() || released.get()) {
             return;
         }
 
-        if (hasNewFrame) {
-            // Producer is faster than VSYNC presentation: drop stale intermediate frame
-            droppedFramesCount++;
+        DisplayChannel.FrameData overwritten = pendingFrame.getAndSet(frame);
+        if (overwritten != null) {
+            droppedFramesCount.incrementAndGet();
         }
 
-        this.backBuffer = frame;
-        this.hasNewFrame = true;
+        if (!active.get() || released.get()) {
+            pendingFrame.set(null);
+            return;
+        }
 
-        if (!isVsyncRequested) {
-            isVsyncRequested = true;
+        if (vsyncRequested.compareAndSet(false, true)) {
             vsyncScheduler.requestVsync(this::tickVsync);
         }
     }
 
     /**
-     * Consumer callback invoked on VSYNC tick. Consumes latest back-buffer, performs format conversion,
-     * calculates viewport mapping, and presents to the hardware surface.
+     * Consumer callback invoked on VSYNC tick. Pops the latest pending frame without blocking the
+     * producer and dispatches upload/swap onto the presenter's owning execution context.
      */
-    public synchronized void tickVsync() {
-        isVsyncRequested = false;
+    public void tickVsync() {
+        vsyncRequested.set(false);
 
-        if (!active || released || !hasNewFrame || backBuffer == null) {
-            // Static scene: zero redraw, saving CPU and GPU power
+        if (!active.get() || released.get()) {
+            pendingFrame.set(null);
             return;
         }
 
-        // Swap ping-pong buffers
-        frontBuffer = backBuffer;
-        backBuffer = null;
-        hasNewFrame = false;
-
-        if (!presenter.isReady()) {
+        if (!presentInFlight.compareAndSet(false, true)) {
             return;
         }
 
-        int width = frontBuffer.width();
-        int height = frontBuffer.height();
-        int requiredSize = width * height;
-
-        if (pixelBuffer == null || pixelBufferCapacity < requiredSize) {
-            pixelBuffer = new int[requiredSize];
-            pixelBufferCapacity = requiredSize;
+        DisplayChannel.FrameData frame = pendingFrame.getAndSet(null);
+        if (frame == null) {
+            presentInFlight.set(false);
+            schedulePendingIfNeeded();
+            return;
         }
 
-        unpackFrameData(frontBuffer, pixelBuffer);
+        Runnable task = () -> {
+            try {
+                presentConsumedFrame(frame);
+            } finally {
+                presentInFlight.set(false);
+                schedulePendingIfNeeded();
+            }
+        };
 
-        ViewportAspectCalculator.ViewportMapping mapping =
-                ViewportAspectCalculator.calculate(width, height, viewportWidth, viewportHeight);
+        boolean submitted = false;
+        try {
+            submitted = presenter.submitPresentation(task);
+        } finally {
+            if (!submitted) {
+                presentInFlight.set(false);
+            }
+        }
+    }
 
-        presenter.present(pixelBuffer, width, height, mapping);
-        if (!presenter.lastPresentationSucceeded()) { droppedFramesCount++; return; }
+    private void schedulePendingIfNeeded() {
+        if (active.get() && !released.get()
+                && pendingFrame.get() != null
+                && vsyncRequested.compareAndSet(false, true)) {
+            vsyncScheduler.requestVsync(this::tickVsync);
+        }
+    }
 
-        renderedFramesCount++;
-        lastFrameTimestampNs = System.nanoTime();
+    private void presentConsumedFrame(DisplayChannel.FrameData frame) {
+        synchronized (consumerLock) {
+            if (!active.get() || released.get()) {
+                return;
+            }
 
-        updateFpsMetrics(lastFrameTimestampNs);
-        if (presentationObserver != null) presentationObserver.accept(frontBuffer);
+            frontBuffer.set(frame);
+
+            if (!presenter.isReady()) {
+                return;
+            }
+
+            int width = frame.width();
+            int height = frame.height();
+            int vw = viewportWidth.get();
+            int vh = viewportHeight.get();
+            ViewportAspectCalculator.ViewportMapping mapping =
+                    ViewportAspectCalculator.calculate(width, height, vw, vh);
+
+            if (frame.format() == DisplayChannel.FrameData.FORMAT_RGBA_8888) {
+                presenter.presentRgba(frame.asReadOnlyBuffer(), width, height, frame.stride(), mapping);
+            } else {
+                int requiredSize = width * height;
+                if (pixelBuffer == null || pixelBufferCapacity < requiredSize) {
+                    pixelBuffer = new int[requiredSize];
+                    pixelBufferCapacity = requiredSize;
+                }
+                frame.unpackArgbInto(pixelBuffer);
+                presenter.present(pixelBuffer, width, height, mapping);
+            }
+
+            if (!presenter.lastPresentationSucceeded()) {
+                droppedFramesCount.incrementAndGet();
+                return;
+            }
+
+            renderedFramesCount.incrementAndGet();
+            long nowNs = System.nanoTime();
+            lastFrameTimestampNs.set(nowNs);
+            updateFpsMetrics(nowNs);
+
+            java.util.function.Consumer<DisplayChannel.FrameData> observer = presentationObserver;
+            if (observer != null && active.get() && !released.get()) {
+                observer.accept(frame);
+            }
+        }
     }
 
     private void updateFpsMetrics(long nowNs) {
@@ -182,113 +284,70 @@ public class DoubleBufferedRenderer implements DisplayChannel.FrameListener {
 
         fpsFrameCount++;
         long elapsedNs = nowNs - fpsWindowStartNs;
-        if (elapsedNs >= 1_000_000_000L) { // 1 second rolling window
-            currentFps = (int) Math.round((fpsFrameCount * 1_000_000_000.0) / elapsedNs);
+        if (elapsedNs >= 1_000_000_000L) {
+            currentFps.set((int) Math.round((fpsFrameCount * 1_000_000_000.0) / elapsedNs));
             fpsFrameCount = 0;
             fpsWindowStartNs = nowNs;
         }
     }
 
-    /**
-     * Unpacks raw FrameData byte array into 32-bit packed ARGB integers (0xAARRGGBB).
-     */
-    private static void unpackFrameData(DisplayChannel.FrameData frame, int[] outPixels) {
-        int width = frame.width();
-        int height = frame.height();
-        int stride = frame.stride();
-        int format = frame.format();
-        byte[] data = frame.data();
-
-        for (int y = 0; y < height; y++) {
-            int rowStart = y * stride;
-            int destRowStart = y * width;
-            for (int x = 0; x < width; x++) {
-                int src = rowStart + (x * 4);
-                int dest = destRowStart + x;
-
-                int b0 = data[src] & 0xFF;
-                int b1 = data[src + 1] & 0xFF;
-                int b2 = data[src + 2] & 0xFF;
-                int b3 = data[src + 3] & 0xFF;
-
-                int argb;
-                switch (format) {
-                    case DisplayChannel.FrameData.FORMAT_RGBA_8888:
-                        // b0=R, b1=G, b2=B, b3=A
-                        argb = (b3 << 24) | (b0 << 16) | (b1 << 8) | b2;
-                        break;
-                    case DisplayChannel.FrameData.FORMAT_RGBX_8888:
-                        // b0=R, b1=G, b2=B, b3=X (force A=0xFF)
-                        argb = (0xFF << 24) | (b0 << 16) | (b1 << 8) | b2;
-                        break;
-                    case DisplayChannel.FrameData.FORMAT_BGRA_8888:
-                        // b0=B, b1=G, b2=R, b3=A
-                        argb = (b3 << 24) | (b2 << 16) | (b1 << 8) | b0;
-                        break;
-                    case DisplayChannel.FrameData.FORMAT_BGRX_8888:
-                        // b0=B, b1=G, b2=R, b3=X (force A=0xFF)
-                        argb = (0xFF << 24) | (b2 << 16) | (b1 << 8) | b0;
-                        break;
-                    default:
-                        argb = (b3 << 24) | (b0 << 16) | (b1 << 8) | b2;
-                        break;
-                }
-                outPixels[dest] = argb;
-            }
-        }
+    public int getRenderedFrameCount() {
+        return renderedFramesCount.get();
     }
 
-    public synchronized int getRenderedFrameCount() {
-        return renderedFramesCount;
+    public int getDroppedFrameCount() {
+        return droppedFramesCount.get();
     }
 
-    public synchronized int getDroppedFrameCount() {
-        return droppedFramesCount;
+    public int getFps() {
+        return currentFps.get();
     }
 
-    public synchronized int getFps() {
-        return currentFps;
+    public long getLastFrameTimestampNs() {
+        return lastFrameTimestampNs.get();
     }
 
-    public synchronized long getLastFrameTimestampNs() {
-        return lastFrameTimestampNs;
+    public boolean hasNewFrame() {
+        return pendingFrame.get() != null;
     }
 
-    public synchronized boolean hasNewFrame() {
-        return hasNewFrame;
+    public DisplayChannel.FrameData getFrontBuffer() {
+        return frontBuffer.get();
     }
 
-    public synchronized DisplayChannel.FrameData getFrontBuffer() {
-        return frontBuffer;
-    }
-
-    public synchronized DisplayChannel.FrameData getBackBuffer() {
-        return backBuffer;
+    public DisplayChannel.FrameData getBackBuffer() {
+        return pendingFrame.get();
     }
 
     /** Pausing rejects producer callbacks until the controller explicitly resumes presentation. */
-    public synchronized void setActive(boolean active) {
-        if (released) return;
-        this.active = active;
-        if (!active) reset();
+    public void setActive(boolean isActive) {
+        if (released.get()) {
+            return;
+        }
+        active.set(isActive);
+        if (!isActive) {
+            reset();
+        }
     }
 
-    public synchronized void reset() {
+    public void reset() {
         vsyncScheduler.cancel();
-        isVsyncRequested = false;
-        hasNewFrame = false;
-        backBuffer = null;
-        frontBuffer = null;
+        vsyncRequested.set(false);
+        pendingFrame.set(null);
+        frontBuffer.set(null);
     }
 
-    public synchronized void release() {
-        if (released) return;
-        released = true;
-        active = false;
+    public void release() {
+        if (!released.compareAndSet(false, true)) {
+            return;
+        }
+        active.set(false);
         presentationObserver = null;
         reset();
+        synchronized (consumerLock) {
+            pixelBuffer = null;
+            pixelBufferCapacity = 0;
+        }
         presenter.release();
-        pixelBuffer = null;
-        pixelBufferCapacity = 0;
     }
 }

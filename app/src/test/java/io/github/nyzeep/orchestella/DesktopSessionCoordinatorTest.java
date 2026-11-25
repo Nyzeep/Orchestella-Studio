@@ -325,8 +325,8 @@ public final class DesktopSessionCoordinatorTest {
         assertTrue("desktopLaunch must precede STATUS polling",
                 requests.contains("ORCHESTELLA/DISPLAY LAUNCH"));
         assertTrue(requests.contains("ORCHESTELLA/FEATURES 1 STATUS desktop-labwc"));
-        assertTrue("displayMode clamps to 1920x1080 and carries the target scale",
-                requests.contains("ORCHESTELLA/DISPLAY MODE 1920 1080 1.25"));
+        assertTrue("displayMode uses DisplayViewportBudget without clamping 2560x1440 down to 1920x1080",
+                requests.contains("ORCHESTELLA/DISPLAY MODE 2560 1440 1.25"));
         assertEquals(1, session.reconnectCalls.size());
         assertTrue(session.reconnectCalls.get(0)[0]);
         assertFalse(session.reconnectCalls.get(0)[1]);
@@ -353,7 +353,60 @@ public final class DesktopSessionCoordinatorTest {
         String requests = client.requests();
         assertFalse("connected channel must not re-launch the compositor",
                 requests.contains("ORCHESTELLA/DISPLAY LAUNCH"));
-        assertTrue(requests.contains("ORCHESTELLA/DISPLAY MODE 1920 1080 1.25"));
+        assertTrue(requests.contains("ORCHESTELLA/DISPLAY MODE 2560 1440 1.25"));
+    }
+
+    @Test
+    public void negotiationPreservesPortraitAspectRatioAndFits2kPlusWithinBudget() throws Exception {
+        FakeSession portraitSession = registeredSession();
+        FakeChannel portraitChannel = new FakeChannel();
+        portraitChannel.connected = true;
+        portraitSession.channel = portraitChannel;
+        ScriptedClient portraitClient = new ScriptedClient("ORCHESTELLA/OK display");
+        portraitSession.client = portraitClient.client;
+        assertTrue(portraitClient.client.handshake(TOKEN).accepted());
+
+        FakeHost host = new FakeHost();
+        RecordingFailureSink sink = new RecordingFailureSink();
+        DesktopSessionCoordinator portraitCoordinator = new DesktopSessionCoordinator(
+                portraitSession, instanceId, portraitChannel, 1080, 2400, 2.0, host, sink, new DirectExecutor());
+        portraitCoordinator.onForeground();
+        portraitCoordinator.negotiateOnce(portraitSession, 1L);
+
+        assertNull(sink.message);
+        assertTrue("portrait 1080x2400 must not be squashed to 1080x1080",
+                portraitClient.requests().contains("ORCHESTELLA/DISPLAY MODE 1080 2400 2.0"));
+
+        FakeSession qhdSession = new FakeSession();
+        String qhdId = instanceId + "-qhd";
+        ExecutionSessionRegistry.register(qhdId, qhdSession);
+        try {
+            FakeChannel qhdChannel = new FakeChannel();
+            qhdChannel.connected = true;
+            qhdSession.channel = qhdChannel;
+            ScriptedClient qhdClient = new ScriptedClient("ORCHESTELLA/OK display");
+            qhdSession.client = qhdClient.client;
+            assertTrue(qhdClient.client.handshake(TOKEN).accepted());
+
+            DesktopSessionCoordinator qhdCoordinator = new DesktopSessionCoordinator(
+                    qhdSession, qhdId, qhdChannel, 1440, 3120, 2.0, host, sink, new DirectExecutor());
+            qhdCoordinator.onForeground();
+            qhdCoordinator.negotiateOnce(qhdSession, 1L);
+
+            assertNull(sink.message);
+            assertTrue("1440x3120 must fit within 4_194_304 budget preserving aspect ratio",
+                    qhdClient.requests().contains("ORCHESTELLA/DISPLAY MODE 1390 3014 2.0"));
+
+            try (RfbDisplaySession rfbSession = new RfbDisplaySession(
+                    () -> { throw new java.io.IOException("unused"); }, TOKEN, () -> qhdClient.client)) {
+                assertFalse("raw 1440x3120 exceeds pixel budget and must be rejected",
+                        rfbSession.setMode(1440, 3120, 2.0));
+                assertTrue("budgeted 1390x3014 must be accepted by RfbDisplaySession",
+                        rfbSession.setMode(1390, 3014, 2.0));
+            }
+        } finally {
+            ExecutionSessionRegistry.unregister(qhdId);
+        }
     }
 
     @Test

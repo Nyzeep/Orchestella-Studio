@@ -6,6 +6,7 @@ import io.github.nyzeep.orchestella.runtime.contract.DisplayListener;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayMode;
 import io.github.nyzeep.orchestella.runtime.contract.InputEvent;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
+import io.github.nyzeep.orchestella.runtime.contract.display.DisplayViewportBudget;
 import io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -110,8 +111,8 @@ public final class RfbDisplaySession implements DisplayChannel, DisplayControl {
     @Override public DisplayMode currentMode() { return new DisplayMode(width, height, scale, 160, 15); }
     @Override public boolean resizeDisplay(int width, int height) { return setMode(width, height, scale); }
     @Override public boolean setMode(int width, int height, double scale) {
-        if (closed || width < 100 || height < 100 || width > 4096 || height > 4096
-                || (long) width * height > 4_194_304 || !Double.isFinite(scale) || scale < 0.1 || scale > 5)
+        if (closed || !DisplayViewportBudget.isWithinBudget(width, height)
+                || !Double.isFinite(scale) || scale < DisplayMode.MIN_SCALE || scale > DisplayMode.MAX_SCALE)
             return false;
         BridgeClient client = control.get();
         if (client == null || !client.isReady()) return false;

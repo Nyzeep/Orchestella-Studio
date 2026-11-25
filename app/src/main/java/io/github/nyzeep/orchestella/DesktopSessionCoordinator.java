@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella;
 
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
+import io.github.nyzeep.orchestella.runtime.contract.display.DisplayViewportBudget;
 import java.io.IOException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -202,9 +203,10 @@ public final class DesktopSessionCoordinator {
                 if (!attached) throw new IOException("桌面启动超过期限，请返回终端查看 guest 状态");
             }
             if (!isCurrentDisplay(target, client, lifecycle)) return;
-            int width = Math.min(1920, Math.max(100, screenWidth));
-            int height = Math.min(1080, Math.max(100, screenHeight));
-            BridgeClient.Result mode = client.displayMode(width, height, targetScale);
+            DisplayViewportBudget.FittedViewport fitted =
+                    DesktopSurfaceController.negotiateViewport(screenWidth, screenHeight, targetScale);
+            BridgeClient.Result mode = client.displayMode(
+                    fitted.width(), fitted.height(), fitted.displayScale());
             if (!mode.accepted()) throw new IOException(mode.responseKind());
         } catch (Exception failure) {
             failureSink.onNegotiationFailed(target, client, lifecycle,

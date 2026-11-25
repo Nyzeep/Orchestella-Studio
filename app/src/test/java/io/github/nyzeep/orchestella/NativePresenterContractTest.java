@@ -29,10 +29,13 @@ public final class NativePresenterContractTest {
         boolean initialized;
         boolean released;
         long handle = 73;
-        int createCalls, initializeCalls, presentCalls, destroyCalls, releaseCalls, changeCalls, clearCalls;
+        int createCalls, initializeCalls, presentCalls, presentArgbCalls, presentRgbaCalls,
+                destroyCalls, releaseCalls, changeCalls, clearCalls;
         int[] presentedPixels;
-        int presentedWidth, presentedHeight;
+        byte[] presentedRgba;
+        int presentedWidth, presentedHeight, presentedStride;
         ViewportAspectCalculator.ViewportMapping presentedMapping;
+        final java.util.Set<Thread> nativeCallThreads = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
         RuntimeException initializationFailure, presentationFailure, timingFailure, releaseFailure;
         float presentTimeMs = 2.25f;
 
@@ -42,8 +45,13 @@ public final class NativePresenterContractTest {
         }
         @Override public boolean available() { return available; }
         @Override public boolean isSurfaceValid(Surface candidate) { return valid && candidate == surface; }
-        @Override public long create() { createCalls++; return handle; }
+        @Override public long create() {
+            nativeCallThreads.add(Thread.currentThread());
+            createCalls++;
+            return handle;
+        }
         @Override public boolean surfaceCreated(long actual, Surface candidate) {
+            nativeCallThreads.add(Thread.currentThread());
             requireHandle(actual);
             assertEquals(surface, candidate);
             initializeCalls++;
@@ -53,19 +61,23 @@ public final class NativePresenterContractTest {
             return initialized;
         }
         @Override public void surfaceChanged(long actual, int width, int height) {
+            nativeCallThreads.add(Thread.currentThread());
             requireHandle(actual);
             changeCalls++;
         }
         @Override public void surfaceDestroyed(long actual) {
+            nativeCallThreads.add(Thread.currentThread());
             requireHandle(actual);
             destroyCalls++;
             initialized = false;
         }
         @Override public boolean present(long actual, int[] pixels, int width, int height,
                 ViewportAspectCalculator.ViewportMapping mapping) {
+            nativeCallThreads.add(Thread.currentThread());
             requireHandle(actual);
             assertTrue("presentation requires successful native initialization", initialized);
             presentCalls++;
+            presentArgbCalls++;
             presentedPixels = java.util.Arrays.copyOf(pixels, width * height);
             presentedWidth = width;
             presentedHeight = height;
@@ -73,13 +85,41 @@ public final class NativePresenterContractTest {
             if (presentationFailure != null) throw presentationFailure;
             return presentationSucceeds;
         }
-        @Override public void clear(long actual, int color) { requireHandle(actual); clearCalls++; }
+        @Override public boolean presentRgba(long actual, java.nio.ByteBuffer directRgba, int offsetBytes,
+                int width, int height, int strideBytes,
+                ViewportAspectCalculator.ViewportMapping mapping) {
+            nativeCallThreads.add(Thread.currentThread());
+            requireHandle(actual);
+            assertTrue("presentation requires successful native initialization", initialized);
+            assertTrue("nativePresentRgba requires a direct ByteBuffer", directRgba != null && directRgba.isDirect());
+            presentCalls++;
+            presentRgbaCalls++;
+            java.nio.ByteBuffer slice = directRgba.duplicate();
+            slice.position(offsetBytes);
+            int totalBytes = strideBytes * height;
+            byte[] copy = new byte[totalBytes];
+            slice.get(copy);
+            presentedRgba = copy;
+            presentedWidth = width;
+            presentedHeight = height;
+            presentedStride = strideBytes;
+            presentedMapping = mapping;
+            if (presentationFailure != null) throw presentationFailure;
+            return presentationSucceeds;
+        }
+        @Override public void clear(long actual, int color) {
+            nativeCallThreads.add(Thread.currentThread());
+            requireHandle(actual);
+            clearCalls++;
+        }
         @Override public float lastPresentTimeMs(long actual) {
+            nativeCallThreads.add(Thread.currentThread());
             requireHandle(actual);
             if (timingFailure != null) throw timingFailure;
             return presentTimeMs;
         }
         @Override public void release(long actual) {
+            nativeCallThreads.add(Thread.currentThread());
             requireHandle(actual);
             releaseCalls++;
             released = true;

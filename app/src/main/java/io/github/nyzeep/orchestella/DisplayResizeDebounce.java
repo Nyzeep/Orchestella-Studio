@@ -1,8 +1,10 @@
 package io.github.nyzeep.orchestella;
 
 import io.github.nyzeep.orchestella.runtime.contract.DisplayMode;
+import io.github.nyzeep.orchestella.runtime.contract.display.DisplayViewportBudget;
 import java.util.Objects;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -11,9 +13,10 @@ import java.util.concurrent.TimeUnit;
  * Debounces rapid display resize events (such as orientation changes and split-screen animations)
  * before negotiating with the guest display controller.
  *
- * <p>Prevents cascading renegotiation freezes and excessive guest compositor re-layouts.
+ * <p>Prevents cascading renegotiation freezes and excessive guest compositor re-layouts, while
+ * enforcing {@link DisplayViewportBudget} constraints and bounded scheduler lifetime.
  */
-public final class DisplayResizeDebounce {
+public final class DisplayResizeDebounce implements AutoCloseable {
 
     @FunctionalInterface
     public interface ResizeDispatcher {
@@ -23,6 +26,8 @@ public final class DisplayResizeDebounce {
     @FunctionalInterface
     public interface TaskScheduler {
         Cancellable schedule(long delayMs, Runnable task);
+
+        default void shutdown() {}
     }
 
     public interface Cancellable {
@@ -32,16 +37,43 @@ public final class DisplayResizeDebounce {
     public static final long DEFAULT_DEBOUNCE_MS = 200;
 
     private static final class DefaultExecutorScheduler implements TaskScheduler {
-        private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "DisplayResizeDebounce");
-            t.setDaemon(true);
-            return t;
-        });
+        private ScheduledExecutorService executor;
+        private boolean isShutdown = false;
 
         @Override
-        public Cancellable schedule(long delayMs, Runnable task) {
-            ScheduledFuture<?> future = executor.schedule(task, delayMs, TimeUnit.MILLISECONDS);
-            return () -> future.cancel(false);
+        public synchronized Cancellable schedule(long delayMs, Runnable task) {
+            if (isShutdown) {
+                return () -> {};
+            }
+            if (executor == null || executor.isShutdown()) {
+                executor = Executors.newSingleThreadScheduledExecutor(r -> {
+                    Thread t = new Thread(r, "DisplayResizeDebounce");
+                    t.setDaemon(true);
+                    return t;
+                });
+            }
+            try {
+                ScheduledFuture<?> future = executor.schedule(task, delayMs, TimeUnit.MILLISECONDS);
+                return () -> future.cancel(false);
+            } catch (RejectedExecutionException rejected) {
+                return () -> {};
+            }
+        }
+
+        synchronized void resetIdle() {
+            if (executor != null) {
+                executor.shutdownNow();
+                executor = null;
+            }
+        }
+
+        @Override
+        public synchronized void shutdown() {
+            isShutdown = true;
+            if (executor != null) {
+                executor.shutdownNow();
+                executor = null;
+            }
         }
     }
 
@@ -57,6 +89,7 @@ public final class DisplayResizeDebounce {
     private int lastDispatchedWidth = -1;
     private int lastDispatchedHeight = -1;
     private int dispatchedCount = 0;
+    private boolean closed = false;
 
     public DisplayResizeDebounce(ResizeDispatcher dispatcher) {
         this(dispatcher, DEFAULT_DEBOUNCE_MS, new DefaultExecutorScheduler());
@@ -72,16 +105,21 @@ public final class DisplayResizeDebounce {
     }
 
     /**
-     * Submits a candidate display size. If dimensions are valid and distinct from the last
-     * dispatched resolution, dispatches after the debounce window.
+     * Submits a candidate display size. Valid inputs are fitted to {@link DisplayViewportBudget}
+     * and, if distinct from the last accepted resolution, dispatched after the debounce window.
      */
     public synchronized void requestResize(int width, int height) {
-        if (width < DisplayMode.MIN_DIMENSION || width > DisplayMode.MAX_DIMENSION
-                || height < DisplayMode.MIN_DIMENSION || height > DisplayMode.MAX_DIMENSION) {
+        if (closed
+                || width < DisplayViewportBudget.MIN_EDGE || width > DisplayMode.MAX_DIMENSION
+                || height < DisplayViewportBudget.MIN_EDGE || height > DisplayMode.MAX_DIMENSION) {
             return;
         }
 
-        if (width == lastDispatchedWidth && height == lastDispatchedHeight) {
+        DisplayViewportBudget.FittedViewport fitted = DisplayViewportBudget.fitWithinBudget(width, height);
+        int targetWidth = fitted.width();
+        int targetHeight = fitted.height();
+
+        if (targetWidth == lastDispatchedWidth && targetHeight == lastDispatchedHeight) {
             cancel();
             return;
         }
@@ -91,8 +129,8 @@ public final class DisplayResizeDebounce {
             pendingTask = null;
         }
 
-        this.pendingWidth = width;
-        this.pendingHeight = height;
+        this.pendingWidth = targetWidth;
+        this.pendingHeight = targetHeight;
         this.hasPending = true;
 
         if (debounceMs == 0) {
@@ -106,7 +144,7 @@ public final class DisplayResizeDebounce {
      * Immediately executes any pending resize without waiting for debounce expiration.
      */
     public synchronized void flush() {
-        if (!hasPending) {
+        if (closed || !hasPending) {
             return;
         }
         if (pendingTask != null) {
@@ -119,10 +157,12 @@ public final class DisplayResizeDebounce {
         pendingWidth = -1;
         pendingHeight = -1;
 
-        lastDispatchedWidth = w;
-        lastDispatchedHeight = h;
-        dispatchedCount++;
-        dispatcher.dispatch(w, h);
+        boolean accepted = dispatcher.dispatch(w, h);
+        if (accepted) {
+            lastDispatchedWidth = w;
+            lastDispatchedHeight = h;
+            dispatchedCount++;
+        }
     }
 
     /**
@@ -136,6 +176,39 @@ public final class DisplayResizeDebounce {
         hasPending = false;
         pendingWidth = -1;
         pendingHeight = -1;
+    }
+
+    /**
+     * Clears pending work and dispatch history, and releases any idle default scheduler thread.
+     */
+    public synchronized void reset() {
+        cancel();
+        lastDispatchedWidth = -1;
+        lastDispatchedHeight = -1;
+        if (scheduler instanceof DefaultExecutorScheduler defaultScheduler) {
+            defaultScheduler.resetIdle();
+        }
+    }
+
+    /**
+     * Permanently closes this debounce instance and shuts down its internal scheduler.
+     */
+    public synchronized void shutdown() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        cancel();
+        scheduler.shutdown();
+    }
+
+    @Override
+    public void close() {
+        shutdown();
+    }
+
+    public synchronized boolean isClosed() {
+        return closed;
     }
 
     public synchronized boolean hasPendingResize() {

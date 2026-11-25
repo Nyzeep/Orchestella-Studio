@@ -70,6 +70,32 @@ Java_io_github_nyzeep_orchestella_NativeGlesSurfacePresenter_nativePresent(
     return presented ? JNI_TRUE : JNI_FALSE;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_io_github_nyzeep_orchestella_NativeGlesSurfacePresenter_nativePresentRgba(
+    JNIEnv* env, jclass /*clazz*/, jlong handle, jobject rgbaBuffer, jint offsetBytes,
+    jint width, jint height, jint strideBytes, jint destX, jint destY,
+    jint destWidth, jint destHeight, jint viewportWidth, jint viewportHeight) {
+    if (handle == 0 || rgbaBuffer == nullptr || offsetBytes < 0
+        || width <= 0 || height <= 0 || width > 4096 || height > 4096
+        || static_cast<int64_t>(width) * height > 4194304
+        || strideBytes < static_cast<int64_t>(width) * 4 || (strideBytes & 3) != 0
+        || static_cast<int64_t>(strideBytes) * height > 16777216) {
+        return JNI_FALSE;
+    }
+    void* base = env->GetDirectBufferAddress(rgbaBuffer);
+    jlong capacity = env->GetDirectBufferCapacity(rgbaBuffer);
+    const int64_t requiredBytes = static_cast<int64_t>(strideBytes) * height;
+    if (base == nullptr || capacity < static_cast<int64_t>(offsetBytes) + requiredBytes) {
+        return JNI_FALSE;
+    }
+    auto* presenter = reinterpret_cast<orchestella::NativeGlesPresenter*>(handle);
+    const auto* rgba = static_cast<const uint8_t*>(base) + offsetBytes;
+    bool presented = presenter->presentRgba(
+            rgba, width, height, strideBytes,
+            destX, destY, destWidth, destHeight, viewportWidth, viewportHeight);
+    return presented ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL
 Java_io_github_nyzeep_orchestella_NativeGlesSurfacePresenter_nativeClear(
     JNIEnv* /*env*/, jclass /*clazz*/, jlong handle, jint argbColor) {

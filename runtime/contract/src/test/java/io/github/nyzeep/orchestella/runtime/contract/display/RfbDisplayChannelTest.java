@@ -432,6 +432,45 @@ public final class RfbDisplayChannelTest {
         }
     }
 
+    @Test(timeout = 5000)
+    public void publishedFramesStayImmutableAcrossFullAndPartialUpdatesWithReadOnlyViews() throws Exception {
+        try (Wire wire = new Wire()) {
+            wire.channel.connect();
+            wire.handshake(2, 1);
+            wire.expectRequest(false, 2, 1);
+            wire.raw(0, 0, 2, 1, new byte[] {0, 0, (byte) 255, 0, 0, (byte) 255, 0, 0});
+            DisplayChannel.FrameData first = wire.frame();
+            byte[] firstSnapshot = first.data();
+
+            java.nio.ByteBuffer ro = first.asReadOnlyBuffer();
+            assertTrue(ro.isReadOnly());
+            assertEquals(8, ro.remaining());
+            byte[] roBytes = new byte[8];
+            ro.get(roBytes);
+            assertArrayEquals(firstSnapshot, roBytes);
+
+            // Partial update (cow) must not mutate first frame's pixels
+            wire.expectRequest(true, 2, 1);
+            wire.raw(1, 0, 1, 1, new byte[] {(byte) 255, 0, 0, 0});
+            DisplayChannel.FrameData second = wire.frame();
+            assertArrayEquals(firstSnapshot, first.data());
+            assertArrayEquals(
+                    new byte[] {(byte) 255, 0, 0, (byte) 255, 0, 0, (byte) 255, (byte) 255},
+                    second.data());
+
+            // Full-frame update must not mutate second frame's pixels either
+            wire.expectRequest(true, 2, 1);
+            wire.raw(0, 0, 2, 1, new byte[] {10, 20, 30, 0, 40, 50, 60, 0});
+            DisplayChannel.FrameData third = wire.frame();
+            assertArrayEquals(
+                    new byte[] {(byte) 255, 0, 0, (byte) 255, 0, 0, (byte) 255, (byte) 255},
+                    second.data());
+            assertArrayEquals(
+                    new byte[] {30, 20, 10, (byte) 255, 60, 50, 40, (byte) 255},
+                    third.data());
+        }
+    }
+
     private static final class Gate extends OutputStream {
         final OutputStream delegate;
         final CountDownLatch entered = new CountDownLatch(1);

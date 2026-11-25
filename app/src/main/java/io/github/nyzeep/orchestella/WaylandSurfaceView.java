@@ -42,15 +42,21 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
         pendingWidth = frameWidth;
         pendingHeight = frameHeight;
         if (!mappingPending.compareAndSet(false, true)) return;
-        post(() -> {
+        try {
+            post(() -> {
+                mappingPending.set(false);
+                if (boundChannel == null || touchGestureMapper == null) return;
+                int frameWidthNow = pendingWidth, frameHeightNow = pendingHeight;
+                int width = controller.getRenderer().getViewportWidth();
+                int height = controller.getRenderer().getViewportHeight();
+                if (frameWidthNow > 0 && frameHeightNow > 0 && width > 0 && height > 0) {
+                    touchGestureMapper.setViewportMapping(
+                            ViewportAspectCalculator.calculate(frameWidthNow, frameHeightNow, width, height));
+                }
+            });
+        } catch (RuntimeException ignored) {
             mappingPending.set(false);
-            if (boundChannel == null || touchGestureMapper == null) return;
-            int frameWidthNow = pendingWidth, frameHeightNow = pendingHeight;
-            int width = controller.getRenderer().getViewportWidth();
-            int height = controller.getRenderer().getViewportHeight();
-            if (frameWidthNow > 0 && frameHeightNow > 0 && width > 0 && height > 0) touchGestureMapper.setViewportMapping(
-                    ViewportAspectCalculator.calculate(frameWidthNow, frameHeightNow, width, height));
-        });
+        }
     }
 
     public WaylandSurfaceView(Context context) {
@@ -185,6 +191,14 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
     }
 
     public void onDestroy() {
+        try {
+            SurfaceHolder holder = getHolder();
+            if (holder != null) {
+                holder.removeCallback(this);
+            }
+        } catch (Exception ignored) {
+            // Best-effort callback cleanup during view teardown.
+        }
         unbind();
         controller.onDestroy();
     }
@@ -232,10 +246,23 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         controller.onSurfaceChanged(holder, format, width, height);
         if (touchGestureMapper != null && width > 0 && height > 0) {
-            int cw = (controller.getDisplayControl() != null && controller.getDisplayControl().currentMode() != null)
-                    ? controller.getDisplayControl().currentMode().width() : 1920;
-            int ch = (controller.getDisplayControl() != null && controller.getDisplayControl().currentMode() != null)
-                    ? controller.getDisplayControl().currentMode().height() : 1080;
+            DisplayChannel.FrameData front = controller.getRenderer() != null
+                    ? controller.getRenderer().getFrontBuffer() : null;
+            int cw;
+            int ch;
+            if (pendingWidth > 0 && pendingHeight > 0) {
+                cw = pendingWidth;
+                ch = pendingHeight;
+            } else if (front != null && front.width() > 0 && front.height() > 0) {
+                cw = front.width();
+                ch = front.height();
+            } else if (controller.getDisplayControl() != null && controller.getDisplayControl().currentMode() != null) {
+                cw = controller.getDisplayControl().currentMode().width();
+                ch = controller.getDisplayControl().currentMode().height();
+            } else {
+                cw = 1920;
+                ch = 1080;
+            }
             touchGestureMapper.setViewportMapping(
                     ViewportAspectCalculator.calculate(cw, ch, width, height));
         }

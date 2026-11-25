@@ -348,26 +348,7 @@ void NativeGlesPresenter::release() {
     terminateEgl();
 }
 
-bool NativeGlesPresenter::present(const int32_t* pixels, int width, int height,
-                                 int destX, int destY, int destWidth, int destHeight,
-                                 int viewportWidth, int viewportHeight) {
-    lastPresentTimeMs_ = -1.0f;
-    if (!isReady_ || !pixels || width <= 0 || height <= 0 || width > 4096 || height > 4096
-        || static_cast<int64_t>(width) * height > 4194304 || destWidth <= 0 || destHeight <= 0) {
-        return false;
-    }
-
-    const auto startTime = std::chrono::steady_clock::now();
-
-    if (eglDisplay_ == EGL_NO_DISPLAY || eglSurface_ == EGL_NO_SURFACE
-        || !eglMakeCurrent(eglDisplay_, eglSurface_, eglSurface_, eglContext_)) {
-        isReady_ = false;
-        return false;
-    }
-
-    const size_t requiredBytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
-
-    // Check if texture or PBO ping-pong buffers need allocation/reallocation
+bool NativeGlesPresenter::ensurePboAndTexture(int width, int height, size_t requiredBytes) {
     if (!pboInitialized_ || textureWidth_ != width || textureHeight_ != height || pboCapacityBytes_ < requiredBytes) {
         if (!pboInitialized_) {
             glGenBuffers(2, pboIds_);
@@ -398,29 +379,16 @@ bool NativeGlesPresenter::present(const int32_t* pixels, int width, int height,
         firstFrame_ = true;
         LOGI("Reallocated GLES3 texture and dual PBOs for %dx%d (%zu bytes)", width, height, requiredBytes);
     }
+    return true;
+}
 
-    const int nextIndex = pboIndex_;
-
-    // 1. Asynchronously map next PBO and copy current frame CPU pixels via DMA-friendly buffer
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pboIds_[nextIndex]);
-    glBufferData(GL_PIXEL_UNPACK_BUFFER, static_cast<GLsizeiptr>(requiredBytes), nullptr, GL_STREAM_DRAW); // Orphan buffer
-    void* mappedPtr = glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, static_cast<GLsizeiptr>(requiredBytes),
-                                       GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
-    if (mappedPtr != nullptr) {
-        auto* rgba = static_cast<uint8_t*>(mappedPtr);
-        copyArgbToRgba(pixels, rgba, static_cast<size_t>(width) * height);
-        if (!glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER)) { isReady_ = false; return false; }
-    } else {
-        std::vector<uint8_t> rgba(requiredBytes);
-        copyArgbToRgba(pixels, rgba.data(), static_cast<size_t>(width) * height);
-        glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, static_cast<GLsizeiptr>(requiredBytes), rgba.data());
-    }
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-
+bool NativeGlesPresenter::uploadAndRenderPbo(int pboSlot, int width, int height,
+                                             int destX, int destY, int destWidth, int destHeight,
+                                             int viewportWidth, int viewportHeight) {
     // 2. Trigger GPU DMA unpack upload
     glBindTexture(GL_TEXTURE_2D, targetTexture_);
     // Idle guests may never send a successor frame to flush a previous PBO.
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pboIds_[nextIndex]);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pboIds_[pboSlot]);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     firstFrame_ = false;
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
@@ -478,14 +446,96 @@ bool NativeGlesPresenter::present(const int32_t* pixels, int width, int height,
         lastPresentTimeMs_ = -1.0f;
         return false;
     }
+    return true;
+}
+
+bool NativeGlesPresenter::presentInternal(const void* pixels, int width, int height,
+                                          int strideBytes, bool isArgb,
+                                          int destX, int destY, int destWidth, int destHeight,
+                                          int viewportWidth, int viewportHeight) {
+    lastPresentTimeMs_ = -1.0f;
+    if (!isReady_ || !pixels || width <= 0 || height <= 0 || width > 4096 || height > 4096
+        || static_cast<int64_t>(width) * height > 4194304 || destWidth <= 0 || destHeight <= 0) {
+        return false;
+    }
+    if (!isArgb && (strideBytes < static_cast<int64_t>(width) * 4 || (strideBytes & 3) != 0
+                    || static_cast<int64_t>(strideBytes) * height > 16777216)) {
+        return false;
+    }
+
+    const auto startTime = std::chrono::steady_clock::now();
+
+    if (eglDisplay_ == EGL_NO_DISPLAY || eglSurface_ == EGL_NO_SURFACE || eglContext_ == EGL_NO_CONTEXT
+        || !eglMakeCurrent(eglDisplay_, eglSurface_, eglSurface_, eglContext_)) {
+        isReady_ = false;
+        return false;
+    }
+
+    const size_t requiredBytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+    ensurePboAndTexture(width, height, requiredBytes);
+
+    const int nextIndex = pboIndex_;
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pboIds_[nextIndex]);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, static_cast<GLsizeiptr>(requiredBytes), nullptr, GL_STREAM_DRAW);
+    void* mappedPtr = glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, static_cast<GLsizeiptr>(requiredBytes),
+                                       GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+    if (mappedPtr != nullptr) {
+        auto* dst = static_cast<uint8_t*>(mappedPtr);
+        if (isArgb) {
+            copyArgbToRgba(static_cast<const int32_t*>(pixels), dst, static_cast<size_t>(width) * height);
+        } else {
+            copyRgbaRows(static_cast<const uint8_t*>(pixels), width, height, strideBytes, dst);
+        }
+        if (!glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER)) {
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            isReady_ = false;
+            return false;
+        }
+    } else if (!isArgb && strideBytes == width * 4) {
+        glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, static_cast<GLsizeiptr>(requiredBytes), pixels);
+    } else {
+        std::vector<uint8_t> staging(requiredBytes);
+        if (isArgb) {
+            copyArgbToRgba(static_cast<const int32_t*>(pixels), staging.data(),
+                           static_cast<size_t>(width) * height);
+        } else {
+            copyRgbaRows(static_cast<const uint8_t*>(pixels), width, height, strideBytes, staging.data());
+        }
+        glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, static_cast<GLsizeiptr>(requiredBytes), staging.data());
+    }
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+    if (!uploadAndRenderPbo(nextIndex, width, height, destX, destY, destWidth, destHeight,
+                            viewportWidth, viewportHeight)) {
+        return false;
+    }
 
     const auto endTime = std::chrono::steady_clock::now();
     lastPresentTimeMs_ = std::chrono::duration<float, std::milli>(endTime - startTime).count();
     return true;
 }
 
+bool NativeGlesPresenter::present(const int32_t* pixels, int width, int height,
+                                 int destX, int destY, int destWidth, int destHeight,
+                                 int viewportWidth, int viewportHeight) {
+    return presentInternal(pixels, width, height, width * 4, true,
+                           destX, destY, destWidth, destHeight, viewportWidth, viewportHeight);
+}
+
+bool NativeGlesPresenter::presentRgba(const uint8_t* rgba, int width, int height, int strideBytes,
+                                      int destX, int destY, int destWidth, int destHeight,
+                                      int viewportWidth, int viewportHeight) {
+    return presentInternal(rgba, width, height, strideBytes, false,
+                           destX, destY, destWidth, destHeight, viewportWidth, viewportHeight);
+}
+
 void NativeGlesPresenter::clear(int32_t argbColor) {
-    if (!isReady_ || eglDisplay_ == EGL_NO_DISPLAY || eglSurface_ == EGL_NO_SURFACE) {
+    if (!isReady_ || eglDisplay_ == EGL_NO_DISPLAY || eglSurface_ == EGL_NO_SURFACE
+        || eglContext_ == EGL_NO_CONTEXT) {
+        return;
+    }
+    if (!eglMakeCurrent(eglDisplay_, eglSurface_, eglSurface_, eglContext_)) {
+        isReady_ = false;
         return;
     }
     const float a = static_cast<float>((argbColor >> 24) & 0xFF) / 255.0f;

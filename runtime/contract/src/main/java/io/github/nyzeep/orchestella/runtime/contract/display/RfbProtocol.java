@@ -10,9 +10,9 @@ import java.util.BitSet;
 
 /** Original, deliberately small RFB 3.8 decoder. No compression, clipboard or CopyRect capability. */
 final class RfbProtocol {
-    static final int MAX_EDGE = 4096;
-    static final int MAX_PIXELS = 4_194_304;
-    static final int MAX_BYTES = 16_777_216;
+    static final int MAX_EDGE = DisplayViewportBudget.MAX_EDGE;
+    static final int MAX_PIXELS = (int) DisplayViewportBudget.MAX_PIXELS;
+    static final int MAX_BYTES = (int) DisplayViewportBudget.MAX_BYTES;
     static final int MAX_RECTANGLES = 256;
     static final int MAX_NAME_BYTES = 4096;
     static final int MAX_CUT_TEXT_BYTES = 65_536;
@@ -36,6 +36,8 @@ final class RfbProtocol {
 
     private final DataInputStream input;
     private byte[] pixels;
+    private byte[] rawRowBuffer = new byte[0];
+    private boolean pixelsPublished;
     private final BitSet knownPixels = new BitSet();
     private int knownCount;
     private int width;
@@ -154,10 +156,21 @@ final class RfbProtocol {
     }
 
     private void readRaw(int x, int y, int rectangleWidth, int rectangleHeight) throws IOException {
-        byte[] row = new byte[rectangleWidth * 4];
+        if (pixelsPublished) {
+            if (x == 0 && y == 0 && rectangleWidth == width && rectangleHeight == height) {
+                pixels = new byte[width * height * 4];
+            } else {
+                pixels = pixels.clone();
+            }
+            pixelsPublished = false;
+        }
+        int rowBytes = rectangleWidth * 4;
+        if (rawRowBuffer.length < rowBytes) {
+            rawRowBuffer = new byte[rowBytes];
+        }
         for (int dy = 0; dy < rectangleHeight; dy++) {
-            input.readFully(row);
-            pixelBytes += row.length;
+            input.readFully(rawRowBuffer, 0, rowBytes);
+            pixelBytes += rowBytes;
             int start = (y + dy) * width + x;
             int end = start + rectangleWidth;
             for (int missing = knownPixels.nextClearBit(start); missing < end;
@@ -168,9 +181,9 @@ final class RfbProtocol {
             for (int pixel = 0; pixel < rectangleWidth; pixel++) {
                 int source = pixel * 4;
                 int destination = (start + pixel) * 4;
-                pixels[destination] = row[source + 2];
-                pixels[destination + 1] = row[source + 1];
-                pixels[destination + 2] = row[source];
+                pixels[destination] = rawRowBuffer[source + 2];
+                pixels[destination + 1] = rawRowBuffer[source + 1];
+                pixels[destination + 2] = rawRowBuffer[source];
                 pixels[destination + 3] = (byte) 255;
             }
         }
@@ -181,6 +194,7 @@ final class RfbProtocol {
         width = newWidth;
         height = newHeight;
         pixels = new byte[width * height * 4];
+        pixelsPublished = false;
         knownPixels.clear();
         knownCount = 0;
         sizeGeneration++;
@@ -192,7 +206,9 @@ final class RfbProtocol {
     }
 
     FrameData frame(long id, long timestampNs) {
-        return new FrameData(width, height, width * 4, FrameData.FORMAT_RGBA_8888, pixels, id, timestampNs);
+        pixelsPublished = true;
+        return FrameData.fromOwned(
+                width, height, width * 4, FrameData.FORMAT_RGBA_8888, pixels, id, timestampNs);
     }
 
     int width() { return width; }

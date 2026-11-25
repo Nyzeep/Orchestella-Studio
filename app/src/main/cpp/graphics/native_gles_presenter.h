@@ -28,6 +28,10 @@ public:
                  int destX, int destY, int destWidth, int destHeight,
                  int viewportWidth, int viewportHeight);
 
+    bool presentRgba(const uint8_t* rgba, int width, int height, int strideBytes,
+                     int destX, int destY, int destWidth, int destHeight,
+                     int viewportWidth, int viewportHeight);
+
     void clear(int32_t argbColor);
 
     bool isReady() const { return isReady_; }
@@ -38,6 +42,13 @@ private:
     void terminateEgl();
     bool initGlProgram();
     void deleteGlResources();
+    bool ensurePboAndTexture(int width, int height, size_t requiredBytes);
+    bool presentInternal(const void* pixels, int width, int height, int strideBytes, bool isArgb,
+                         int destX, int destY, int destWidth, int destHeight,
+                         int viewportWidth, int viewportHeight);
+    bool uploadAndRenderPbo(int pboSlot, int width, int height,
+                            int destX, int destY, int destWidth, int destHeight,
+                            int viewportWidth, int viewportHeight);
 
     ANativeWindow* window_ = nullptr;
     EGLDisplay eglDisplay_ = EGL_NO_DISPLAY;
