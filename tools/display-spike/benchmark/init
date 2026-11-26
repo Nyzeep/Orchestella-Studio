@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+mount -t proc -o nodev,nosuid,noexec proc /proc
+mount -t sysfs -o nodev,nosuid,noexec sysfs /sys
+mount -t devtmpfs -o nosuid devtmpfs /dev
+mkdir -p /dev/pts /dev/shm /dev/virtio-ports /run
+chmod 1777 /dev/shm
+mount -t devpts -o gid=5,mode=0620 devpts /dev/pts
+mount -t tmpfs -o nodev,nosuid,mode=0755 tmpfs /run
+exec python3 -u /usr/local/bin/w405d

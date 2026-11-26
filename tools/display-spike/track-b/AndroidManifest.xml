@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="io.orchestella.displayprobe">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
+    <application android:allowBackup="false" android:extractNativeLibs="false"
+        android:label="W4-05 display probe">
+        <activity android:name=".ProbeActivity" android:exported="true" />
+        <service android:name=".ProbeReceiver" android:exported="false"
+            android:process=":receiver" />
+    </application>
+</manifest>

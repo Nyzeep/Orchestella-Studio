@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="io.github.nyzeep.orchestella.spike.w405a"
+    android:versionCode="1"
+    android:versionName="w405a-prototype">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
+    <application
+        android:allowBackup="false"
+        android:debuggable="true"
+        android:extractNativeLibs="true"
+        android:label="W4-05 BAR2 probe" />
+    <instrumentation
+        android:name=".TrackAProbe"
+        android:targetPackage="io.github.nyzeep.orchestella.spike.w405a" />
+</manifest>

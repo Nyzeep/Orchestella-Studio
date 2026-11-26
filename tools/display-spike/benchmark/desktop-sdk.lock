@@ -1,0 +1,5 @@
+# Alpine v3.23 aarch64 C compiler sysroot inputs
+d7043c549029c98d438e9bc94213b006e5c88540eb58d1f5b0f0d1d56dbf9c98  main/aarch64/musl-1.2.5-r24.apk
+8e3a2e5b78069ebd1307cb092972de2f95deb0b21b866a788d1ac7d6972db43e  main/aarch64/musl-dev-1.2.5-r24.apk
+681397cc91e05bb6cc63af4b37a59aa510aaab37539c9e6629d7fbfbcb1f0e57  main/aarch64/wayland-dev-1.24.0-r0.apk
+47634dcc2befcae378f9f60681d2af1864db85e57f65e11a3557a43f77911073  main/aarch64/wayland-libs-client-1.24.0-r0.apk

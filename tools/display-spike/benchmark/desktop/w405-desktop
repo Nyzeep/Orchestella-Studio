@@ -1,0 +1,41 @@
+#!/bin/sh
+set -eu
+
+export XDG_RUNTIME_DIR=/run/user/1000
+export WAYLAND_DISPLAY=wayland-0
+export XDG_SESSION_TYPE=wayland
+export HOME=/home/desktop
+export USER=desktop
+
+if [ "$(id -u)" != 1000 ] || [ "$(id -g)" != 1000 ]; then
+    printf '%s\n' 'w405-desktop requires guest UID and GID 1000' >&2
+    exit 1
+fi
+
+case "${1:-}" in
+    labwc)
+        export WLR_BACKENDS=headless
+        export WLR_RENDERER=pixman
+        export WLR_HEADLESS_OUTPUTS=1
+        exec /usr/bin/labwc -C /etc/w405/labwc
+        ;;
+    geometry)
+        output=$(wlr-randr | awk '/^HEADLESS-/ { print $1 }')
+        case "$output" in
+            ''|*[!A-Za-z0-9_-]*) exit 1 ;;
+        esac
+        wlr-randr --output "$output" --custom-mode "960x540@60Hz" --scale 1
+        wlr-randr | awk '/960x540.*current/ { found=1 } END { exit !found }'
+        printf '%s\n' "W405_GUEST desktop_output=$output desktop_geometry=960x540 renderer=pixman"
+        ;;
+    wayvnc)
+        umask 077
+        exec /usr/bin/wayvnc --config=/etc/w405/wayvnc.conf \
+            --max-fps="${W405_MAX_FPS:-15}" --render-cursor --unix-socket \
+            /run/user/1000/orchestella/wayvnc.sock
+        ;;
+    *)
+        printf '%s\n' 'usage: w405-desktop {labwc|geometry|wayvnc}' >&2
+        exit 2
+        ;;
+esac
