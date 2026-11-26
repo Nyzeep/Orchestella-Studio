@@ -4,7 +4,7 @@ set -eu
 export XDG_RUNTIME_DIR=/run/user/1000
 export WAYLAND_DISPLAY=wayland-0
 export XDG_SESSION_TYPE=wayland
-export HOME=/home/desktop
+export HOME=/var/lib/desktop
 export USER=desktop
 
 if [ "$(id -u)" != 1000 ] || [ "$(id -g)" != 1000 ]; then

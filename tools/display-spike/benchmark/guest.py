@@ -12,7 +12,7 @@ DISPLAY_RELAY = "/usr/local/bin/w405-display-relay.py"
 RUNTIME = Path("/run/user/1000")
 WAYLAND = "wayland-0"
 GUEST_ENV = {
-    "HOME": "/home/desktop",
+    "HOME": "/var/lib/desktop",
     "USER": "desktop",
     "LOGNAME": "desktop",
     "LANG": "C.UTF-8",

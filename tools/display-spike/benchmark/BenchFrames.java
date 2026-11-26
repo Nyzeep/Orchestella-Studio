@@ -139,7 +139,7 @@ final class BenchFrames {
     }
 
     private static long fingerprint(ByteBuffer pixels, int stride) {
-        long sample = 0xcbf29ce484222325L;
+        long sample = 0xcbf29ce484222325L; // FNV-1a hash basis
         for (int y = 4; y < HEIGHT; y += 16) {
             for (int x = 4; x < WIDTH; x += 16) {
                 sample ^= pixels.getInt(y * stride + x * 4) >>> 8;
