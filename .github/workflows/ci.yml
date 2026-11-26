@@ -72,6 +72,11 @@ jobs:
           python3 -B tools/ci/test_check_readme_assets.py
           python3 tools/ci/check_readme_assets.py
 
+      - name: Verify abstract socket naming consistency
+        run: |
+          python3 -B tools/ci/test_check_socket_naming.py
+          python3 tools/ci/check_socket_naming.py
+
       # The harness has two test families: the avf_* unit tests and the dv_*
       # PVM/probe tests. A single 'test_avf*.py' pattern silently skipped the
       # latter. test_terminal_keyboard.py is a device-only script, not a unit

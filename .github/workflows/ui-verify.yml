@@ -9,7 +9,19 @@ on:
   pull_request:
     branches: [main, "ui3/**"]
   push:
-    branches: ["ui3/**"]
+    branches: [main, "ui3/**"]
+    paths:
+      - "app/src/main/java/io/github/nyzeep/orchestella/ui/**"
+      - "app/src/main/java/io/github/nyzeep/orchestella/*.kt"
+      - "app/src/main/java/io/github/nyzeep/orchestella/*Presenter*.java"
+      - "app/src/main/java/io/github/nyzeep/orchestella/*Activity*.java"
+      - "app/src/main/res/**"
+      - "app/src/test/**"
+      - "app/build.gradle.kts"
+      - "gradle.properties"
+      - "gradle/libs.versions.toml"
+      - "tools/ci/check_motion_literals.py"
+      - ".github/workflows/ui-verify.yml"
   workflow_dispatch:
 
 permissions:

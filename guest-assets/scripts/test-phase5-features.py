@@ -1204,7 +1204,7 @@ class ProfileContracts(unittest.TestCase):
         features.mkdir(parents=True, exist_ok=True)
         cmd_lock = features / "command.lock"
         cmd_lock.mkdir()
-        orphan = cmd_lock / ".owner.json.dd2cb610656fc6f0"
+        orphan = cmd_lock / (".owner.json." + "ab12" * 4)
         orphan.write_text('{"pid":9999}', encoding="utf-8")
         stale_ts = time.time() - 60
         os.utime(cmd_lock, (stale_ts, stale_ts))
