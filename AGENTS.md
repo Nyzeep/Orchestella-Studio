@@ -2,9 +2,9 @@
 
 Orchestella Studio（曾用工作名 DroidLayer）：无需 Root 的 Android 原生双引擎 Linux 运行环境与移动工作站 —— 在不要求 Root 的前提下，在 Android 手机上运行完整 ARM64 Linux 虚拟机（AVF 硬件虚拟化 + QEMU 软件虚拟化全透明降级、Mesa VirGL 3D 加速、Wayland 桌面、每实例随机凭据与持久后台保活）。
 
-**当前源码状态（截至 2026-11-22）**：0.6.3 / code603（`app/build.gradle.kts` 的 `versionCode 603` / `versionName "0.6.3"`；v0.6.3 已于 2026-11-11 发布，之后已有 438 个未发版提交（2026-11-22）；tag `v0.6.0`/`v0.6.1`/`v0.6.2`/`v0.6.3` 均存在，`CHANGELOG.md` 已记到 0.6.3）。发布工程、双包形态与四车道口径见 [README.md](README.md)（中文，默认）与 [中文文档入口](docs/README.md)。开头产品描述是目标，不代表 AVF、GPU、桌面或所有设备均已验收；截至 2026-11-04，真实 AVF Guest 成功样本为 0。不要跳过决策直接写代码。
+**当前源码状态（截至 2026-11-26）**：0.6.3 / code603（`app/build.gradle.kts` 的 `versionCode 603` / `versionName "0.6.3"`；v0.6.3 已于 2026-11-11 发布，tag `v0.6.0`/`v0.6.1`/`v0.6.2`/`v0.6.3` 均存在，`CHANGELOG.md` 已记到 0.6.3）。Wave 1–4 四轮优化工单已全部收口完成，总验收报告见 [Wave 4 与四轮打磨收口验收报告](docs/reports/wave-4-acceptance-20261126.zh-CN.md)；公开桌面入口 `DesktopEntryPolicy.supportsDesktop()` 按实证门槛维持 `false`（`DesktopPresentationGate` 零改动），W4-05 显示原型已归档至只读标签 `archive/prototype-wave4-display-spike`。发布工程、双包形态与四车道口径见 [README.md](README.md)（中文，默认）与 [中文文档入口](docs/README.md)。开头产品描述是目标，不代表 AVF、GPU、桌面或所有设备均已验收；截至 2026-11-04，真实 AVF Guest 成功样本为 0。不要跳过决策直接写代码。
 
-**当前主线（截至 2026-11-10）**：QEMU 全设备可靠可用优先；**UML fabric 是当前研究/优化主线**（`.scratch/orchestella-uml-fabric/map.md`，13/13 工单 resolved，ACR 待投票）；AVF protected 是时间盒研究线，不阻塞发布。最近完成：2026-11-09→10 六 lane 大优化（UI token 基座、UML 加速、动效、UX、布局 token 化）与 T1 `InstanceLaunchCoordinator` 深模块及契约测试；v0.6.2 之后已有 150+ 个未发版提交。设备窗遗留：`GatewaySlotArbiter`/`GatewaySlotVerdict` 的生产接线，以及由 DV-01A（OEM SELinux `execute_no_trans`）单点阻塞的 DV-01→04 链。原清单中的「终端输入生命周期」仍未复核，暂不作完成或未完成判定。
+**当前主线（截至 2026-11-26）**：四轮优化（Wave 1–4）收口基线已冻结在 `main`（QEMU 全设备可靠可用优先，桌面显示收敛于受控 RFB Raw/ZRLE 通道；UML 公开准出 3 项外部阻塞与 Wave 1–4 后续架构深化清单见 Wave 4 总验收报告第八节）；AVF protected 保留为时间盒研究线，不阻塞发布。设备窗后续跟进：Wave 1–2 成对设备基准、高负载 `resize` 超时收敛与物理 16 KB 设备矩阵补齐。
 
 **文档跟踪**：`/docs/` 仍默认被 `.gitignore` 忽略；经审查的文档必须显式 `git add -f`，不要整体强制添加，且 `git add -f` 前必须先过敏感开发者数据检查门。2026-10-18 优化方案与两份 2026-10-15 支撑研究已显式纳入版本控制；历史阶段报告已移入 `docs/reports/archive/`，旧交接已移入 `docs/agent-handoff/archive/`。
 
@@ -47,4 +47,4 @@ single-context：根目录 `GLOSSARY.md`（原名 `CONTEXT.md`）+ `docs/adr/`�
 
 - `docs/adr/0015-release-channels.md`、`docs/agent-handoff/GPL_RELEASE_DELIVERY_POLICY.md` 以及 ADR-0018/0019 引用的部分研究文档不存在；只能记录缺口，不能根据标题编造正文。ADR-0017 已于 2026-11-19 以现状裁决型正文补齐（`docs/adr/0017-desktop-presentation-wayland-first.md`，GUI 桌面线工单 G-01；不重建历史正文，历史正文仍在主仓 git 历史）。
 - ADR-0010 关于 protected VM 双向通信的绝对表述与官方 vsock 证据冲突，等待 ACR-02 裁定；不要直接改写 accepted 正文。
-- 历史报告中的测试数量、版本号、签名状态和 AVF 结论只覆盖当时范围；当前事实以 0.6.3 源码（`app/build.gradle.kts`）、当前 main 与 `docs/standards/VERSIONING.md` 第 4 节的版本状态为准（截至 2026-11-22）。
+- 历史报告中的测试数量、版本号、签名状态和 AVF 结论只覆盖当时范围；当前事实以 0.6.3 源码（`app/build.gradle.kts`）、当前 main 与 `docs/standards/VERSIONING.md` 第 4 节的版本状态为准（截至 2026-11-26）。

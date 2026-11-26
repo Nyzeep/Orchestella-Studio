@@ -25,6 +25,14 @@ on:
           - "no"
           - "yes"
         default: "no"
+      dry_run:
+        description: Select yes to run unsigned release-readiness checks only (no signing, no release APK, publish forbidden)
+        required: false
+        type: choice
+        options:
+          - "no"
+          - "yes"
+        default: "no"
 
 permissions:
   contents: read
@@ -73,6 +81,7 @@ jobs:
           fi
 
       - name: Materialize release keystore
+        if: ${{ inputs.dry_run != 'yes' }}
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
         run: |
@@ -85,6 +94,7 @@ jobs:
           chmod 600 "$RUNNER_TEMP/release.keystore"
 
       - name: Write signing properties without echoing secrets
+        if: ${{ inputs.dry_run != 'yes' }}
         env:
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
@@ -117,6 +127,8 @@ jobs:
       - name: Run all runtime checks and app unit tests
         run: |
           bash tools/ci/run-gradle-gate.sh \
+            -Porchestella.assets.allowMissingPayload=true \
+            -Porchestella.repositories.useAliyunMirror=true \
             :runtime:contract:check \
             :runtime:instance:check \
             :runtime:engine-qemu:check \
@@ -164,6 +176,7 @@ jobs:
         run: bash tools/ci/check-apk-16kb.sh app/build/outputs/apk/debug/app-debug.apk
 
       - name: Build release APK
+        if: ${{ inputs.dry_run != 'yes' }}
         # Same clean-checkout baseline as the debug gate above. allowMissingPayload
         # stays: no step of this job produces the QEMU payload (it is git-ignored,
         # absent from a clean checkout), the APK built here therefore cannot boot
@@ -188,6 +201,7 @@ jobs:
         run: ./gradlew :app:assembleRelease -Porchestella.assets.allowMissingPayload=true -Porchestella.acceleratorLane=true -Porchestella.uml.bundledFastProfile=true -Porchestella.uml.fastProfile=true -Porchestella.uml.compileBridge=true -Porchestella.uml.rootfsDownload=true --no-daemon --stacktrace
 
       - name: Locate release APK
+        if: ${{ inputs.dry_run != 'yes' }}
         run: |
           APK=$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f | head -1)
           if [ -z "$APK" ]; then
@@ -197,15 +211,22 @@ jobs:
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
       - name: Verify release APK 16 KB ELF segments and zipalign
+        if: ${{ inputs.dry_run != 'yes' }}
         run: bash tools/ci/check-apk-16kb.sh "$APK_PATH"
 
       - name: Verify release identity, certificate and checksum
+        if: ${{ inputs.dry_run != 'yes' }}
         run: |
           python3 tools/release/verify_apk.py \
             --apk "$APK_PATH" \
             --expected-application-id io.github.nyzeep.orchestella \
             --expected-version-name "$VERSION_NAME" \
             --json release-verification.json
+
+      - name: Verify release metadata fields and APK gate parser
+        run: |
+          python3 tools/release/check_release_fields.py
+          python3 tools/release/test_verify_apk.py
 
       - name: Verify license, NOTICE and source-offer bundle
         run: python3 tools/release/check_licenses.py
@@ -216,6 +237,7 @@ jobs:
           python3 tools/ci/check_sensitive_data.py
 
       - name: Assemble release bundle
+        if: ${{ inputs.dry_run != 'yes' }}
         run: |
           set -euo pipefail
           mkdir -p release-bundle
@@ -240,6 +262,7 @@ jobs:
           cat release-bundle/SHA256SUMS
 
       - name: Upload release candidate artifacts
+        if: ${{ inputs.dry_run != 'yes' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: orchestella-release-candidate
@@ -265,7 +288,7 @@ jobs:
   publish-draft:
     name: Create draft GitHub Release
     needs: build-release
-    if: ${{ inputs.confirm == 'yes' && inputs.publish == 'yes' }}
+    if: ${{ inputs.confirm == 'yes' && inputs.publish == 'yes' && inputs.dry_run != 'yes' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
