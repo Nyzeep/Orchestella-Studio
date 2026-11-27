@@ -54,6 +54,7 @@ public final class InstanceStorageContractTest {
         rollsBackNewRootVolumeWhenStoreSaveFails(testDirectory);
         rejectsUnknownStrategyUnrecognizedFormatAndVolumeConflictsOnImportAndResize(testDirectory);
         rejectsTruncatedMetadataJsonArchiveWithoutLeavingFiles(testDirectory);
+        roundTripsKernelProfileThroughSafArchive(testDirectory);
 
         System.out.println("INSTANCE_STORAGE_CONTRACT_TEST_OK");
     }
@@ -784,6 +785,37 @@ public final class InstanceStorageContractTest {
         out.write((value >>> 8) & 0xff);
         out.write((value >>> 16) & 0xff);
         out.write((value >>> 24) & 0xff);
+    }
+
+    private static void roundTripsKernelProfileThroughSafArchive(Path testDirectory) throws Exception {
+        Path caseDir = testDirectory.resolve("kernel-profile-saf");
+        Files.createDirectories(caseDir);
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(caseDir.resolve("metadata"));
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, CLOCK);
+
+        Path sourceVolume = caseDir.resolve("deb-src.raw");
+        createSparseFileWithSentinel(sourceVolume, 1024L * 1024L, "DEBIAN_EXT4_SENTINEL".getBytes(StandardCharsets.UTF_8));
+        InstanceLifecycle.Instance created = controller.create(
+                new InstanceLifecycle.DistroReference("debian", "13"),
+                sourceVolume,
+                VmHardwareConfig.defaultConfig(),
+                new InstanceUserConfig("root", "qa-pass-1234", false, "qa-uml-debian"),
+                ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        StorageContract.RootVolumeFormat.RAW_SPARSE),
+                "full-smp-arm64");
+        controller.beginProvisioning(created.id());
+        controller.completeProvisioning(created.id());
+
+        byte[] archive = exportArchive(controller, created.id());
+        Path restoredVolume = caseDir.resolve("deb-restored.raw");
+        InstanceLifecycle.Instance restored = controller.importFromArchive(
+                new ByteArrayInputStream(archive), restoredVolume);
+        assertEquals("full-smp-arm64", restored.kernelProfile(), "SAF archive preserves kernelProfile");
+        assertEquals(created.executionIdentity(), restored.executionIdentity(),
+                "SAF archive preserves executionIdentity");
+        assertEquals("full-smp-arm64", store.load(restored.id()).kernelProfile(),
+                "persisted restored instance retains kernelProfile");
     }
 
     private static byte[] exportArchive(InstanceLifecycle.Controller controller, String instanceId)

@@ -62,6 +62,8 @@ public final class LaunchTimeline {
          * Absent when the guest does not emit the prompt markers.
          */
         SHELL_READY,
+        /** Multi-user systemd target reached in native-init UML Debian sessions. */
+        SYSTEMD_READY,
         STOP_REQUESTED,
         STOP_CONFIRMED,
         STOP_UNCONFIRMED,

@@ -111,4 +111,23 @@ public class UmlReadinessTrackerTest {
         assertTrue(tracker.markShellReady("gen-2", 130L));
         assertEquals(UmlReadinessTracker.Phase.SHELL_READY, tracker.snapshot().phase());
     }
+
+    @Test
+    public void tracksSystemdReadyIndependentlyWithinActiveGeneration() {
+        UmlReadinessTracker tracker = new UmlReadinessTracker("inst-sysd", "gen-1");
+        assertFalse(tracker.snapshot().systemdReady());
+        assertTrue(tracker.markProcessStarted("gen-1", 300L, 10L));
+        assertTrue(tracker.markBridgeReady("gen-1", 50L));
+        assertTrue(tracker.markSystemdReady("gen-1", 80L));
+
+        UmlReadinessTracker.Snapshot snap = tracker.snapshot();
+        assertTrue(snap.systemdReady());
+        assertEquals(80L, snap.systemdReadyNanos());
+        assertTrue(snap.bridgeReady());
+
+        assertFalse(tracker.markSystemdReady("stale-gen", 90L));
+        tracker.invalidateAndAdvanceGeneration("gen-2");
+        assertFalse(tracker.snapshot().systemdReady());
+        assertEquals(-1L, tracker.snapshot().systemdReadyNanos());
+    }
 }

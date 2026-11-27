@@ -345,12 +345,6 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
             } else FirstBootProvisionPipeline.generateScriptForDistro(instance.distro().id())
                 .toByteArray(Charsets.UTF_8)
 
-            val provisionPayload = FirstBootProvisionPipeline.ProvisionPayload(
-                mirrorConfigName,
-                mirrorBytes,
-                firstbootBytes
-            )
-
             val parameters = InstanceStrategyLauncher.LaunchParameters(
                 instance.id(),
                 instance.bridgeToken(),
@@ -360,10 +354,14 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
                 filesDir.resolve("distro-inputs").absolutePath,
                 instance.guestPassword(),
                 instance.hardwareConfig(),
-                provisionPayload,
+                mirrorConfigName,
+                mirrorBytes,
+                firstbootBytes,
                 instance.hostname(),
                 instance.defaultUser(),
-                instance.hasSudo()
+                instance.hasSudo(),
+                null,
+                instance.kernelProfile(),
             )
             val strategyLauncher = InstanceStrategyLauncher(
                 avfLaunch,

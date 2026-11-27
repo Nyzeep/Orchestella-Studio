@@ -86,6 +86,16 @@ class InstanceLifecycleController {
             VmHardwareConfig hardwareConfig,
             InstanceUserConfig userConfig,
             ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity) throws IOException {
+        return create(distro, rootVolume, hardwareConfig, userConfig, executionIdentity, null);
+    }
+
+    public synchronized Instance create(
+            DistroReference distro,
+            Path rootVolume,
+            VmHardwareConfig hardwareConfig,
+            InstanceUserConfig userConfig,
+            ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity,
+            String kernelProfile) throws IOException {
         Objects.requireNonNull(distro, "distro");
         Objects.requireNonNull(rootVolume, "rootVolume");
         Objects.requireNonNull(hardwareConfig, "hardwareConfig");
@@ -117,6 +127,7 @@ class InstanceLifecycleController {
                             effectiveConfig.hasSudo(),
                             null,
                             effectiveIdentity,
+                            kernelProfile,
                             Collections.emptyMap());
             store.save(instance);
             return instance;
@@ -209,6 +220,7 @@ class InstanceLifecycleController {
                         source.hasSudo(),
                         source.provisioningEvidence(),
                         source.executionIdentity(),
+                        source.kernelProfile(),
                         Collections.emptyMap());
         store.save(cloned);
         return cloned;

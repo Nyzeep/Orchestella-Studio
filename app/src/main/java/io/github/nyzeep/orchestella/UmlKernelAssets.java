@@ -8,6 +8,9 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -2060,6 +2063,64 @@ public final class UmlKernelAssets {
                 throw new IllegalArgumentException(field + " must not be blank");
             }
         }
+    }
+
+    public enum StagedSeedStatus {
+        NOT_STAGED,
+        SIZE_MISMATCH,
+        CHECKSUM_MISMATCH,
+        VERIFIED
+    }
+
+    public record StagedSeedProbe(
+            Path file,
+            StagedSeedStatus status,
+            long actualSizeBytes,
+            String actualSha256) {}
+
+    /**
+     * Inspects {@code uml-rootfs/<fileName>} and {@code distro-inputs/<fileName>} against the
+     * pinned expectation in {@code verdict}, preferring any verified copy and otherwise surfacing
+     * the first size or checksum mismatch rather than masking a corrupted file behind an absent dir.
+     */
+    public static StagedSeedProbe probeStagedDistroSeed(
+            Path filesDir, UmlDistroCapabilityCatalog.DistroGateVerdict verdict) throws IOException {
+        Objects.requireNonNull(filesDir, "filesDir");
+        Objects.requireNonNull(verdict, "verdict");
+        String fileName = verdict.expectedFileName();
+        String expectedSha = verdict.expectedSha256();
+        long expectedSize = verdict.expectedSizeBytes();
+        if (fileName == null || fileName.isBlank() || expectedSha == null || expectedSha.isBlank()) {
+            return new StagedSeedProbe(null, StagedSeedStatus.NOT_STAGED, -1L, null);
+        }
+        StagedSeedProbe firstMismatch = null;
+        for (Path candidate : List.of(
+                filesDir.resolve(UmlRootfsProvisioner.UML_ROOTFS_DIR_NAME).resolve(fileName),
+                filesDir.resolve("distro-inputs").resolve(fileName))) {
+            if (!Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS)) {
+                continue;
+            }
+            long actualSize = Files.size(candidate);
+            if (expectedSize > 0L && actualSize != expectedSize) {
+                if (firstMismatch == null) {
+                    firstMismatch = new StagedSeedProbe(
+                            candidate, StagedSeedStatus.SIZE_MISMATCH, actualSize, null);
+                }
+                continue;
+            }
+            String actualSha = sha256Hex(candidate.toFile());
+            if (actualSha.equalsIgnoreCase(expectedSha)) {
+                return new StagedSeedProbe(
+                        candidate, StagedSeedStatus.VERIFIED, actualSize, actualSha);
+            }
+            if (firstMismatch == null) {
+                firstMismatch = new StagedSeedProbe(
+                        candidate, StagedSeedStatus.CHECKSUM_MISMATCH, actualSize, actualSha);
+            }
+        }
+        return firstMismatch != null
+                ? firstMismatch
+                : new StagedSeedProbe(null, StagedSeedStatus.NOT_STAGED, -1L, null);
     }
 
     private static MessageDigest sha256Digest() {

@@ -1481,6 +1481,270 @@ public final class UmlInstanceLauncherContractTest {
         @Override public void disarm(String instanceId) {}
     }
 
+    @Test(timeout = 20_000)
+    public void persistentDebianFullProfileUsesFullKernelUmInitWaitForPoweroffAndRefusesFastFallback()
+            throws Exception {
+        Path root = tmp.newFolder("debian-full-contract").toPath();
+        File filesDir = root.resolve("files").toFile();
+        File nativeDir = root.resolve("native").toFile();
+        assertTrue(new File(filesDir, "instances").mkdirs());
+        assertTrue(nativeDir.mkdirs());
+        Files.createFile(nativeDir.toPath().resolve("libuml_kernel.so"));
+        Files.createFile(nativeDir.toPath().resolve("libuml_stub.so"));
+        Files.createFile(nativeDir.toPath().resolve("libuml_kernel_full.so"));
+        Files.createFile(nativeDir.toPath().resolve("libuml_stub_full.so"));
+
+        Path storeDir = filesDir.toPath().resolve("instances");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(storeDir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, FIXED_CLOCK);
+        IsolatedQaExecutionEntry qaEntry = new IsolatedQaExecutionEntry(() -> true);
+
+        InstanceLifecycle.Instance debian = qaEntry.ensurePersistentDebianInstance(
+                store, controller, filesDir.toPath().resolve("qa-uml-roots"));
+        cleanupInstanceIds.add(debian.id());
+
+        byte[] fakeTarXz = "FAKE_DEBIAN_13_TAR_XZ".getBytes(StandardCharsets.UTF_8);
+        Path seedTar = Files.createDirectories(filesDir.toPath().resolve("distro-inputs"))
+                .resolve("debian-13-rootfs.tar.xz");
+        Files.write(seedTar, fakeTarXz);
+        String seedSha = sha256Hex(fakeTarXz);
+
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        AtomicInteger provisionSpawns = new AtomicInteger();
+        List<UmlLaunchSpec> bootSpecs = new ArrayList<>();
+        UmlProcessFactory sharedFactory = (spec, cols, rows) -> {
+            if (spec.rootMode() == UmlLaunchSpec.RootMode.HOSTFS) {
+                provisionSpawns.incrementAndGet();
+                String script = new String(
+                        Files.readAllBytes(spec.ephemeralRootDir().resolve("um-command.sh")),
+                        StandardCharsets.UTF_8);
+                String okLine = extractSuccessMarker(script);
+                try (var ch = Files.newByteChannel(
+                        spec.ubd0Path(),
+                        java.nio.file.StandardOpenOption.CREATE,
+                        java.nio.file.StandardOpenOption.WRITE)) {
+                    ch.position(0x438);
+                    ch.write(java.nio.ByteBuffer.wrap(new byte[] {0x53, (byte) 0xEF}));
+                    ch.position(StorageContract.MIN_ROOT_VOLUME_BYTES - 1L);
+                    ch.write(java.nio.ByteBuffer.wrap(new byte[] {0}));
+                }
+                return new ImmediateConsoleProcess(0, okLine + "\n");
+            }
+            bootSpecs.add(spec);
+            return new FakeUmlProcessHandle(5900L + bootSpecs.size(), new CountDownLatch(0), 0);
+        };
+
+        UmlInstanceRootfsProvisioner.ToolchainStager stager = stageDir -> {
+            Files.createDirectories(stageDir.resolve("sbin"));
+            Files.createDirectories(stageDir.resolve("etc"));
+            Files.createDirectories(stageDir.resolve("bin"));
+            Files.createDirectories(stageDir.resolve("opt/droidlayer"));
+            Files.write(stageDir.resolve("sbin/mkfs.ext4"), "mkfs".getBytes(StandardCharsets.UTF_8));
+            Files.write(stageDir.resolve("etc/mke2fs.conf"), "[defaults]\n".getBytes(StandardCharsets.UTF_8));
+            Files.write(stageDir.resolve("bin/busybox"), "bb".getBytes(StandardCharsets.UTF_8));
+            Files.write(stageDir.resolve("opt/droidlayer/guest-agent"), "agent".getBytes(StandardCharsets.UTF_8));
+        };
+
+        UmlInstanceRootfsProvisioner provisioner = new UmlInstanceRootfsProvisioner(
+                sharedFactory,
+                registry,
+                stager,
+                path -> 8L * 1024L * 1024L * 1024L,
+                FIXED_CLOCK);
+
+        AtomicLong mono = new AtomicLong(1_000_000L);
+        UmlInstanceLauncher launcher = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir,
+                sharedFactory,
+                registry,
+                provisioner,
+                (params, distroId) -> new UmlInstanceRootfsProvisioner.SeedInput(
+                        "debian", "13", seedTar, null, null, seedSha, fakeTarXz.length),
+                store.stateMonitor(),
+                store,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L);
+
+        InstanceLaunchCoordinator coordinator = coordinator(
+                store, filesDir, true, launcher, new RecordingUmlFaceLane(), new RecordingUi());
+        InstanceLaunchCoordinator.LaunchOutcome boot1 = coordinator.launch(debian);
+        assertTrue(boot1 instanceof InstanceLaunchCoordinator.LaunchOutcome.Launched);
+        awaitCondition(() -> isStopped(store, debian.id()) && !registry.isReserved(debian.rootVolume()),
+                5_000, "debian boot 1 did not finish cleanly");
+
+        assertEquals(1, provisionSpawns.get());
+        assertEquals(1, bootSpecs.size());
+        UmlLaunchSpec firstBoot = bootSpecs.get(0);
+        assertTrue(firstBoot.kernelPath().endsWith("libuml_kernel_full.so"));
+        assertTrue(firstBoot.stubExePath().endsWith("libuml_stub_full.so"));
+        assertEquals(1024, firstBoot.memMb());
+        assertTrue(firstBoot.argv().contains("uminit=/sbin/init"));
+        assertTrue(firstBoot.argv().contains("umroot=/dev/ubda"));
+
+        // Launching Debian with FAST_UP_ARM64 on an unpersisted/un-stored launcher fails closed
+        // with DistroNotCreatableException without falling back to FULL_SMP_ARM64.
+        UmlInstanceLauncher unstoredLauncher = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir,
+                sharedFactory,
+                registry,
+                provisioner,
+                (params, distroId) -> new UmlInstanceRootfsProvisioner.SeedInput(
+                        "debian", "13", seedTar, null, null, seedSha, fakeTarXz.length),
+                new Object(),
+                null,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L);
+        InstanceStrategyLauncher.LaunchParameters fastDebianParams =
+                new InstanceStrategyLauncher.LaunchParameters(
+                        java.util.UUID.randomUUID().toString(),
+                        debian.bridgeToken(),
+                        "debian-13-rootfs.tar.xz",
+                        debian.rootVolume().toString(),
+                        filesDir.toPath().resolve("runtime").resolve(debian.id()).toString(),
+                        filesDir.toPath().resolve("distro-inputs").toString(),
+                        null,
+                        debian.hardwareConfig(),
+                        null, null, null,
+                        debian.hostname(),
+                        debian.defaultUser(),
+                        false,
+                        null,
+                        "fast-up-arm64");
+        try {
+            unstoredLauncher.launch(fastDebianParams);
+            fail("expected FAST_UP_ARM64 launch of Debian to refuse");
+        } catch (UmlDistroCapabilityCatalog.DistroNotCreatableException refused) {
+            assertEquals("debian", refused.verdict().distroId());
+            assertEquals(UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64, refused.verdict().profile());
+        }
+    }
+
+    @Test
+    public void resolveKernelProfileRejectsExplicitVsPersistedConflictAndAutoMarksSystemdOsc()
+            throws Exception {
+        File root = tmp.newFolder("profile-conflict-and-osc");
+        File nativeDir = new File(root, "lib");
+        File filesDir = new File(root, "files");
+        Files.createDirectories(nativeDir.toPath());
+        Files.createDirectories(filesDir.toPath().resolve("instances"));
+        Files.createFile(nativeDir.toPath().resolve("libuml_kernel.so"));
+        Files.createFile(nativeDir.toPath().resolve("libuml_stub.so"));
+        Files.createFile(nativeDir.toPath().resolve("libuml_kernel_full.so"));
+        Files.createFile(nativeDir.toPath().resolve("libuml_stub_full.so"));
+
+        InstanceLifecycle.FileStore store =
+                new InstanceLifecycle.FileStore(filesDir.toPath().resolve("instances"));
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, FIXED_CLOCK);
+        InstanceLifecycle.Instance debian = new IsolatedQaExecutionEntry(() -> true)
+                .ensurePersistentDebianInstance(store, controller, filesDir.toPath().resolve("qa-uml-roots"));
+        cleanupInstanceIds.add(debian.id());
+        Path volume = debian.rootVolume();
+        try (var ch = Files.newByteChannel(
+                volume, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE)) {
+            ch.position(0x438);
+            ch.write(java.nio.ByteBuffer.wrap(new byte[] {0x53, (byte) 0xEF}));
+            ch.position(StorageContract.MIN_ROOT_VOLUME_BYTES - 1L);
+            ch.write(java.nio.ByteBuffer.wrap(new byte[] {0}));
+        }
+
+        FakeUmlProcessHandle handle = new FakeUmlProcessHandle(6010L, new CountDownLatch(1), 0);
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        AtomicLong mono = new AtomicLong(1_000_000L);
+        UmlInstanceLauncher launcher = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir,
+                (spec, cols, rows) -> handle,
+                registry,
+                new UmlInstanceRootfsProvisioner(
+                        (spec, cols, rows) -> new ImmediateConsoleProcess(0, ""),
+                        registry,
+                        stageDir -> {},
+                        path -> 8L * 1024L * 1024L * 1024L,
+                        FIXED_CLOCK),
+                (params, distroId) -> {
+                    throw new AssertionError("no cold seed needed");
+                },
+                store.stateMonitor(),
+                store,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L);
+
+        // 1. Conflicting explicit vs persisted kernelProfile fails closed.
+        InstanceStrategyLauncher.LaunchParameters conflicting =
+                new InstanceStrategyLauncher.LaunchParameters(
+                        debian.id(),
+                        debian.bridgeToken(),
+                        "debian-13-rootfs.tar.xz",
+                        volume.toString(),
+                        filesDir.toPath().resolve("runtime").resolve(debian.id()).toString(),
+                        filesDir.toPath().resolve("distro-inputs").toString(),
+                        null,
+                        debian.hardwareConfig(),
+                        null, null, null,
+                        debian.hostname(),
+                        debian.defaultUser(),
+                        false,
+                        null,
+                        "fast-up-arm64");
+        // Note: debian persisted kernelProfile is "full-smp-arm64"; requesting "fast-up-arm64" conflicts.
+        // Wait until first checking auto OSC on matching launch? Test conflict directly right here:
+        try {
+            launcher.launch(conflicting);
+            fail("expected conflicting kernelProfile to throw IllegalStateException");
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains("Conflicting kernelProfile"));
+        }
+
+        // 2. Session.terminalOutput() automatically marks SYSTEMD_READY on OSC 133;O;orchestella=systemd-ready.
+        InstanceStrategyLauncher.LaunchParameters matching =
+                new InstanceStrategyLauncher.LaunchParameters(
+                        debian.id(),
+                        debian.bridgeToken(),
+                        "debian-13-rootfs.tar.xz",
+                        volume.toString(),
+                        filesDir.toPath().resolve("runtime").resolve(debian.id()).toString(),
+                        filesDir.toPath().resolve("distro-inputs").toString(),
+                        null,
+                        debian.hardwareConfig(),
+                        null, null, null,
+                        debian.hostname(),
+                        debian.defaultUser(),
+                        false,
+                        null,
+                        debian.kernelProfile());
+        ExecutionSession session = launcher.launch(matching);
+        assertTrue(session instanceof UmlInstanceLauncher.Session);
+        UmlInstanceLauncher.Session umlSession = (UmlInstanceLauncher.Session) session;
+        assertEquals(-1L, umlSession.launchTimeline().elapsedMs(LaunchTimeline.Stage.SYSTEMD_READY));
+        handle.guestPtyOut().write(
+                ("\u001b]133;B;orchestella=prompt\u0007"
+                        + "\u001b]133;O;orchestella=systemd-ready\u0007\n")
+                        .getBytes(StandardCharsets.UTF_8));
+        handle.guestPtyOut().flush();
+        handle.guestPtyOut().close();
+        try (InputStream out = session.terminalOutput()) {
+            byte[] buf = new byte[256];
+            while (out.read(buf) != -1) {
+                // drain stream through FilterInputStream
+            }
+        }
+        assertTrue(
+                "expected SYSTEMD_READY to be marked automatically",
+                umlSession.launchTimeline().elapsedMs(LaunchTimeline.Stage.SYSTEMD_READY) >= 0L);
+        ((RuntimeOwnedSession) session).stopRuntime(200L);
+    }
+
     private static InstanceLaunchCoordinator.FactsSource unarmedFacts() {
         return () -> () -> AcceleratorFacts.builder()
                 .avfPresent(false)

@@ -268,6 +268,7 @@ public final class StorageContract {
         private final VmHardwareConfig hardwareConfig;
         private final ProvisioningEvidenceMetadata provisioningEvidence;
         private final ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity;
+        private final String kernelProfile;
 
         /** Legacy ten-field constructor; extension fields receive safe defaults. */
         public InstanceExportMetadata(
@@ -326,6 +327,30 @@ public final class StorageContract {
                 VmHardwareConfig hardwareConfig,
                 ProvisioningEvidenceMetadata provisioningEvidence,
                 ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity) {
+            this(instanceId, distroId, distroVersion, runtimeClass, state, diskSizeBytes,
+                    sha256RootVolume, createdAtMillis, updatedAtMillis, exportedAtMillis,
+                    hostname, defaultUser, hasSudo, hardwareConfig, provisioningEvidence,
+                    executionIdentity, null);
+        }
+
+        public InstanceExportMetadata(
+                String instanceId,
+                String distroId,
+                String distroVersion,
+                String runtimeClass,
+                String state,
+                long diskSizeBytes,
+                String sha256RootVolume,
+                long createdAtMillis,
+                long updatedAtMillis,
+                long exportedAtMillis,
+                String hostname,
+                String defaultUser,
+                boolean hasSudo,
+                VmHardwareConfig hardwareConfig,
+                ProvisioningEvidenceMetadata provisioningEvidence,
+                ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity,
+                String kernelProfile) {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.distroId = Objects.requireNonNull(distroId, "distroId");
             this.distroVersion = Objects.requireNonNull(distroVersion, "distroVersion");
@@ -352,6 +377,10 @@ public final class StorageContract {
             this.executionIdentity = executionIdentity != null
                     ? executionIdentity
                     : ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent();
+            if (kernelProfile != null && kernelProfile.trim().isEmpty()) {
+                throw new IllegalArgumentException("blank kernelProfile declaration");
+            }
+            this.kernelProfile = kernelProfile != null ? kernelProfile.trim() : null;
         }
 
         public String instanceId() {
@@ -419,6 +448,10 @@ public final class StorageContract {
             return executionIdentity;
         }
 
+        public String kernelProfile() {
+            return kernelProfile;
+        }
+
         public String toJson() {
             String extraArgs = hardwareConfig.extraKernelArguments();
             String evidenceRootfs = provisioningEvidence != null ? provisioningEvidence.rootfsSha256() : null;
@@ -457,6 +490,11 @@ public final class StorageContract {
             if (!executionIdentity.volumeFormat().isAbsent()) {
                 json.append(",\n  \"rootVolumeFormat\": \"")
                         .append(escapeJson(executionIdentity.volumeFormat().rawValue()))
+                        .append("\"");
+            }
+            if (kernelProfile != null) {
+                json.append(",\n  \"kernelProfile\": \"")
+                        .append(escapeJson(kernelProfile))
                         .append("\"");
             }
             json.append("\n}\n");
@@ -500,6 +538,7 @@ public final class StorageContract {
             ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity =
                     ExecutionPolicyContract.InstanceExecutionIdentity.of(
                             strategyDeclaration, volumeFormatDeclaration);
+            String kernelProfile = extractOptionalStringFieldStrict(json, "kernelProfile");
 
             return new InstanceExportMetadata(
                     instanceId,
@@ -517,7 +556,8 @@ public final class StorageContract {
                     hasSudo,
                     hardwareConfig,
                     provisioningEvidence,
-                    executionIdentity);
+                    executionIdentity,
+                    kernelProfile);
         }
 
         private static VmHardwareConfig extractHardwareConfig(String json) {
@@ -644,7 +684,8 @@ public final class StorageContract {
                     && Objects.equals(defaultUser, that.defaultUser)
                     && Objects.equals(hardwareConfig, that.hardwareConfig)
                     && Objects.equals(provisioningEvidence, that.provisioningEvidence)
-                    && Objects.equals(executionIdentity, that.executionIdentity);
+                    && Objects.equals(executionIdentity, that.executionIdentity)
+                    && Objects.equals(kernelProfile, that.kernelProfile);
         }
 
         @Override
@@ -665,7 +706,8 @@ public final class StorageContract {
                     hasSudo,
                     hardwareConfig,
                     provisioningEvidence,
-                    executionIdentity);
+                    executionIdentity,
+                    kernelProfile);
         }
     }
 

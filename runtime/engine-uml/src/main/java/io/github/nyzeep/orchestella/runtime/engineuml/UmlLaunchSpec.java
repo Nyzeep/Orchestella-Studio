@@ -34,6 +34,7 @@ public final class UmlLaunchSpec {
     private final Path ephemeralRootDir;
     private final Path ubd0Path;
     private final Path credsHostfsDir;
+    private final String umInitPath;
     private final Path runtimeDir;
     private final int controlInFd;
     private final int controlOutFd;
@@ -51,6 +52,18 @@ public final class UmlLaunchSpec {
         this.ephemeralRootDir = builder.ephemeralRootDir;
         this.ubd0Path = builder.ubd0Path;
         this.credsHostfsDir = builder.credsHostfsDir;
+        if (builder.umInitPath != null) {
+            String trimmedInit = builder.umInitPath.trim();
+            if (!trimmedInit.startsWith("/")
+                    || trimmedInit.indexOf('\0') >= 0
+                    || trimmedInit.chars().anyMatch(Character::isWhitespace)) {
+                throw new IllegalArgumentException(
+                        "umInitPath must be an absolute path without whitespace: " + builder.umInitPath);
+            }
+            this.umInitPath = trimmedInit;
+        } else {
+            this.umInitPath = null;
+        }
         if (this.rootMode == RootMode.HOSTFS) {
             Objects.requireNonNull(this.ephemeralRootDir, "ephemeralRootDir");
         } else {
@@ -107,6 +120,10 @@ public final class UmlLaunchSpec {
         return credsHostfsDir;
     }
 
+    public String umInitPath() {
+        return umInitPath;
+    }
+
     public Path runtimeDir() {
         return runtimeDir;
     }
@@ -150,6 +167,9 @@ public final class UmlLaunchSpec {
         if (credsHostfsDir != null) {
             args.add("um.creds=" + credsHostfsDir.toAbsolutePath());
         }
+        if (umInitPath != null) {
+            args.add("uminit=" + umInitPath);
+        }
         args.add("um.standalone=1");
         args.addAll(extraArgs);
         return Collections.unmodifiableList(args);
@@ -179,6 +199,7 @@ public final class UmlLaunchSpec {
         private Path ephemeralRootDir;
         private Path ubd0Path;
         private Path credsHostfsDir;
+        private String umInitPath;
         private Path runtimeDir;
         private int controlInFd = DEFAULT_CONTROL_IN_FD;
         private int controlOutFd = DEFAULT_CONTROL_OUT_FD;
@@ -218,6 +239,11 @@ public final class UmlLaunchSpec {
 
         public Builder credsHostfsDir(Path credsHostfsDir) {
             this.credsHostfsDir = credsHostfsDir;
+            return this;
+        }
+
+        public Builder umInitPath(String umInitPath) {
+            this.umInitPath = umInitPath;
             return this;
         }
 

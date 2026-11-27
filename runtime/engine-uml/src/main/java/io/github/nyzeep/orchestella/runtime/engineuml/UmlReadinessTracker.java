@@ -42,7 +42,31 @@ public final class UmlReadinessTracker {
             long bridgeReadyNanos,
             long shellPromptObservedNanos,
             long shellReadyNanos,
+            long systemdReadyNanos,
             RejectionReason rejectionReason) {
+
+        public Snapshot(
+                String instanceId,
+                String generation,
+                Phase phase,
+                long pid,
+                long processStartedNanos,
+                long bridgeReadyNanos,
+                long shellPromptObservedNanos,
+                long shellReadyNanos,
+                RejectionReason rejectionReason) {
+            this(
+                    instanceId,
+                    generation,
+                    phase,
+                    pid,
+                    processStartedNanos,
+                    bridgeReadyNanos,
+                    shellPromptObservedNanos,
+                    shellReadyNanos,
+                    -1L,
+                    rejectionReason);
+        }
 
         public boolean processStarted() {
             return processStartedNanos >= 0L;
@@ -59,6 +83,10 @@ public final class UmlReadinessTracker {
         public boolean shellReady() {
             return shellReadyNanos >= 0L && rejectionReason == RejectionReason.NONE;
         }
+
+        public boolean systemdReady() {
+            return systemdReadyNanos >= 0L && rejectionReason == RejectionReason.NONE;
+        }
     }
 
     private final Object lock = new Object();
@@ -70,6 +98,7 @@ public final class UmlReadinessTracker {
     private long bridgeReadyNanos = -1L;
     private long shellPromptObservedNanos = -1L;
     private long shellReadyNanos = -1L;
+    private long systemdReadyNanos = -1L;
     private RejectionReason rejectionReason = RejectionReason.NONE;
 
     public UmlReadinessTracker(String instanceId, String generation) {
@@ -138,6 +167,19 @@ public final class UmlReadinessTracker {
         }
     }
 
+    /** Records observation of systemd {@code multi-user.target} readiness for the active generation. */
+    public boolean markSystemdReady(String expectedGeneration, long monotonicNanos) {
+        synchronized (lock) {
+            if (!isActiveMutable(expectedGeneration)) {
+                return false;
+            }
+            if (systemdReadyNanos < 0L) {
+                systemdReadyNanos = Math.max(0L, monotonicNanos);
+            }
+            return true;
+        }
+    }
+
     public boolean markBridgeRejected(
             String expectedGeneration, RejectionReason reason, long monotonicNanos) {
         Objects.requireNonNull(reason, "reason");
@@ -152,6 +194,7 @@ public final class UmlReadinessTracker {
                 rejectionReason = reason;
                 bridgeReadyNanos = -1L;
                 shellReadyNanos = -1L;
+                systemdReadyNanos = -1L;
                 phase = Phase.FAILED;
             }
             return true;
@@ -176,6 +219,7 @@ public final class UmlReadinessTracker {
             this.bridgeReadyNanos = -1L;
             this.shellPromptObservedNanos = -1L;
             this.shellReadyNanos = -1L;
+            this.systemdReadyNanos = -1L;
             this.rejectionReason = RejectionReason.NONE;
         }
     }
@@ -191,6 +235,7 @@ public final class UmlReadinessTracker {
                     bridgeReadyNanos,
                     shellPromptObservedNanos,
                     shellReadyNanos,
+                    systemdReadyNanos,
                     rejectionReason);
         }
     }

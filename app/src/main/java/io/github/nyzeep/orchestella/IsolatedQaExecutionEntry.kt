@@ -42,19 +42,52 @@ class IsolatedQaExecutionEntry(
         userConfig: InstanceUserConfig,
         strategy: FullLinuxContract.ExecutionStrategy,
         volumeFormat: StorageContract.RootVolumeFormat = StorageContract.RootVolumeFormat.RAW_SPARSE,
+        kernelProfile: UmlDistroCapabilityCatalog.KernelProfile =
+            UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64,
     ): InstanceLifecycle.Instance {
         check(isEnabled()) {
             "Isolated QA execution entry is disabled outside QA builds (buildChannel=${BuildConfig.BUILD_CHANNEL})"
         }
-        if (strategy == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL) {
-            UmlDistroCapabilityCatalog.requireCreatable(
-                distro.id(),
-                UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64,
-            )
+        val profileId = if (strategy == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL) {
+            UmlDistroCapabilityCatalog.requireCreatable(distro.id(), kernelProfile)
+            io.github.nyzeep.orchestella.runtime.engineuml.UmlKernelPayloadContract
+                .descriptorFor(kernelProfile)
+                .profileId()
+        } else {
+            null
         }
-        val identity = ExecutionPolicyContract.InstanceExecutionIdentity.explicit(strategy, volumeFormat)
-        return controller.create(distro, rootVolume, hardwareConfig, userConfig, identity)
+        val identity = ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+            strategy,
+            volumeFormat,
+        )
+        return controller.create(distro, rootVolume, hardwareConfig, userConfig, identity, profileId)
     }
+
+    /**
+     * Ensures one persistent Debian 13 (trixie) instance bound to [KernelProfile.FULL_SMP_ARM64]
+     * with the frozen W01-02 / W01-03 QA baseline (1 vCPU, 1024 MiB RAM, 4 GiB sparse ext4).
+     */
+    @JvmOverloads
+    @Throws(IOException::class)
+    fun ensurePersistentDebianInstance(
+        store: InstanceLifecycle.Store,
+        controller: InstanceLifecycle.Controller,
+        qaRootsDir: Path,
+        requestedId: String? = null,
+        ramMegabytes: Int = DEFAULT_DEBIAN_RAM_MB,
+        diskCapacityBytes: Long = DEFAULT_DEBIAN_DISK_BYTES,
+        hostname: String = DEFAULT_DEBIAN_QA_HOSTNAME,
+    ): InstanceLifecycle.Instance = ensurePersistentUmlInstance(
+        store = store,
+        controller = controller,
+        qaRootsDir = qaRootsDir,
+        requestedId = requestedId,
+        distroId = "debian",
+        profile = UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64,
+        ramMegabytes = ramMegabytes,
+        diskCapacityBytes = diskCapacityBytes,
+        hostname = hostname,
+    )
 
     /**
      * Ensures one isolated QA Alpine instance configured with [FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL]
@@ -87,31 +120,55 @@ class IsolatedQaExecutionEntry(
         qaRootsDir: Path,
         requestedId: String? = null,
         distroId: String = "alpine",
+    ): InstanceLifecycle.Instance = ensurePersistentUmlInstance(
+        store = store,
+        controller = controller,
+        qaRootsDir = qaRootsDir,
+        requestedId = requestedId,
+        distroId = distroId,
+        profile = UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64,
+        ramMegabytes = 512,
+        diskCapacityBytes = StorageContract.DEFAULT_ROOT_VOLUME_BYTES,
+        hostname = DEFAULT_QA_HOSTNAME,
+    )
+
+    private fun ensurePersistentUmlInstance(
+        store: InstanceLifecycle.Store,
+        controller: InstanceLifecycle.Controller,
+        qaRootsDir: Path,
+        requestedId: String?,
+        distroId: String,
+        profile: UmlDistroCapabilityCatalog.KernelProfile,
+        ramMegabytes: Int,
+        diskCapacityBytes: Long,
+        hostname: String,
     ): InstanceLifecycle.Instance {
         check(isEnabled()) {
             "Isolated QA execution entry is disabled outside QA builds (buildChannel=${BuildConfig.BUILD_CHANNEL})"
         }
-        val gateVerdict = UmlDistroCapabilityCatalog.requireCreatable(
-            distroId,
-            UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64,
-        )
+        val expectedProfileId = io.github.nyzeep.orchestella.runtime.engineuml.UmlKernelPayloadContract
+            .descriptorFor(profile)
+            .profileId()
+        val gateVerdict = UmlDistroCapabilityCatalog.requireCreatable(distroId, profile)
         val projection = DistroCreatabilityProjection.evaluateForStrategy(
             strategy = FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
             distroId = distroId,
             filesDir = qaRootsDir.parent ?: qaRootsDir,
             isolatedQaEnabled = isEnabled(),
             umlRootfsDownloadEnabled = BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED,
+            kernelProfile = profile,
         )
         check(projection.creatable) {
-            projection.refusalReason ?: "Distro $distroId is not creatable for USER_MODE_KERNEL"
+            projection.refusalReason ?: "Distro $distroId is not creatable for $expectedProfileId"
         }
         if (!requestedId.isNullOrBlank()) {
             val existing = store.load(requestedId)
             require(
                 existing.executionIdentity().strategy().strategy() ==
-                    FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                    FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL &&
+                    matchesExpectedProfile(existing.kernelProfile(), profile, expectedProfileId),
             ) {
-                "Requested instance $requestedId is not configured for USER_MODE_KERNEL"
+                "Requested instance $requestedId is not bound to $expectedProfileId"
             }
             if (existing.state() == InstanceLifecycle.State.CREATED) {
                 controller.beginProvisioning(existing.id())
@@ -122,8 +179,9 @@ class IsolatedQaExecutionEntry(
         val reusable = store.list().firstOrNull { candidate ->
             candidate.executionIdentity().strategy().strategy() ==
                 FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL &&
+                matchesExpectedProfile(candidate.kernelProfile(), profile, expectedProfileId) &&
                 candidate.distro().id() == gateVerdict.distroId() &&
-                DEFAULT_QA_HOSTNAME == candidate.hostname()
+                hostname == candidate.hostname()
         }
         if (reusable != null) {
             if (reusable.rootVolume() != null && Files.notExists(reusable.rootVolume())) {
@@ -147,20 +205,31 @@ class IsolatedQaExecutionEntry(
             rootVolume = rootVolume,
             hardwareConfig = VmHardwareConfig.builder()
                 .cpuCores(1)
-                .ramMegabytes(512)
-                .diskCapacityBytes(StorageContract.DEFAULT_ROOT_VOLUME_BYTES)
+                .ramMegabytes(ramMegabytes)
+                .diskCapacityBytes(diskCapacityBytes)
                 .build(),
             userConfig = InstanceUserConfig(
                 InstanceUserConfig.DEFAULT_ROOT_USER,
                 "orchestellaqa",
                 false,
-                DEFAULT_QA_HOSTNAME,
+                hostname,
             ),
             strategy = FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
             volumeFormat = StorageContract.RootVolumeFormat.RAW_SPARSE,
+            kernelProfile = profile,
         )
         controller.beginProvisioning(created.id())
         return controller.completeProvisioning(created.id())
+    }
+
+    private fun matchesExpectedProfile(
+        candidateProfile: String?,
+        profile: UmlDistroCapabilityCatalog.KernelProfile,
+        expectedProfileId: String,
+    ): Boolean = if (profile == UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64) {
+        candidateProfile.isNullOrBlank() || expectedProfileId == candidateProfile
+    } else {
+        expectedProfileId == candidateProfile
     }
 
     /**
@@ -265,6 +334,17 @@ class IsolatedQaExecutionEntry(
                 }
                 locked
             }
+            val profile = if (instance.kernelProfile().isNullOrBlank()) {
+                UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64
+            } else {
+                io.github.nyzeep.orchestella.runtime.engineuml.UmlKernelPayloadContract
+                    .fromProfileId(instance.kernelProfile())
+            }
+            val provisionTimeoutMs = if ("debian".equals(instance.distro().id(), ignoreCase = true)) {
+                UmlInstanceRootfsProvisioner.DEFAULT_DEBIAN_PROVISION_TIMEOUT_MS
+            } else {
+                UmlInstanceRootfsProvisioner.DEFAULT_PROVISION_TIMEOUT_MS
+            }
             val request = UmlInstanceRootfsProvisioner.ProvisionRequest(
                 instanceId,
                 generation,
@@ -289,10 +369,11 @@ class IsolatedQaExecutionEntry(
                         ),
                     )
                 },
-                UmlInstanceRootfsProvisioner.DEFAULT_PROVISION_TIMEOUT_MS,
+                provisionTimeoutMs,
                 1_000L,
                 2_000L,
                 2_000L,
+                profile,
             )
             return provisioner.provisionWithHeldReservation(request, reservation)
         } catch (failure: UmlInstanceRootfsProvisioner.ProvisionException) {
@@ -308,7 +389,12 @@ class IsolatedQaExecutionEntry(
     }
 
     companion object {
-        const val DEFAULT_QA_HOSTNAME: String = "qa-uml-alpine"
+        @JvmField
+        val DEFAULT_QA_HOSTNAME: String = UmlInstanceLauncher.DEFAULT_QA_HOSTNAME
+        @JvmField
+        val DEFAULT_DEBIAN_QA_HOSTNAME: String = UmlInstanceLauncher.DEFAULT_DEBIAN_QA_HOSTNAME
+        const val DEFAULT_DEBIAN_RAM_MB: Int = 1024
+        const val DEFAULT_DEBIAN_DISK_BYTES: Long = 4L * 1024L * 1024L * 1024L
     }
 
     @Throws(IOException::class)
@@ -330,6 +416,9 @@ class IsolatedQaExecutionEntry(
         )
         check(restored.executionIdentity() == exported.executionIdentity()) {
             "SAF archive round-trip altered execution identity: expected=${exported.executionIdentity()}, actual=${restored.executionIdentity()}"
+        }
+        check(restored.kernelProfile() == exported.kernelProfile()) {
+            "SAF archive round-trip altered kernel profile: expected=${exported.kernelProfile()}, actual=${restored.kernelProfile()}"
         }
         return restored
     }

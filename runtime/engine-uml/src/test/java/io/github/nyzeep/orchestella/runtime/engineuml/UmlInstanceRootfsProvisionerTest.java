@@ -560,6 +560,148 @@ public final class UmlInstanceRootfsProvisionerTest {
         assertTrue(forward.contains("-ne " + UmlNetworkProfile.GUEST_RELAY_PORT));
     }
 
+    @Test
+    public void provisionsDebian13TarXzOnFullSmpArm64WithSystemdUnitsAndPaxExtractor()
+            throws Exception {
+        Path workDir = tempFolder.newFolder("debian-full").toPath();
+        Path volumesDir = Files.createDirectories(workDir.resolve("root-volumes"));
+        Path runtimeDir = Files.createDirectories(workDir.resolve("runtime"));
+        Path targetVolume = volumesDir.resolve("deb-1.raw");
+        Path seedTar = Files.createFile(workDir.resolve("debian-13-rootfs.tar.xz"));
+        byte[] tarBytes = "SYNTHETIC_DEBIAN_TAR_XZ".getBytes(StandardCharsets.UTF_8);
+        Files.write(seedTar, tarBytes);
+        String sha = sha256(tarBytes);
+
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        AtomicReference<String> provisionScript = new AtomicReference<>();
+        AtomicReference<String> markerContent = new AtomicReference<>();
+        AtomicBoolean hadAgentService = new AtomicBoolean(false);
+        AtomicBoolean hadCredsService = new AtomicBoolean(false);
+        AtomicBoolean hadTerminalIntegration = new AtomicBoolean(false);
+        AtomicBoolean hadGuestAgentBinary = new AtomicBoolean(false);
+
+        UmlProcessFactory fakeFactory = (spec, cols, rows) -> {
+            Path stageDir = spec.ephemeralRootDir();
+            assertTrue(Files.isRegularFile(stageDir.resolve("opt/droidlayer/guest-agent")));
+            hadGuestAgentBinary.set(true);
+            try {
+                provisionScript.set(Files.readString(stageDir.resolve("um-command.sh")));
+                Path ga = stageDir.resolve("guest-assets");
+                markerContent.set(Files.readString(ga.resolve("etc/orchestella/provision-marker")));
+                hadAgentService.set(Files.isRegularFile(
+                        ga.resolve("etc/systemd/system/orchestella-guest-agent.service")));
+                hadCredsService.set(Files.isRegularFile(
+                        ga.resolve("etc/systemd/system/orchestella-uml-creds.service")));
+                hadTerminalIntegration.set(Files.isRegularFile(
+                        ga.resolve("etc/profile.d/20-orchestella-terminal-integration.sh")));
+                assertFalse("Debian rootfs must not stage Alpine /um-command.sh",
+                        Files.exists(ga.resolve("um-command.sh")));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            writeValidExt4Magic(spec.ubd0Path(), 4L * 1024L * 1024L * 1024L);
+            String okLine = extractSuccessTokenFromScript(provisionScript.get());
+            return new FakeProvisionProcess(0, okLine + "\n", false, true);
+        };
+
+        UmlInstanceRootfsProvisioner provisioner = new UmlInstanceRootfsProvisioner(
+                fakeFactory,
+                registry,
+                debianToolchainStager(),
+                path -> 8L * 1024L * 1024L * 1024L,
+                FIXED_CLOCK);
+
+        UmlInstanceRootfsProvisioner.ProvisionRequest request =
+                new UmlInstanceRootfsProvisioner.ProvisionRequest(
+                        "inst-deb-1",
+                        "gen-deb-1",
+                        targetVolume,
+                        4L * 1024L * 1024L * 1024L,
+                        "qa-uml-debian",
+                        new UmlInstanceRootfsProvisioner.SeedInput(
+                                "debian",
+                                "13",
+                                seedTar,
+                                null,
+                                null,
+                                sha,
+                                tarBytes.length),
+                        UmlInstanceRootfsProvisioner.ProvisionMode.CREATE_NEW,
+                        null,
+                        "/system/lib/libuml_kernel_full.so",
+                        "/system/lib/libuml_stub_full.so",
+                        runtimeDir,
+                        new Object(),
+                        (id, gen) -> true,
+                        null,
+                        UmlInstanceRootfsProvisioner.DEFAULT_DEBIAN_PROVISION_TIMEOUT_MS,
+                        500L,
+                        500L,
+                        500L,
+                        UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64);
+
+        UmlInstanceRootfsProvisioner.ProvisionReceipt receipt = provisioner.provision(request);
+        assertEquals("debian", receipt.distroId());
+        assertEquals("13", receipt.distroVersion());
+        assertTrue(hadGuestAgentBinary.get());
+        assertTrue(hadAgentService.get());
+        assertTrue(hadCredsService.get());
+        assertTrue(hadTerminalIntegration.get());
+        assertTrue(markerContent.get().contains("kernel_profile=full-smp-arm64"));
+        assertTrue(markerContent.get().contains("init_path=/sbin/init"));
+        assertTrue(provisionScript.get().contains("acl,user_xattr"));
+        assertTrue(provisionScript.get().contains("xzcat"));
+        assertTrue(provisionScript.get().contains("--numeric-owner"));
+        assertTrue(provisionScript.get().contains("--acls"));
+        assertTrue(provisionScript.get().contains("--xattrs"));
+        assertTrue(provisionScript.get().contains("--xattrs-include='*'"));
+        assertTrue(provisionScript.get().contains("orchestella-guest-agent"));
+        assertTrue(provisionScript.get().contains("/sbin/init"));
+    }
+
+    @Test
+    public void rejectsUnsupportedArchiveFormatAndFastProfileDebianWithoutTouchingTarget()
+            throws Exception {
+        Path workDir = tempFolder.newFolder("deb-reject").toPath();
+        Path volumesDir = Files.createDirectories(workDir.resolve("root-volumes"));
+        Path runtimeDir = Files.createDirectories(workDir.resolve("runtime"));
+        Path badArchive = workDir.resolve("debian-13-rootfs.zip");
+        byte[] bytes = "NOT_A_TAR".getBytes(StandardCharsets.UTF_8);
+        Files.write(badArchive, bytes);
+        String sha = sha256(bytes);
+
+        UmlInstanceRootfsProvisioner provisioner = new UmlInstanceRootfsProvisioner(
+                (spec, cols, rows) -> new FakeProvisionProcess(0, "", false, true),
+                new UmlRootReservationRegistry(),
+                debianToolchainStager(),
+                path -> 8L * 1024L * 1024L * 1024L,
+                FIXED_CLOCK);
+
+        assertReason(
+                UmlInstanceRootfsProvisioner.REASON_UNSUPPORTED_ARCHIVE_FORMAT,
+                () -> provisioner.provision(new UmlInstanceRootfsProvisioner.ProvisionRequest(
+                        "inst-deb-bad",
+                        "g1",
+                        volumesDir.resolve("bad.raw"),
+                        4L * 1024L * 1024L * 1024L,
+                        "qa-uml-debian",
+                        new UmlInstanceRootfsProvisioner.SeedInput(
+                                "debian", "13", badArchive, null, null, sha, bytes.length),
+                        UmlInstanceRootfsProvisioner.ProvisionMode.CREATE_NEW,
+                        null,
+                        "/k",
+                        "/s",
+                        runtimeDir,
+                        new Object(),
+                        (i, g) -> true,
+                        null,
+                        5_000L,
+                        500L,
+                        500L,
+                        500L,
+                        UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64)));
+    }
+
     private UmlInstanceRootfsProvisioner.ProvisionRequest baseRequest(
             String instanceId,
             String generation,
@@ -605,6 +747,14 @@ public final class UmlInstanceRootfsProvisionerTest {
         };
     }
 
+    private static UmlInstanceRootfsProvisioner.ToolchainStager debianToolchainStager() {
+        return stageDir -> {
+            noopToolchainStager().stageInto(stageDir);
+            Files.createDirectories(stageDir.resolve("opt/droidlayer"));
+            Files.writeString(stageDir.resolve("opt/droidlayer/guest-agent"), "stub-guest-agent");
+        };
+    }
+
     private static void writeValidExt4Magic(Path target, long sizeBytes) {
         try {
             try (var ch = Files.newByteChannel(
@@ -640,6 +790,51 @@ public final class UmlInstanceRootfsProvisionerTest {
         UmlInstanceRootfsProvisioner.ProvisionException failure =
                 assertThrows(UmlInstanceRootfsProvisioner.ProvisionException.class, action::run);
         assertEquals(expectedReason, failure.reason());
+    }
+
+    @Test
+    public void alpineRejectsTarXzAndDebianTerminalIntegrationIncludesSystemdOsc() throws Exception {
+        Path work = tempFolder.newFolder("archive-and-script").toPath();
+        Path volume = work.resolve("alpine.raw");
+        Path runtimeDir = Files.createDirectories(work.resolve("rt"));
+        Path xzSeed = work.resolve("alpine-minirootfs.tar.xz");
+        byte[] bytes = "fake-alpine-xz".getBytes(StandardCharsets.UTF_8);
+        Files.write(xzSeed, bytes);
+
+        UmlInstanceRootfsProvisioner provisioner = new UmlInstanceRootfsProvisioner(
+                (spec, cols, rows) -> new FakeProvisionProcess(0, "", false, true),
+                new UmlRootReservationRegistry(),
+                noopToolchainStager(),
+                path -> 4L * 1024L * 1024L * 1024L,
+                FIXED_CLOCK);
+
+        assertReason(UmlInstanceRootfsProvisioner.REASON_UNSUPPORTED_ARCHIVE_FORMAT, () ->
+                provisioner.provision(new UmlInstanceRootfsProvisioner.ProvisionRequest(
+                        "inst-alpine-xz",
+                        "gen-1",
+                        volume,
+                        StorageContract.MIN_ROOT_VOLUME_BYTES,
+                        "qa-uml-alpine",
+                        new UmlInstanceRootfsProvisioner.SeedInput(
+                                "alpine", "3.22.2", xzSeed, null, null, sha256(bytes), bytes.length),
+                        UmlInstanceRootfsProvisioner.ProvisionMode.CREATE_NEW,
+                        null,
+                        "/tmp/kernel",
+                        "/tmp/stub",
+                        runtimeDir,
+                        new Object(),
+                        (i, g) -> true,
+                        null,
+                        5_000L,
+                        500L,
+                        500L,
+                        500L)));
+
+        String termScript = UmlPersistentGuestScripts.debianTerminalIntegrationScript();
+        assertTrue(termScript.contains("133;O;orchestella=systemd-ready"));
+        assertTrue(termScript.contains("/run/orchestella/systemd-ready"));
+        String netScript = UmlPersistentGuestScripts.debianUmlNetworkScript();
+        assertFalse(netScript.contains("[ ! -s /etc/resolv.conf ]"));
     }
 
     private static String sha256(byte[] bytes) throws Exception {

@@ -22,6 +22,7 @@ public final class StorageContractTest {
         instanceExportMetadataExtendedFieldsRoundtrip();
         instanceExportMetadataLegacyJsonUsesSafeDefaults();
         instanceExportMetadataExecutionIdentityRoundtripAndRejection();
+        instanceExportMetadataKernelProfileRoundtripAndOmission();
         checksumManifestFormattingAndParsing();
         sha256HexComputesAccurateDigests();
         System.out.println("STORAGE_CONTRACT_TEST_OK");
@@ -290,6 +291,64 @@ public final class StorageContractTest {
         assertThrows(IllegalArgumentException.class,
                 () -> StorageContract.InstanceExportMetadata.fromJson(truncatedJson),
                 "truncated metadata JSON before executionStrategy must fail closed");
+    }
+
+    private static void instanceExportMetadataKernelProfileRoundtripAndOmission() {
+        String sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        ExecutionPolicyContract.InstanceExecutionIdentity umlIdentity =
+                ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        StorageContract.RootVolumeFormat.RAW_SPARSE);
+        StorageContract.InstanceExportMetadata metadata = new StorageContract.InstanceExportMetadata(
+                "inst-uml-deb",
+                "debian",
+                "13",
+                "FULL_LINUX",
+                "STOPPED",
+                4_294_967_296L,
+                sha256,
+                10L,
+                20L,
+                30L,
+                "qa-uml-debian",
+                "root",
+                false,
+                VmHardwareConfig.defaultConfig(),
+                null,
+                umlIdentity,
+                "full-smp-arm64");
+
+        String json = metadata.toJson();
+        assertTrue(json.contains("\"kernelProfile\": \"full-smp-arm64\""), "writes kernelProfile");
+        StorageContract.InstanceExportMetadata parsed = StorageContract.InstanceExportMetadata.fromJson(json);
+        assertEquals("full-smp-arm64", parsed.kernelProfile(), "round-trips kernelProfile");
+        assertEquals(metadata, parsed, "equality includes kernelProfile");
+
+        // Absent kernelProfile keeps legacy JSON free of the optional field.
+        StorageContract.InstanceExportMetadata withoutProfile = new StorageContract.InstanceExportMetadata(
+                "inst-uml-alp",
+                "alpine",
+                "3.22.2",
+                "FULL_LINUX",
+                "STOPPED",
+                2_147_483_648L,
+                sha256,
+                10L,
+                20L,
+                30L,
+                "qa-uml-alpine",
+                "root",
+                false,
+                VmHardwareConfig.defaultConfig(),
+                null,
+                umlIdentity);
+        assertTrue(!withoutProfile.toJson().contains("\"kernelProfile\""), "omits null kernelProfile");
+        assertEquals(null, withoutProfile.kernelProfile(), "null kernelProfile by default");
+
+        String blankProfileJson = json.replace("\"full-smp-arm64\"", "\"  \"");
+        assertThrows(IllegalArgumentException.class,
+                () -> StorageContract.InstanceExportMetadata.fromJson(blankProfileJson),
+                "blank kernelProfile must be rejected");
     }
 
     private static void checksumManifestFormattingAndParsing() {

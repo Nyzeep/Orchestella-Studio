@@ -22,6 +22,7 @@ public final class InstanceMetadataCodecContractTest {
         roundTripsEveryPersistedAspect();
         preservesUnknownMetadataKeysVerbatim();
         roundTripsExecutionIdentityAndRejectsBlankTruncatedValues();
+        roundTripsKernelProfileAndPreservesLegacyAbsence();
         failsClosedOnMalformedMetadata();
         failsClosedOnNewerSchemaVersion();
     }
@@ -144,6 +145,48 @@ public final class InstanceMetadataCodecContractTest {
                 "blank storage.rootVolumeFormat must fail closed");
         assertEquals(true, java.util.Arrays.equals(originalSavedBytes, java.nio.file.Files.readAllBytes(propsPath)),
                 "saved metadata file remains untouched");
+    }
+
+    private static void roundTripsKernelProfileAndPreservesLegacyAbsence() throws Exception {
+        java.nio.file.Path storeDir = java.nio.file.Files.createTempDirectory("codec-kernel-profile");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(storeDir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, CLOCK);
+
+        ExecutionPolicyContract.InstanceExecutionIdentity umlIdentity =
+                ExecutionPolicyContract.InstanceExecutionIdentity.explicit(
+                        FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                        StorageContract.RootVolumeFormat.RAW_SPARSE);
+        InstanceLifecycle.Instance debian = controller.create(
+                new InstanceLifecycle.DistroReference("debian", "13"),
+                storeTestRoot("deb-profile"),
+                VmHardwareConfig.defaultConfig(),
+                InstanceUserConfig.defaultRoot(),
+                umlIdentity,
+                "full-smp-arm64");
+        assertEquals("full-smp-arm64", debian.kernelProfile(), "created kernelProfile");
+        assertEquals("full-smp-arm64", debian.toProperties().getProperty("execution.kernelProfile"),
+                "encoded kernelProfile");
+        assertEquals("full-smp-arm64", store.load(debian.id()).kernelProfile(), "persisted kernelProfile");
+
+        controller.beginProvisioning(debian.id());
+        controller.completeProvisioning(debian.id());
+        assertEquals("full-smp-arm64", store.load(debian.id()).kernelProfile(),
+                "kernelProfile survives state transitions");
+
+        // Legacy instances without kernelProfile omit execution.kernelProfile when encoded.
+        InstanceLifecycle.Instance legacy = controller.create(
+                new InstanceLifecycle.DistroReference("alpine", "3.22.2"),
+                storeTestRoot("legacy-no-profile"));
+        assertEquals(null, legacy.kernelProfile(), "legacy kernelProfile is null");
+        assertEquals(null, legacy.toProperties().getProperty("execution.kernelProfile"),
+                "legacy encode omits execution.kernelProfile");
+
+        // Blank kernelProfile fails closed.
+        Properties blankProfile = debian.toProperties();
+        blankProfile.setProperty("execution.kernelProfile", "   ");
+        assertThrows(IllegalArgumentException.class,
+                () -> InstanceLifecycle.Instance.fromProperties(blankProfile),
+                "blank execution.kernelProfile must fail closed");
     }
 
     private static void failsClosedOnMalformedMetadata() {

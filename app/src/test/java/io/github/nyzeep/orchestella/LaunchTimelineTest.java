@@ -414,6 +414,31 @@ public final class LaunchTimelineTest {
         assertTrue(lines.get(1).startsWith("{"));
     }
 
+    @Test
+    public void recordsSystemdReadyStageInCanonicalOrder() {
+        FakeClock clock = new FakeClock(Instant.parse("2026-11-27T08:00:00Z"));
+        RecordingSink sink = new RecordingSink();
+        LaunchTimeline timeline = new LaunchTimeline(INSTANCE_ID, "debian", 1024, 1, clock, sink);
+
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        clock.advanceMillis(100);
+        timeline.mark(LaunchTimeline.Stage.UML_STARTED);
+        clock.advanceMillis(200);
+        timeline.mark(LaunchTimeline.Stage.BRIDGE_READY);
+        clock.advanceMillis(150);
+        timeline.mark(LaunchTimeline.Stage.SHELL_READY);
+        clock.advanceMillis(50);
+        timeline.mark(LaunchTimeline.Stage.SYSTEMD_READY);
+        clock.advanceMillis(100);
+        timeline.markStopConfirmed(StopResult.CONFIRMED);
+        assertTrue(timeline.finish());
+
+        String line = sink.lines.get(0);
+        assertEquals("{\"stage\":\"SYSTEMD_READY\",\"elapsedMs\":500}", stageEntry(line, "SYSTEMD_READY"));
+        assertTrue(line.indexOf("SHELL_READY") < line.indexOf("SYSTEMD_READY"));
+        assertTrue(line.indexOf("SYSTEMD_READY") < line.indexOf("STOP_CONFIRMED"));
+    }
+
     private static String stageEntry(String line, String stage) {
         int start = line.indexOf("{\"stage\":\"" + stage + "\"");
         assertTrue("stage missing: " + stage, start >= 0);

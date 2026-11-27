@@ -27,6 +27,7 @@ final class InstanceMetadataCodec {
     private static final String KEY_HARDWARE_LEGACY_DEFAULTS = "hardware.legacyDefaults";
     private static final String KEY_EXECUTION_STRATEGY = "execution.strategy";
     private static final String KEY_ROOT_VOLUME_FORMAT = "storage.rootVolumeFormat";
+    private static final String KEY_KERNEL_PROFILE = "execution.kernelProfile";
     private static final int CURRENT_METADATA_SCHEMA_VERSION = 1;
     /**
      * Keys this codec understands. Everything else is preserved verbatim on
@@ -60,6 +61,7 @@ final class InstanceMetadataCodec {
             KEY_HARDWARE_LEGACY_DEFAULTS,
             KEY_EXECUTION_STRATEGY,
             KEY_ROOT_VOLUME_FORMAT,
+            KEY_KERNEL_PROFILE,
             KEY_PROVISIONING_MARKER_VERSION,
             KEY_PROVISIONING_ROOTFS_SHA256,
             KEY_PROVISIONING_RECORDED_AT);
@@ -131,6 +133,9 @@ final class InstanceMetadataCodec {
         }
         if (!executionIdentity.volumeFormat().isAbsent()) {
             properties.setProperty(KEY_ROOT_VOLUME_FORMAT, executionIdentity.volumeFormat().rawValue());
+        }
+        if (instance.kernelProfile() != null) {
+            properties.setProperty(KEY_KERNEL_PROFILE, instance.kernelProfile());
         }
         for (Map.Entry<String, String> entry : instance.unknownMetadata().entrySet()) {
             if (!KNOWN_METADATA_KEYS.contains(entry.getKey())) {
@@ -243,6 +248,11 @@ final class InstanceMetadataCodec {
             ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity =
                     ExecutionPolicyContract.InstanceExecutionIdentity.of(
                             strategyDeclaration, volumeFormatDeclaration);
+            String rawKernelProfile = properties.getProperty(KEY_KERNEL_PROFILE);
+            if (rawKernelProfile != null && rawKernelProfile.trim().isEmpty()) {
+                throw new IllegalArgumentException("blank kernel profile declaration");
+            }
+            String kernelProfile = rawKernelProfile != null ? rawKernelProfile.trim() : null;
 
             Map<String, String> unknownMetadata = new TreeMap<>();
             for (String name : properties.stringPropertyNames()) {
@@ -268,6 +278,7 @@ final class InstanceMetadataCodec {
                     hasSudo,
                     provisioningEvidence,
                     executionIdentity,
+                    kernelProfile,
                     unknownMetadata);
         } catch (IllegalArgumentException malformed) {
             throw new InvalidMetadataException(malformed);

@@ -48,9 +48,11 @@ object DistroCreatabilityProjection {
         isolatedQaEnabled: Boolean = BuildConfig.IS_ISOLATED_QA_BUILD,
         umlRootfsDownloadEnabled: Boolean = BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED,
         catalog: DistroCatalogRegistry = DistroCatalogRegistry.getInstance(),
+        kernelProfile: UmlDistroCapabilityCatalog.KernelProfile =
+            UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64,
     ): List<CreatableDistroStatus> {
         if (strategy == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL) {
-            return projectForUml(filesDir, isolatedQaEnabled, umlRootfsDownloadEnabled)
+            return projectForUml(filesDir, isolatedQaEnabled, umlRootfsDownloadEnabled, kernelProfile)
         }
         return catalog.listAll().map { manifest ->
             val inputPath = filesDir.resolve("distro-inputs").resolve(manifest.rootfsFileName())
@@ -79,6 +81,8 @@ object DistroCreatabilityProjection {
         isolatedQaEnabled: Boolean = BuildConfig.IS_ISOLATED_QA_BUILD,
         umlRootfsDownloadEnabled: Boolean = BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED,
         catalog: DistroCatalogRegistry = DistroCatalogRegistry.getInstance(),
+        kernelProfile: UmlDistroCapabilityCatalog.KernelProfile =
+            UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64,
     ): CreatableDistroStatus {
         val normalized = distroId.trim().lowercase(Locale.ROOT)
         val existing = project(
@@ -87,6 +91,7 @@ object DistroCreatabilityProjection {
             isolatedQaEnabled = isolatedQaEnabled,
             umlRootfsDownloadEnabled = umlRootfsDownloadEnabled,
             catalog = catalog,
+            kernelProfile = kernelProfile,
         ).firstOrNull { it.distroId == normalized }
         if (existing != null) {
             return existing
@@ -108,8 +113,23 @@ object DistroCreatabilityProjection {
         val catalogManifest = catalog.get(normalized)
         val umlVerdict = UmlDistroCapabilityCatalog.evaluate(
             normalized,
-            UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64,
+            kernelProfile,
         )
+        val verificationState = if (catalogManifest != null) {
+            verifyInputFile(
+                filesDir.resolve("distro-inputs").resolve(catalogManifest.rootfsFileName()),
+                catalogManifest.sizeBytes(),
+                catalogManifest.sha256(),
+            )
+        } else {
+            VerificationState.NOT_STAGED
+        }
+        val creatable = umlVerdict.isCreatable() && isolatedQaEnabled
+        val refusalReason = when {
+            !umlVerdict.isCreatable() -> umlVerdict.summary()
+            !isolatedQaEnabled -> "USER_MODE_KERNEL creation is gated to isolated QA builds."
+            else -> null
+        }
         return CreatableDistroStatus(
             distroId = umlVerdict.distroId(),
             version = catalogManifest?.version() ?: umlVerdict.version(),
@@ -117,18 +137,10 @@ object DistroCreatabilityProjection {
             rootfsFileName = catalogManifest?.rootfsFileName() ?: umlVerdict.expectedFileName().orEmpty(),
             expectedSha256 = catalogManifest?.sha256() ?: umlVerdict.expectedSha256().orEmpty(),
             expectedSizeBytes = catalogManifest?.sizeBytes() ?: umlVerdict.expectedSizeBytes(),
-            verificationState = if (catalogManifest != null) {
-                verifyInputFile(
-                    filesDir.resolve("distro-inputs").resolve(catalogManifest.rootfsFileName()),
-                    catalogManifest.sizeBytes(),
-                    catalogManifest.sha256(),
-                )
-            } else {
-                VerificationState.NOT_STAGED
-            },
-            creatable = false,
+            verificationState = verificationState,
+            creatable = creatable,
             missingRequirements = umlVerdict.missingRequirements(),
-            refusalReason = umlVerdict.summary(),
+            refusalReason = refusalReason,
         )
     }
 
@@ -136,6 +148,7 @@ object DistroCreatabilityProjection {
         filesDir: Path,
         isolatedQaEnabled: Boolean,
         umlRootfsDownloadEnabled: Boolean,
+        kernelProfile: UmlDistroCapabilityCatalog.KernelProfile,
     ): List<CreatableDistroStatus> {
         val alpineEntry = UmlKernelAssets.RootfsDownload.Entry.alpineMinirootfsAarch64()
         val alpineTar = filesDir
@@ -166,7 +179,7 @@ object DistroCreatabilityProjection {
         }
 
         return UmlDistroCapabilityCatalog
-            .listKnownForProfile(UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64)
+            .listKnownForProfile(kernelProfile)
             .map { verdict ->
                 val isAlpine = verdict.distroId() == "alpine"
                 val fileName = if (isAlpine) alpineEntry.fileName() else (verdict.expectedFileName() ?: "")
@@ -175,11 +188,16 @@ object DistroCreatabilityProjection {
                 val verificationState = if (isAlpine) {
                     alpineVerification
                 } else {
-                    verifyInputFile(
-                        filesDir.resolve("distro-inputs").resolve(fileName),
-                        expectedSize,
-                        expectedSha,
-                    )
+                    try {
+                        when (UmlKernelAssets.probeStagedDistroSeed(filesDir, verdict).status()) {
+                            UmlKernelAssets.StagedSeedStatus.VERIFIED -> VerificationState.VERIFIED_READY
+                            UmlKernelAssets.StagedSeedStatus.SIZE_MISMATCH -> VerificationState.SIZE_MISMATCH
+                            UmlKernelAssets.StagedSeedStatus.CHECKSUM_MISMATCH -> VerificationState.CHECKSUM_MISMATCH
+                            UmlKernelAssets.StagedSeedStatus.NOT_STAGED -> VerificationState.NOT_STAGED
+                        }
+                    } catch (_: IOException) {
+                        VerificationState.NOT_STAGED
+                    }
                 }
                 val creatable = verdict.isCreatable()
                     && isolatedQaEnabled

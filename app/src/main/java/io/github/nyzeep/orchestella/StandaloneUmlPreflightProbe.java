@@ -28,6 +28,7 @@ import java.util.function.LongSupplier;
  */
 public final class StandaloneUmlPreflightProbe {
     public static final long DEFAULT_TIMEOUT_MS = 1_500L;
+    public static final long FULL_PROFILE_TIMEOUT_MS = 5_000L;
     private static final List<String> REQUIRED_LIBRARIES = List.of(
             "libuml_kernel.so",
             "libuml_stub.so",
@@ -58,11 +59,20 @@ public final class StandaloneUmlPreflightProbe {
     /** Creates a profile-scoped Android preflight probe (fast-up-arm64 or full-smp-arm64). */
     public static StandaloneUmlPreflightProbe forAndroid(
             Context context, UmlDistroCapabilityCatalog.KernelProfile profile) {
+        return forAndroid(context, profile, null);
+    }
+
+    /** Creates a profile- and distro-scoped Android preflight probe. */
+    public static StandaloneUmlPreflightProbe forAndroid(
+            Context context, UmlDistroCapabilityCatalog.KernelProfile profile, String distroId) {
         Context appContext = Objects.requireNonNull(context, "context").getApplicationContext();
         Objects.requireNonNull(profile, "profile");
+        long timeoutMs = profile == UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64
+                ? FULL_PROFILE_TIMEOUT_MS
+                : DEFAULT_TIMEOUT_MS;
         return new StandaloneUmlPreflightProbe(
-                () -> probeAndroid(appContext, profile),
-                DEFAULT_TIMEOUT_MS,
+                () -> probeAndroid(appContext, profile, distroId),
+                timeoutMs,
                 android.os.SystemClock::elapsedRealtimeNanos);
     }
 
@@ -127,7 +137,7 @@ public final class StandaloneUmlPreflightProbe {
     }
 
     private static ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight probeAndroid(
-            Context appContext, UmlDistroCapabilityCatalog.KernelProfile profile)
+            Context appContext, UmlDistroCapabilityCatalog.KernelProfile profile, String distroId)
             throws java.io.IOException {
         int pageSize;
         try {
@@ -160,8 +170,18 @@ public final class StandaloneUmlPreflightProbe {
             UmlKernelPayloadContract.ProfileDescriptor desc =
                     UmlKernelPayloadContract.descriptorFor(profile);
             Map<String, String> manifestDigests = readAssetManifest(appContext, desc.manifestAssetName());
-            // W01-03 will extend this helper with Debian rootfs seed readiness.
-            boolean hasRootfsSeed = hasBundledOrStagedAlpineRootfs(appContext);
+            String normalizedDistro = distroId != null
+                    ? distroId.trim().toLowerCase(java.util.Locale.ROOT)
+                    : "";
+            boolean hasRootfsSeed;
+            if ("debian".equals(normalizedDistro)) {
+                hasRootfsSeed = hasStagedDebianRootfs(appContext);
+            } else if ("alpine".equals(normalizedDistro)) {
+                hasRootfsSeed = hasBundledOrStagedAlpineRootfs(appContext);
+            } else {
+                hasRootfsSeed =
+                        hasBundledOrStagedAlpineRootfs(appContext) || hasStagedDebianRootfs(appContext);
+            }
             ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight profileCheck =
                     evaluateProfilePreflight(
                             profile,
@@ -224,6 +244,56 @@ public final class StandaloneUmlPreflightProbe {
                 appContext.getFilesDir().toPath(),
                 BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED);
         return staged.ready();
+    }
+
+    static boolean hasStagedDebianRootfs(Context appContext) {
+        UmlDistroCapabilityCatalog.DistroGateVerdict verdict =
+                UmlDistroCapabilityCatalog.evaluate(
+                        "debian", UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64);
+        String fileName = verdict.expectedFileName();
+        String expectedSha = verdict.expectedSha256();
+        if (fileName == null || fileName.isBlank() || expectedSha == null || expectedSha.isBlank()) {
+            return false;
+        }
+        try (InputStream in = PackagedAssetStreams.openResource(appContext, fileName)) {
+            if (in != null) {
+                return true;
+            }
+        } catch (Exception ignored) {
+            // Fall through to staged rootfs directories check.
+        }
+        try {
+            return UmlKernelAssets.probeStagedDistroSeed(
+                            appContext.getFilesDir().toPath(), verdict)
+                    .status()
+                    == UmlKernelAssets.StagedSeedStatus.VERIFIED;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /** Pure-JVM distro + profile preflight check returning explicit failure codes without fallback. */
+    public static ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight evaluateDistroProfilePreflight(
+            UmlDistroCapabilityCatalog.KernelProfile profile,
+            String distroId,
+            int hostPageSize,
+            File nativeLibDir,
+            Map<String, String> manifestDigests,
+            Map<String, String> expectedPins,
+            boolean hasRootfsSeed) {
+        Objects.requireNonNull(profile, "profile");
+        try {
+            UmlDistroCapabilityCatalog.requireCreatable(distroId, profile);
+        } catch (UmlDistroCapabilityCatalog.DistroNotCreatableException refused) {
+            return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
+                    ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.ASSETS_MISSING,
+                    hostPageSize,
+                    0L,
+                    "[" + UmlKernelPayloadContract.FailureCode.PROFILE_MISMATCH + "] "
+                            + refused.getMessage());
+        }
+        return evaluateProfilePreflight(
+                profile, hostPageSize, nativeLibDir, manifestDigests, expectedPins, hasRootfsSeed);
     }
 
     /** Pure-JVM profile preflight check returning explicit failure codes without fallback. */

@@ -3,6 +3,7 @@ package io.github.nyzeep.orchestella;
 import android.content.Context;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
+import io.github.nyzeep.orchestella.runtime.capability.ExecutionStrategyAdmissionEvaluator;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeHandshake;
@@ -16,6 +17,7 @@ import io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroCapabilityCatalog
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlEphemeralRootFixture;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlInstanceBudget;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlInstanceRootfsProvisioner;
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlKernelPayloadContract;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlLaunchSpec;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlProcessFactory;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlProcessHandle;
@@ -72,16 +74,18 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
     static final String KERNEL_LIBRARY_NAME = "libuml_kernel.so";
     static final String STUB_LIBRARY_NAME = "libuml_stub.so";
     static final String DEFAULT_QA_HOSTNAME = "qa-uml-alpine";
+    static final String DEFAULT_DEBIAN_QA_HOSTNAME = "qa-uml-debian";
     static final int INITIAL_PTY_COLUMNS = 80;
     static final int INITIAL_PTY_ROWS = 24;
     static final long DEFAULT_STOP_GRACE_MS = 1_000L;
     static final long DEFAULT_TERMINATE_GRACE_MS = 2_000L;
     static final long DEFAULT_CLOSE_GRACE_MS = 2_000L;
     private static final String QEMU_BASE_INITRAMFS_RESOURCE = "initramfs.cpio.gz";
+    private static final long SYSTEMD_POWEROFF_WAIT_MS = 8_000L;
     private static final Set<String> PROVISION_TOOLCHAIN_ENTRIES =
-            Set.of("sbin/mkfs.ext4", "etc/mke2fs.conf", "bin/busybox");
+            Set.of("sbin/mkfs.ext4", "etc/mke2fs.conf", "bin/busybox", "opt/droidlayer/guest-agent");
     private static final Set<String> PROVISION_TOOLCHAIN_EXECS =
-            Set.of("sbin/mkfs.ext4", "bin/busybox");
+            Set.of("sbin/mkfs.ext4", "bin/busybox", "opt/droidlayer/guest-agent");
 
     @FunctionalInterface
     interface ExecutableResolver {
@@ -190,7 +194,8 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                 toolchainStager,
                 new StorageContract.DefaultStorageSpaceChecker(),
                 this.clock);
-        this.seedInputSupplier = (parameters, distroId) -> resolveProductionAlpineSeed(appContext, filesDir.toPath(), distroId);
+        this.seedInputSupplier = (parameters, distroId) ->
+                resolveProductionSeed(appContext, filesDir.toPath(), parameters, distroId);
     }
 
     /** Pure-JVM injectable constructor preserving W3-01 disposable HOSTFS contract tests. */
@@ -423,18 +428,40 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
             int requestedMemMb = Math.max(UmlLaunchSpec.MIN_MEMORY_MB, config.ramMegabytes());
             memoryLease = instanceBudget.acquire(parameters.instanceId, generation, requestedMemMb);
             baseStageTrace.onGate(ProductionStageRecorder.Stage.INPUTS_BEGIN);
-            String kernelPath = executableResolver.resolve(KERNEL_LIBRARY_NAME);
-            String stubExePath = executableResolver.resolve(STUB_LIBRARY_NAME);
+            String distroId = resolveDistroId(parameters.rootfsFileName);
+            UmlDistroCapabilityCatalog.KernelProfile kernelProfile = resolveKernelProfile(parameters);
+            if (persistentVolumeMode) {
+                UmlDistroCapabilityCatalog.requireCreatable(distroId, kernelProfile);
+            }
+            if (kernelProfile == UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64 && context != null) {
+                ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight profileCheck =
+                        StandaloneUmlPreflightProbe.forAndroid(context, kernelProfile, distroId).probe();
+                if (profileCheck.status() != ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.READY) {
+                    throw new IOException(profileCheck.detail());
+                }
+            }
+            UmlKernelPayloadContract.ProfileDescriptor profileDescriptor =
+                    UmlKernelPayloadContract.descriptorFor(kernelProfile);
+            String kernelPath = executableResolver.resolve(profileDescriptor.kernelLibName());
+            String stubExePath = executableResolver.resolve(profileDescriptor.stubLibName());
+            if (kernelProfile == UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64) {
+                if (!Files.isRegularFile(Paths.get(kernelPath))
+                        || !Files.isRegularFile(Paths.get(stubExePath))) {
+                    throw new IOException(
+                            "[" + UmlKernelPayloadContract.FailureCode.PROFILE_MISMATCH
+                                    + "] missing full-profile UML payload: "
+                                    + profileDescriptor.kernelLibName());
+                }
+            }
             Files.createDirectories(runtimeDir.resolve("tmp"));
             String hostname = (parameters.hostname != null && !parameters.hostname.isBlank())
                     ? parameters.hostname
-                    : DEFAULT_QA_HOSTNAME;
-            String distroId = resolveDistroId(parameters.rootfsFileName);
+                    : ("debian".equals(distroId)
+                            ? DEFAULT_DEBIAN_QA_HOSTNAME
+                            : DEFAULT_QA_HOSTNAME);
 
             final UmlLaunchSpec spec;
             if (persistentVolumeMode) {
-                UmlDistroCapabilityCatalog.requireCreatable(
-                        distroId, UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64);
                 UmlVolumeInspector.VolumeInspection volInspection =
                         UmlVolumeInspector.inspect(rootVolumePath);
                 if (volInspection.isReadyToProvision()) {
@@ -447,6 +474,9 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                             config.diskCapacityBytes() > 0L
                                     ? config.diskCapacityBytes()
                                     : StorageContract.DEFAULT_ROOT_VOLUME_BYTES);
+                    long provisionTimeoutMs = "debian".equals(distroId)
+                            ? UmlInstanceRootfsProvisioner.DEFAULT_DEBIAN_PROVISION_TIMEOUT_MS
+                            : UmlInstanceRootfsProvisioner.DEFAULT_PROVISION_TIMEOUT_MS;
                     UmlInstanceRootfsProvisioner.ProvisionRequest provRequest =
                             new UmlInstanceRootfsProvisioner.ProvisionRequest(
                                     parameters.instanceId,
@@ -478,10 +508,11 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                                                             receipt.provisionedAtMillis()));
                                         }
                                     },
-                                    UmlInstanceRootfsProvisioner.DEFAULT_PROVISION_TIMEOUT_MS,
+                                    provisionTimeoutMs,
                                     stopGraceMs,
                                     forceWaitMs,
-                                    channelsCloseTimeoutMs);
+                                    channelsCloseTimeoutMs,
+                                    kernelProfile);
                     try {
                         instanceProvisioner.provisionWithHeldReservation(provRequest, reservation);
                         timeline.notePhase(
@@ -517,6 +548,7 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                         .memMb(requestedMemMb)
                         .rootMode(UmlLaunchSpec.RootMode.EXT4_UBD)
                         .ubd0Path(rootVolumePath)
+                        .umInitPath("debian".equals(distroId) ? "/sbin/init" : null)
                         .credsHostfsDir(bootCredsDir)
                         .runtimeDir(runtimeDir)
                         .extraArgs(List.of("console=tty0"))
@@ -659,11 +691,85 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
         }
     }
 
-    private static UmlInstanceRootfsProvisioner.SeedInput resolveProductionAlpineSeed(
-            Context appContext, Path filesDir, String distroId) throws IOException {
+    private UmlDistroCapabilityCatalog.KernelProfile resolveKernelProfile(
+            InstanceStrategyLauncher.LaunchParameters parameters) {
+        String explicitProfile =
+                (parameters.kernelProfile != null && !parameters.kernelProfile.isBlank())
+                        ? parameters.kernelProfile.trim()
+                        : null;
+        String persistedProfile = null;
+        if (instanceStore != null) {
+            try {
+                String loaded = instanceStore.load(parameters.instanceId).kernelProfile();
+                if (loaded != null && !loaded.isBlank()) {
+                    persistedProfile = loaded.trim();
+                }
+            } catch (java.nio.file.NoSuchFileException | java.io.FileNotFoundException missing) {
+                persistedProfile = null;
+            } catch (IOException ioFailure) {
+                throw new UncheckedIOException(ioFailure);
+            }
+        }
+        if (explicitProfile != null
+                && persistedProfile != null
+                && !explicitProfile.equals(persistedProfile)) {
+            throw new IllegalStateException(
+                    "Conflicting kernelProfile for instance "
+                            + parameters.instanceId
+                            + ": request="
+                            + explicitProfile
+                            + ", persisted="
+                            + persistedProfile);
+        }
+        String effective = explicitProfile != null ? explicitProfile : persistedProfile;
+        if (effective == null || effective.isBlank()) {
+            return UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64;
+        }
+        return UmlKernelPayloadContract.fromProfileId(effective);
+    }
+
+    private UmlInstanceRootfsProvisioner.SeedInput resolveProductionSeed(
+            Context appContext,
+            Path filesDir,
+            InstanceStrategyLauncher.LaunchParameters parameters,
+            String distroId) throws IOException {
+        UmlDistroCapabilityCatalog.KernelProfile profile = resolveKernelProfile(parameters);
         UmlDistroCapabilityCatalog.DistroGateVerdict verdict =
-                UmlDistroCapabilityCatalog.requireCreatable(
-                        distroId, UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64);
+                UmlDistroCapabilityCatalog.requireCreatable(distroId, profile);
+        if ("debian".equals(verdict.distroId())) {
+            UmlKernelAssets.StagedSeedProbe probe =
+                    UmlKernelAssets.probeStagedDistroSeed(filesDir, verdict);
+            if (probe.status() == UmlKernelAssets.StagedSeedStatus.NOT_STAGED) {
+                throw new UmlInstanceRootfsProvisioner.ProvisionException(
+                        UmlInstanceRootfsProvisioner.REASON_SEED_UNVERIFIED,
+                        "Debian rootfs tarball missing from uml-rootfs and distro-inputs: "
+                                + verdict.expectedFileName());
+            }
+            if (probe.status() == UmlKernelAssets.StagedSeedStatus.SIZE_MISMATCH) {
+                throw new UmlInstanceRootfsProvisioner.ProvisionException(
+                        UmlInstanceRootfsProvisioner.REASON_PARTIAL_INPUT,
+                        "Debian rootfs size mismatch: expected="
+                                + verdict.expectedSizeBytes()
+                                + ", actual="
+                                + probe.actualSizeBytes());
+            }
+            if (probe.status() == UmlKernelAssets.StagedSeedStatus.CHECKSUM_MISMATCH) {
+                throw new UmlInstanceRootfsProvisioner.ProvisionException(
+                        UmlInstanceRootfsProvisioner.REASON_CHECKSUM_MISMATCH,
+                        "Debian rootfs digest mismatch: expected="
+                                + verdict.expectedSha256()
+                                + ", actual="
+                                + probe.actualSha256());
+            }
+            return new UmlInstanceRootfsProvisioner.SeedInput(
+                    verdict.distroId(),
+                    verdict.version(),
+                    probe.file(),
+                    null,
+                    null,
+                    verdict.expectedSha256(),
+                    verdict.expectedSizeBytes());
+        }
         UmlKernelAssets.RootfsDownload.Entry entry =
                 UmlKernelAssets.RootfsDownload.Entry.alpineMinirootfsAarch64();
         if (verdict.expectedSha256() != null
@@ -809,6 +915,10 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
         if (ALPINE_MINIROOTFS_RESOURCE.equals(rootfsFileName) || rootfsFileName.startsWith("alpine-")) {
             return "alpine";
         }
+        if ("debian".equalsIgnoreCase(rootfsFileName.trim())
+                || rootfsFileName.toLowerCase(Locale.ROOT).startsWith("debian-")) {
+            return "debian";
+        }
         return QemuLaunchEvidence.resolveDistroId(rootfsFileName);
     }
 
@@ -840,6 +950,10 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
         private final AtomicBoolean bridgeServing = new AtomicBoolean(false);
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private final AtomicBoolean terminalEofHandled = new AtomicBoolean(false);
+        private final AtomicBoolean systemdReadyMarked = new AtomicBoolean(false);
+        private final java.util.concurrent.CountDownLatch powerDownLatch =
+                new java.util.concurrent.CountDownLatch(1);
+        private volatile boolean kernelPowerDownObserved;
         private BridgeClient bridgeClient;
         private volatile BridgeControl.Clipboard clipboardBridge;
 
@@ -1062,10 +1176,19 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                 client = this.bridgeClient;
             }
             if (client != null && client.isReady()) {
+                boolean sentPoweroff = false;
                 try {
                     client.power(BridgeControl.PowerAction.POWEROFF);
+                    sentPoweroff = true;
                 } catch (IOException | RuntimeException ignored) {
                     // Best-effort guest poweroff before host reap + release.
+                }
+                if (sentPoweroff) {
+                    try {
+                        awaitPowerDownOrExit(Math.max(terminateGraceMs, SYSTEMD_POWEROFF_WAIT_MS));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
                 }
             }
             if (stopRuntime(terminateGraceMs) == RuntimeProcessSupervisor.StopResult.UNCONFIRMED) {
@@ -1089,12 +1212,15 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
         @Override
         public InputStream terminalOutput() throws IOException {
             InputStream raw = handle.terminalOutput();
+            final StringBuilder markerTail = new StringBuilder();
             return new FilterInputStream(raw) {
                 @Override
                 public int read() throws IOException {
                     int value = super.read();
                     if (value == -1) {
                         onTerminalEof();
+                    } else {
+                        observeTerminalMarkerChar((char) (value & 0xFF), markerTail);
                     }
                     return value;
                 }
@@ -1104,10 +1230,54 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
                     int count = super.read(b, off, len);
                     if (count == -1) {
                         onTerminalEof();
+                    } else if (count > 0) {
+                        for (int i = 0; i < count; i++) {
+                            observeTerminalMarkerChar((char) (b[off + i] & 0xFF), markerTail);
+                        }
                     }
                     return count;
                 }
             };
+        }
+
+        private void observeTerminalMarkerChar(char ch, StringBuilder tail) {
+            if (kernelPowerDownObserved && systemdReadyMarked.get()) {
+                return;
+            }
+            tail.append(ch);
+            if (tail.length() > 64) {
+                tail.delete(0, tail.length() - 64);
+            }
+            if (!systemdReadyMarked.get()
+                    && ch == '\u0007'
+                    && tail.indexOf("\u001b]133;O;orchestella=systemd-ready\u0007") >= 0) {
+                markSystemdReady();
+            }
+            if (!kernelPowerDownObserved && (ch == '\n' || ch == '\r')) {
+                if (tail.indexOf("reboot: Power down") >= 0) {
+                    kernelPowerDownObserved = true;
+                    powerDownLatch.countDown();
+                }
+            }
+        }
+
+        boolean awaitPowerDownOrExit(long timeoutMs) throws InterruptedException {
+            long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(0L, timeoutMs));
+            while (System.nanoTime() < deadlineNanos) {
+                if (!handle.isAlive()) {
+                    return true;
+                }
+                if (kernelPowerDownObserved) {
+                    if (handle.isAlive()) {
+                        Thread.sleep(150L);
+                    }
+                    return true;
+                }
+                long remainingMs = Math.min(50L,
+                        Math.max(1L, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime())));
+                powerDownLatch.await(remainingMs, TimeUnit.MILLISECONDS);
+            }
+            return !handle.isAlive() || kernelPowerDownObserved;
         }
 
         private void onTerminalEof() {
@@ -1213,6 +1383,16 @@ public final class UmlInstanceLauncher implements InstanceStrategyLauncher.UserM
 
         private void publishShellReady() {
             timeline.mark(LaunchTimeline.Stage.SHELL_READY);
+        }
+
+        public void markSystemdReady() {
+            if (!isCurrentGeneration()) {
+                return;
+            }
+            systemdReadyMarked.set(true);
+            if (readinessTracker.markSystemdReady(generation, monotonicNanos.getAsLong())) {
+                timeline.mark(LaunchTimeline.Stage.SYSTEMD_READY);
+            }
         }
 
         private final class GenerationAwareStageObserver implements LaunchStageObserver {

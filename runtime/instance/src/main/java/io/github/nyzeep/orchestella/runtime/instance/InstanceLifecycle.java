@@ -224,6 +224,7 @@ public final class InstanceLifecycle {
         private final boolean hasSudo;
         private final ProvisioningEvidence provisioningEvidence;
         private final ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity;
+        private final String kernelProfile;
         private final Map<String, String> unknownMetadata;
 
         private Instance(
@@ -337,6 +338,31 @@ public final class InstanceLifecycle {
                 ProvisioningEvidence provisioningEvidence,
                 ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity,
                 Map<String, String> unknownMetadata) {
+            this(id, distro, rootVolume, bridgeToken, guestPassword, runtimeClass, state,
+                    createdAtMillis, updatedAtMillis, crashDiagnostic, hardwareConfig,
+                    hostname, defaultUser, hasSudo, provisioningEvidence,
+                    executionIdentity, null, unknownMetadata);
+        }
+
+        Instance(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                String bridgeToken,
+                String guestPassword,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                long createdAtMillis,
+                long updatedAtMillis,
+                CrashDiagnostic crashDiagnostic,
+                VmHardwareConfig hardwareConfig,
+                String hostname,
+                String defaultUser,
+                boolean hasSudo,
+                ProvisioningEvidence provisioningEvidence,
+                ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity,
+                String kernelProfile,
+                Map<String, String> unknownMetadata) {
             requireInstanceId(id);
             this.id = id;
             this.distro = Objects.requireNonNull(distro, "distro");
@@ -360,6 +386,10 @@ public final class InstanceLifecycle {
             this.executionIdentity = executionIdentity != null
                     ? executionIdentity
                     : ExecutionPolicyContract.InstanceExecutionIdentity.legacyAbsent();
+            if (kernelProfile != null && kernelProfile.trim().isEmpty()) {
+                throw new IllegalArgumentException("blank kernel profile declaration");
+            }
+            this.kernelProfile = kernelProfile != null ? kernelProfile.trim() : null;
             this.unknownMetadata = Collections.unmodifiableMap(
                     new TreeMap<>(Objects.requireNonNull(unknownMetadata, "unknownMetadata")));
         }
@@ -466,6 +496,11 @@ public final class InstanceLifecycle {
             return executionIdentity;
         }
 
+        /** Optional strategy-scoped kernel profile identifier (e.g. {@code full-smp-arm64}). */
+        public String kernelProfile() {
+            return kernelProfile;
+        }
+
         /** Package-private read access for {@link InstanceMetadataCodec#encode(Instance)}. */
         Map<String, String> unknownMetadata() {
             return unknownMetadata;
@@ -496,6 +531,7 @@ public final class InstanceLifecycle {
                     hasSudo,
                     provisioningEvidence,
                     executionIdentity,
+                    kernelProfile,
                     unknownMetadata);
         }
 
@@ -517,6 +553,7 @@ public final class InstanceLifecycle {
                     hasSudo,
                     provisioningEvidence,
                     executionIdentity,
+                    kernelProfile,
                     unknownMetadata);
         }
 
@@ -538,6 +575,7 @@ public final class InstanceLifecycle {
                     hasSudo,
                     provisioningEvidence,
                     executionIdentity,
+                    kernelProfile,
                     unknownMetadata);
         }
 
@@ -559,6 +597,7 @@ public final class InstanceLifecycle {
                     hasSudo,
                     provisioningEvidence,
                     executionIdentity,
+                    kernelProfile,
                     unknownMetadata);
         }
 
@@ -580,6 +619,7 @@ public final class InstanceLifecycle {
                     hasSudo,
                     Objects.requireNonNull(evidence, "evidence"),
                     executionIdentity,
+                    kernelProfile,
                     unknownMetadata);
         }
 
@@ -648,6 +688,25 @@ public final class InstanceLifecycle {
                 ProvisioningEvidence provisioningEvidence,
                 ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity,
                 Clock clock) {
+            return restore(id, distro, rootVolume, runtimeClass, state, hardwareConfig,
+                    hostname, defaultUser, hasSudo, provisioningEvidence,
+                    executionIdentity, null, clock);
+        }
+
+        static Instance restore(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                VmHardwareConfig hardwareConfig,
+                String hostname,
+                String defaultUser,
+                boolean hasSudo,
+                ProvisioningEvidence provisioningEvidence,
+                ExecutionPolicyContract.InstanceExecutionIdentity executionIdentity,
+                String kernelProfile,
+                Clock clock) {
             long now = Objects.requireNonNull(clock, "clock").millis();
             return new Instance(
                     id,
@@ -666,6 +725,7 @@ public final class InstanceLifecycle {
                     hasSudo,
                     provisioningEvidence,
                     executionIdentity,
+                    kernelProfile,
                     Collections.emptyMap());
         }
 

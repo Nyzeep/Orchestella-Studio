@@ -88,7 +88,8 @@ public final class InstanceStorageManager {
                 instance.hasSudo(),
                 instance.hardwareConfig(),
                 exportEvidence,
-                instance.executionIdentity());
+                instance.executionIdentity(),
+                instance.kernelProfile());
     }
 
     /**
@@ -766,6 +767,7 @@ public final class InstanceStorageManager {
                     metadata.hasSudo(),
                     provisioningEvidence,
                     executionIdentity,
+                    metadata.kernelProfile(),
                     clock);
         } catch (IllegalArgumentException invalidMetadata) {
             throw new IOException(

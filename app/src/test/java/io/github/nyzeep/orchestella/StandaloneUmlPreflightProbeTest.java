@@ -135,4 +135,57 @@ public final class StandaloneUmlPreflightProbeTest {
                 result.status());
         assertTrue(result.detail().contains("full-smp-arm64"));
     }
+
+    @Test
+    public void debianFullProfilePreflightRequiresDebianSeedAndRejectsFastProfile()
+            throws IOException {
+        File libDir = tmp.newFolder("preflight-debian-libs");
+        File fullKernel = new File(libDir, "libuml_kernel_full.so");
+        File fullStub = new File(libDir, "libuml_stub_full.so");
+        Files.write(fullKernel.toPath(), "full-k".getBytes(StandardCharsets.UTF_8));
+        Files.write(fullStub.toPath(), "full-s".getBytes(StandardCharsets.UTF_8));
+        assertTrue(fullKernel.setExecutable(true));
+        assertTrue(fullStub.setExecutable(true));
+        Map<String, String> pins = Map.of(
+                "libuml_kernel_full.so", UmlKernelAssets.sha256Hex(fullKernel),
+                "libuml_stub_full.so", UmlKernelAssets.sha256Hex(fullStub));
+
+        ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight missingSeed =
+                StandaloneUmlPreflightProbe.evaluateProfilePreflight(
+                        UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64,
+                        4096,
+                        libDir,
+                        pins,
+                        pins,
+                        false);
+        assertEquals(
+                ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.ASSETS_MISSING,
+                missingSeed.status());
+
+        ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight fastDebian =
+                StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                        UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64,
+                        "debian",
+                        4096,
+                        libDir,
+                        pins,
+                        pins,
+                        true);
+        assertEquals(
+                ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.ASSETS_MISSING,
+                fastDebian.status());
+
+        ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight fullDebian =
+                StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                        UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64,
+                        "debian",
+                        4096,
+                        libDir,
+                        pins,
+                        pins,
+                        true);
+        assertEquals(
+                ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.READY,
+                fullDebian.status());
+    }
 }

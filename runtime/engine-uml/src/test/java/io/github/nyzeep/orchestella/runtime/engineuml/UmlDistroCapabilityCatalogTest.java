@@ -125,7 +125,7 @@ public final class UmlDistroCapabilityCatalogTest {
     }
 
     @Test
-    public void fullSmpArm64SupportsAlpineAndHasNoKernelConfigGapsForDebianOrArch()
+    public void fullSmpArm64SupportsAlpineAndDebianWhileRefusingArch()
             throws Exception {
         UmlDistroCapabilityCatalog.DistroGateVerdict alpine =
                 UmlDistroCapabilityCatalog.requireCreatable(
@@ -135,17 +135,15 @@ public final class UmlDistroCapabilityCatalogTest {
         assertTrue(alpine.missingRequirements().isEmpty());
 
         UmlDistroCapabilityCatalog.DistroGateVerdict debian =
-                UmlDistroCapabilityCatalog.evaluate(
+                UmlDistroCapabilityCatalog.requireCreatable(
                         "debian", UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64);
-        assertEquals(UmlDistroCapabilityCatalog.DistroProfileStatus.REFUSED, debian.status());
+        assertEquals(UmlDistroCapabilityCatalog.DistroProfileStatus.CREATABLE, debian.status());
         assertEquals("debian-13-rootfs.tar.xz", debian.expectedFileName());
         assertEquals(
                 "e4d504e13e43a384227639b74391ef164a67d916aa8f8a9871ecd73dc577db91",
                 debian.expectedSha256());
         assertEquals(90_346_224L, debian.expectedSizeBytes());
-        assertEquals(
-                List.of(UmlDistroCapabilityCatalog.KernelRequirementGap.UNVERIFIED_ON_PROFILE),
-                debian.missingRequirements());
+        assertTrue(debian.missingRequirements().isEmpty());
 
         UmlDistroCapabilityCatalog.DistroGateVerdict arch =
                 UmlDistroCapabilityCatalog.evaluate(

@@ -36,6 +36,8 @@ public final class InstanceStrategyLauncher {
         public final boolean hasSudo;
         /** Optional read-only 9p share; null when this launch shares nothing. */
         public final io.github.nyzeep.orchestella.runtime.contract.SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
+        /** Optional UML kernel profile wire id (e.g. {@code full-smp-arm64}); null preserves default. */
+        public final String kernelProfile;
 
         public LaunchParameters(
                 String instanceId,
@@ -125,6 +127,43 @@ public final class InstanceStrategyLauncher {
                 String guestUser,
                 boolean hasSudo,
                 io.github.nyzeep.orchestella.runtime.contract.SharedDirectoryContract.SharedDirectorySpec sharedDirectory) {
+            this(
+                    instanceId,
+                    bridgeToken,
+                    rootfsFileName,
+                    instanceRootVolume,
+                    runtimeDirectory,
+                    distroInputsDirectory,
+                    guestPassword,
+                    hardwareConfig,
+                    mirrorConfigFileName,
+                    mirrorConfigFileContent,
+                    firstBootScript,
+                    hostname,
+                    guestUser,
+                    hasSudo,
+                    sharedDirectory,
+                    null);
+        }
+
+        /** Full shape including optional 9p share and UML kernel profile id. */
+        public LaunchParameters(
+                String instanceId,
+                String bridgeToken,
+                String rootfsFileName,
+                String instanceRootVolume,
+                String runtimeDirectory,
+                String distroInputsDirectory,
+                String guestPassword,
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig hardwareConfig,
+                String mirrorConfigFileName,
+                byte[] mirrorConfigFileContent,
+                byte[] firstBootScript,
+                String hostname,
+                String guestUser,
+                boolean hasSudo,
+                io.github.nyzeep.orchestella.runtime.contract.SharedDirectoryContract.SharedDirectorySpec sharedDirectory,
+                String kernelProfile) {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.bridgeToken = Objects.requireNonNull(bridgeToken, "bridgeToken");
             this.rootfsFileName = Objects.requireNonNull(rootfsFileName, "rootfsFileName");
@@ -146,6 +185,7 @@ public final class InstanceStrategyLauncher {
             }
             this.hasSudo = hasSudo;
             this.sharedDirectory = sharedDirectory;
+            this.kernelProfile = kernelProfile;
         }
 
         public LaunchParameters(

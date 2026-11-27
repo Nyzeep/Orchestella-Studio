@@ -1883,39 +1883,33 @@ class MainActivity : AppCompatActivity() {
             }
         }
         // W3-01 / R-01：仅 `-Porchestella.buildChannel=qa` 构建允许经独立 QA 意图拉起
-        // USER_MODE_KERNEL Alpine 临时闭环实例，不影响正式渠道与既有启动路由。
-        if (BuildConfig.IS_ISOLATED_QA_BUILD &&
-            intent?.getBooleanExtra("qa_launch_standalone_uml_alpine", false) == true &&
-            ::instanceStore.isInitialized
-        ) {
-            intent.removeExtra("qa_launch_standalone_uml_alpine")
-            val requestedId = intent.getStringExtra("action_launch_instance_id")
-            if (requestedId != null) {
-                intent.removeExtra("action_launch_instance_id")
-            }
-            val store = instanceStore
-            val qaRootsDir = filesDir.toPath().resolve("qa-uml-roots")
-            operations.execute {
-                val controller = InstanceLifecycle.Controller(store, Clock.systemUTC())
-                val prepared = try {
+        // USER_MODE_KERNEL 闭环实例，不影响正式渠道与既有启动路由。
+        if (handleQaStandaloneUmlIntent(
+                intent = intent,
+                extraKey = "qa_launch_standalone_uml_alpine",
+                label = "Alpine",
+                prepare = { store, controller, qaRootsDir, requestedId ->
                     IsolatedQaExecutionEntry().ensureEphemeralAlpineInstance(
                         store = store,
                         controller = controller,
                         qaRootsDir = qaRootsDir,
                         requestedId = requestedId,
                     )
-                } catch (failure: Exception) {
-                    android.util.Log.w("MainActivity", "QA standalone UML preparation failed", failure)
-                    runOnUiThread {
-                        if (!isFinishing && !isDestroyed) toastInstanceMissing()
-                    }
-                    return@execute
-                }
-                runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    launchInstance(prepared)
-                }
-            }
+                },
+            ) || handleQaStandaloneUmlIntent(
+                intent = intent,
+                extraKey = "qa_launch_standalone_uml_debian",
+                label = "Debian",
+                prepare = { store, controller, qaRootsDir, requestedId ->
+                    IsolatedQaExecutionEntry().ensurePersistentDebianInstance(
+                        store = store,
+                        controller = controller,
+                        qaRootsDir = qaRootsDir,
+                        requestedId = requestedId,
+                    )
+                },
+            )
+        ) {
             return
         }
         // UI3-12：Oe3 恢复 action_launch_instance_id（旧壳同语义：读实例并直接
@@ -1949,6 +1943,53 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun handleQaStandaloneUmlIntent(
+        intent: Intent?,
+        extraKey: String,
+        label: String,
+        prepare: (
+            InstanceLifecycle.FileStore,
+            InstanceLifecycle.Controller,
+            java.nio.file.Path,
+            String?,
+        ) -> InstanceLifecycle.Instance,
+    ): Boolean {
+        if (!BuildConfig.IS_ISOLATED_QA_BUILD ||
+            intent?.getBooleanExtra(extraKey, false) != true ||
+            !::instanceStore.isInitialized
+        ) {
+            return false
+        }
+        intent.removeExtra(extraKey)
+        val requestedId = intent.getStringExtra("action_launch_instance_id")
+        if (requestedId != null) {
+            intent.removeExtra("action_launch_instance_id")
+        }
+        val store = instanceStore
+        val qaRootsDir = filesDir.toPath().resolve("qa-uml-roots")
+        operations.execute {
+            val controller = InstanceLifecycle.Controller(store, Clock.systemUTC())
+            val prepared = try {
+                prepare(store, controller, qaRootsDir, requestedId)
+            } catch (failure: Exception) {
+                android.util.Log.w("MainActivity", "QA standalone UML ($label) preparation failed", failure)
+                val detail = failure.message?.takeIf { it.isNotBlank() } ?: failure.javaClass.simpleName
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        setCreateStatusLine("${getString(R.string.toast_instance_missing)} ($detail)")
+                        toastInstanceMissing()
+                    }
+                }
+                return@execute
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                launchInstance(prepared)
+            }
+        }
+        return true
     }
 
     // ==================== 生命周期 ====================

@@ -57,8 +57,11 @@ public final class UmlInstanceRootfsProvisioner {
             "uml-provision-guest-stop-unconfirmed";
     public static final String REASON_EXT4_VERIFICATION_FAILED =
             "uml-provision-ext4-verification-failed";
+    public static final String REASON_UNSUPPORTED_ARCHIVE_FORMAT =
+            "uml-provision-unsupported-archive-format";
 
     public static final long DEFAULT_PROVISION_TIMEOUT_MS = 120_000L;
+    public static final long DEFAULT_DEBIAN_PROVISION_TIMEOUT_MS = 600_000L;
     public static final long DEFAULT_STAGING_HEADROOM_BYTES = 16L * 1024L * 1024L;
     private static final int PROVISION_MARKER_VERSION = 1;
     private static final int MAX_GUEST_OUTPUT_BYTES = 256 * 1024;
@@ -121,7 +124,49 @@ public final class UmlInstanceRootfsProvisioner {
             long guestTimeoutMs,
             long stopGraceMs,
             long forceWaitMs,
-            long channelsCloseTimeoutMs) {
+            long channelsCloseTimeoutMs,
+            UmlDistroCapabilityCatalog.KernelProfile kernelProfile) {
+        public ProvisionRequest(
+                String instanceId,
+                String generation,
+                Path targetRootVolume,
+                long capacityBytes,
+                String hostname,
+                SeedInput seedInput,
+                ProvisionMode mode,
+                String migrationReason,
+                String kernelPath,
+                String stubExePath,
+                Path runtimeDir,
+                Object instanceWriteLock,
+                GenerationGuard generationGuard,
+                PublishedCallback publishedCallback,
+                long guestTimeoutMs,
+                long stopGraceMs,
+                long forceWaitMs,
+                long channelsCloseTimeoutMs) {
+            this(
+                    instanceId,
+                    generation,
+                    targetRootVolume,
+                    capacityBytes,
+                    hostname,
+                    seedInput,
+                    mode,
+                    migrationReason,
+                    kernelPath,
+                    stubExePath,
+                    runtimeDir,
+                    instanceWriteLock,
+                    generationGuard,
+                    publishedCallback,
+                    guestTimeoutMs,
+                    stopGraceMs,
+                    forceWaitMs,
+                    channelsCloseTimeoutMs,
+                    UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64);
+        }
+
         public ProvisionRequest {
             if (instanceId == null || instanceId.isBlank()) {
                 throw new IllegalArgumentException("instanceId must not be blank");
@@ -137,6 +182,7 @@ public final class UmlInstanceRootfsProvisioner {
             Objects.requireNonNull(runtimeDir, "runtimeDir");
             Objects.requireNonNull(instanceWriteLock, "instanceWriteLock");
             Objects.requireNonNull(generationGuard, "generationGuard");
+            Objects.requireNonNull(kernelProfile, "kernelProfile");
             if (capacityBytes < StorageContract.MIN_ROOT_VOLUME_BYTES
                     || capacityBytes > StorageContract.MAX_ROOT_VOLUME_BYTES) {
                 throw new IllegalArgumentException("capacityBytes out of bounds: " + capacityBytes);
@@ -413,7 +459,7 @@ public final class UmlInstanceRootfsProvisioner {
         SeedInput seed = request.seedInput();
         try {
             UmlDistroCapabilityCatalog.requireCreatable(
-                    seed.distroId(), UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64);
+                    seed.distroId(), request.kernelProfile());
         } catch (UmlDistroCapabilityCatalog.DistroNotCreatableException refused) {
             throw new ProvisionException(REASON_DISTRO_REFUSED, refused.getMessage(), refused);
         }
@@ -430,6 +476,11 @@ public final class UmlInstanceRootfsProvisioner {
         if (tarName.endsWith(".part")) {
             throw new ProvisionException(
                     REASON_PARTIAL_INPUT, "refusing unverified .part download file: " + tarName);
+        }
+        if (!isSupportedArchiveName(seed.distroId(), tarName)) {
+            throw new ProvisionException(
+                    REASON_UNSUPPORTED_ARCHIVE_FORMAT,
+                    "unsupported rootfs archive format: " + tarName);
         }
         if (!Files.isRegularFile(normalizedTar, LinkOption.NOFOLLOW_LINKS)) {
             throw new ProvisionException(
@@ -483,7 +534,12 @@ public final class UmlInstanceRootfsProvisioner {
         Files.createDirectories(stageDir);
         applyModeBestEffort(stageDir, 0755);
         toolchainStager.stageInto(stageDir);
-        for (String required : List.of("sbin/mkfs.ext4", "etc/mke2fs.conf", "bin/busybox")) {
+        String distroId = request.seedInput().distroId().trim().toLowerCase(Locale.ROOT);
+        boolean isDebian = "debian".equals(distroId);
+        List<String> requiredTools = isDebian
+                ? List.of("sbin/mkfs.ext4", "etc/mke2fs.conf", "bin/busybox", "opt/droidlayer/guest-agent")
+                : List.of("sbin/mkfs.ext4", "etc/mke2fs.conf", "bin/busybox");
+        for (String required : requiredTools) {
             Path p = stageDir.resolve(required);
             if (!Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS)) {
                 throw new ProvisionException(
@@ -499,31 +555,112 @@ public final class UmlInstanceRootfsProvisioner {
         applyModeBestEffort(guestAssets.resolve("etc"), 0755);
         applyModeBestEffort(etcOrch, 0755);
 
-        writeUtf8(
-                guestAssets.resolve("um-command.sh"),
-                UmlPersistentGuestScripts.persistentUmCommandScript(),
-                0755,
-                true);
-        writeUtf8(
-                etcOrch.resolve("bridge-agent.sh"),
-                UmlPersistentGuestScripts.persistentBridgeAgentScript(),
-                0755,
-                true);
-        writeUtf8(
-                etcOrch.resolve("forward-connection.sh"),
-                UmlPersistentGuestScripts.forwardConnectionScript(),
-                0755,
-                true);
-        writeUtf8(
-                etcOrch.resolve("login-shell.sh"),
-                UmlPersistentGuestScripts.persistentLoginShellScript(hostname),
-                0755,
-                true);
-        writeUtf8(
-                etcOrch.resolve("ashrc"),
-                UmlPersistentGuestScripts.ashRcScript(),
-                0644,
-                false);
+        if (isDebian) {
+            Path usrLibOrch = guestAssets.resolve("usr/lib/orchestella");
+            Path profileD = guestAssets.resolve("etc/profile.d");
+            Path systemdSystem = guestAssets.resolve("etc/systemd/system");
+            Path systemdNetwork = guestAssets.resolve("etc/systemd/network");
+            Files.createDirectories(usrLibOrch);
+            Files.createDirectories(profileD);
+            Files.createDirectories(systemdSystem);
+            Files.createDirectories(systemdNetwork);
+            for (Path dir : List.of(
+                    guestAssets.resolve("usr"),
+                    guestAssets.resolve("usr/lib"),
+                    usrLibOrch,
+                    profileD,
+                    guestAssets.resolve("etc/systemd"),
+                    systemdSystem,
+                    systemdNetwork)) {
+                applyModeBestEffort(dir, 0755);
+            }
+            writeUtf8(
+                    etcOrch.resolve("forward-connection.sh"),
+                    UmlPersistentGuestScripts.debianForwardConnectionScript(),
+                    0755,
+                    true);
+            writeUtf8(
+                    etcOrch.resolve("login-shell.sh"),
+                    UmlPersistentGuestScripts.debianLoginShellScript(hostname),
+                    0755,
+                    true);
+            writeUtf8(
+                    usrLibOrch.resolve("setup-creds.sh"),
+                    UmlPersistentGuestScripts.debianCredsSetupScript(),
+                    0755,
+                    true);
+            writeUtf8(
+                    usrLibOrch.resolve("guest-agent-launcher.sh"),
+                    UmlPersistentGuestScripts.debianGuestAgentLauncherScript(),
+                    0755,
+                    true);
+            writeUtf8(
+                    usrLibOrch.resolve("uml-network.sh"),
+                    UmlPersistentGuestScripts.debianUmlNetworkScript(),
+                    0755,
+                    true);
+            writeUtf8(
+                    profileD.resolve("20-orchestella-terminal-integration.sh"),
+                    UmlPersistentGuestScripts.debianTerminalIntegrationScript(),
+                    0644,
+                    false);
+            writeUtf8(
+                    systemdNetwork.resolve("10-orchestella-vec0.network"),
+                    UmlPersistentGuestScripts.debianVec0NetworkdConfig(),
+                    0644,
+                    false);
+            writeUtf8(
+                    systemdSystem.resolve("orchestella-uml-creds.service"),
+                    UmlPersistentGuestScripts.debianCredsUnit(),
+                    0644,
+                    false);
+            writeUtf8(
+                    systemdSystem.resolve("orchestella-guest-agent.service"),
+                    UmlPersistentGuestScripts.debianGuestAgentUnit(),
+                    0644,
+                    false);
+            writeUtf8(
+                    systemdSystem.resolve("orchestella-uml-network.service"),
+                    UmlPersistentGuestScripts.debianUmlNetworkUnit(),
+                    0644,
+                    false);
+            writeUtf8(
+                    systemdSystem.resolve("orchestella-console.service"),
+                    UmlPersistentGuestScripts.debianConsoleUnit(),
+                    0644,
+                    false);
+            writeUtf8(
+                    systemdSystem.resolve("orchestella-systemd-ready.service"),
+                    UmlPersistentGuestScripts.debianSystemdReadyUnit(),
+                    0644,
+                    false);
+        } else {
+            writeUtf8(
+                    guestAssets.resolve("um-command.sh"),
+                    UmlPersistentGuestScripts.persistentUmCommandScript(),
+                    0755,
+                    true);
+            writeUtf8(
+                    etcOrch.resolve("bridge-agent.sh"),
+                    UmlPersistentGuestScripts.persistentBridgeAgentScript(),
+                    0755,
+                    true);
+            writeUtf8(
+                    etcOrch.resolve("forward-connection.sh"),
+                    UmlPersistentGuestScripts.forwardConnectionScript(),
+                    0755,
+                    true);
+            writeUtf8(
+                    etcOrch.resolve("login-shell.sh"),
+                    UmlPersistentGuestScripts.persistentLoginShellScript(hostname),
+                    0755,
+                    true);
+            writeUtf8(
+                    etcOrch.resolve("ashrc"),
+                    UmlPersistentGuestScripts.ashRcScript(),
+                    0644,
+                    false);
+        }
         writeUtf8(
                 etcOrch.resolve("provision-marker"),
                 formatProvisionMarker(request, volumeId),
@@ -538,7 +675,7 @@ public final class UmlInstanceRootfsProvisioner {
         Path seedTar = request.seedInput().verifiedTarPath().toAbsolutePath().normalize();
         String script = buildProvisionGuestScript(
                 request.instanceId(),
-                request.seedInput().distroId().trim().toLowerCase(Locale.ROOT),
+                distroId,
                 request.seedInput().expectedSha256().toLowerCase(Locale.ROOT),
                 volumeId,
                 seedTar.getParent(),
@@ -553,10 +690,13 @@ public final class UmlInstanceRootfsProvisioner {
             String volumeId,
             UmlRootReservationRegistry.Reservation reservation)
             throws IOException {
+        int provisionMemMb = "debian".equalsIgnoreCase(request.seedInput().distroId().trim())
+                ? 768
+                : UmlLaunchSpec.DEFAULT_MEMORY_MB;
         UmlLaunchSpec spec = UmlLaunchSpec.builder()
                 .kernelPath(request.kernelPath())
                 .stubExePath(request.stubExePath())
-                .memMb(UmlLaunchSpec.DEFAULT_MEMORY_MB)
+                .memMb(provisionMemMb)
                 .rootMode(UmlLaunchSpec.RootMode.HOSTFS)
                 .ephemeralRootDir(stageDir)
                 .ubd0Path(tempVolume)
@@ -584,9 +724,13 @@ public final class UmlInstanceRootfsProvisioner {
 
         boolean timedOut = false;
         try {
+            long defaultTimeoutMs = "debian".equalsIgnoreCase(
+                    request.seedInput().distroId().trim())
+                    ? DEFAULT_DEBIAN_PROVISION_TIMEOUT_MS
+                    : DEFAULT_PROVISION_TIMEOUT_MS;
             long timeoutMs = request.guestTimeoutMs() > 0L
                     ? request.guestTimeoutMs()
-                    : DEFAULT_PROVISION_TIMEOUT_MS;
+                    : defaultTimeoutMs;
             if (!handle.waitFor(timeoutMs, TimeUnit.MILLISECONDS) && handle.isAlive()) {
                 timedOut = true;
             }
@@ -618,7 +762,8 @@ public final class UmlInstanceRootfsProvisioner {
         if (timedOut) {
             throw new ProvisionException(
                     REASON_GUEST_TIMEOUT,
-                    "provision guest timed out before finishing ext4 assembly");
+                    "provision guest timed out before finishing ext4 assembly (tail="
+                            + lastNonEmptyLine(consoleLog) + ")");
         }
         String expectedToken = expectedSuccessLine(
                 request.instanceId(),
@@ -633,6 +778,24 @@ public final class UmlInstanceRootfsProvisioner {
         }
     }
 
+    private static boolean isDebianDistro(String distroId) {
+        return distroId != null && "debian".equals(distroId.trim().toLowerCase(Locale.ROOT));
+    }
+
+    private static boolean isSupportedArchiveName(String distroId, String fileName) {
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        if (isDebianDistro(distroId)) {
+            return lower.endsWith(".tar.xz")
+                    || lower.endsWith(".txz")
+                    || lower.endsWith(".tar.gz")
+                    || lower.endsWith(".tgz")
+                    || lower.endsWith(".tar");
+        }
+        return lower.endsWith(".tar.gz")
+                || lower.endsWith(".tgz")
+                || lower.endsWith(".tar");
+    }
+
     private static String buildProvisionGuestScript(
             String instanceId,
             String distroId,
@@ -643,24 +806,15 @@ public final class UmlInstanceRootfsProvisioner {
         String okLine = expectedSuccessLine(instanceId, distroId, rootfsSha256, volumeId);
         String safeParent = shellQuote(tarParentDir.toAbsolutePath().toString());
         String safeSeedTar = shellQuote("/mnt/seed/" + tarFileName);
-        return "#!/bin/busybox sh\n"
-                + "set -u\n"
-                + "BB=/bin/busybox\n"
-                + "PATH=/sbin:/bin:/usr/sbin:/usr/bin\n"
-                + "export PATH\n"
-                + "fail_prov() {\n"
-                + "    \"$BB\" printf 'ORCHESTELLA_UML_PROVISION_FAIL step=%s rc=%s\\n' \"$1\" \"$2\"\n"
-                + "    \"$BB\" umount /mnt/seed 2>/dev/null || :\n"
-                + "    \"$BB\" umount /mnt/target 2>/dev/null || :\n"
-                + "    \"$BB\" sync 2>/dev/null || :\n"
-                + "    \"$BB\" poweroff -f 2>/dev/null || :\n"
-                + "    exit 1\n"
-                + "}\n"
-                + "\"$BB\" mkdir -p /tmp /mnt/target /mnt/seed /dev\n"
-                + "[ -b /dev/ubda ] || \"$BB\" mknod -m 0660 /dev/ubda b 98 0 || fail_prov ubda_node $?\n"
-                + "MKE2FS_CONFIG=/etc/mke2fs.conf /sbin/mkfs.ext4 -F -q -m 1 -L orchestella-root /dev/ubda || fail_prov mkfs $?\n"
-                + "\"$BB\" mount -t ext4 /dev/ubda /mnt/target || fail_prov mount_target $?\n"
-                + "\"$BB\" mount -t hostfs -o " + safeParent + " none /mnt/seed || fail_prov mount_seed $?\n"
+        if ("debian".equals(distroId)) {
+            return buildDebianProvisionGuestScript(okLine, safeParent, safeSeedTar, tarFileName);
+        }
+        return buildAlpineProvisionGuestScript(okLine, safeParent, safeSeedTar);
+    }
+
+    private static String buildAlpineProvisionGuestScript(
+            String okLine, String safeParent, String safeSeedTar) {
+        return buildProvisionPreamble(safeParent, "umask=0000", false)
                 + "\"$BB\" tar -xzpf " + safeSeedTar + " -C /mnt/target || fail_prov untar $?\n"
                 + "\"$BB\" umount /mnt/seed || :\n"
                 + "\"$BB\" mkdir -p /mnt/target/etc/orchestella /mnt/target/tmp /mnt/target/run /mnt/target/root /mnt/target/proc /mnt/target/sys /mnt/target/dev /mnt/target/dev/pts /mnt/target/sys/fs/cgroup\n"
@@ -684,9 +838,132 @@ public final class UmlInstanceRootfsProvisioner {
                 + "fi\n"
                 + "[ -x /mnt/target/bin/busybox ] || fail_prov verify_busybox 1\n"
                 + "[ -x /mnt/target/um-command.sh ] || fail_prov verify_cmd 1\n"
-                + "\"$BB\" printf 'probe' >/mnt/target/tmp/.w302-hl-a && \"$BB\" chown 1000:1000 /mnt/target/tmp/.w302-hl-a && \"$BB\" ln /mnt/target/tmp/.w302-hl-a /mnt/target/tmp/.w302-hl-b || fail_prov verify_posix 1\n"
+                + buildProvisionFinish(okLine);
+    }
+
+    private static String buildDebianProvisionGuestScript(
+            String okLine, String safeParent, String safeSeedTar, String tarFileName) {
+        String lower = tarFileName.toLowerCase(Locale.ROOT);
+        String decompCmd;
+        if (lower.endsWith(".tar.xz") || lower.endsWith(".txz")) {
+            decompCmd = "\"$BB\" xzcat " + safeSeedTar;
+        } else if (lower.endsWith(".tar.gz") || lower.endsWith(".tgz")) {
+            decompCmd = "\"$BB\" zcat " + safeSeedTar;
+        } else {
+            decompCmd = "\"$BB\" cat " + safeSeedTar;
+        }
+        return buildProvisionPreamble(safeParent, "acl,user_xattr", true)
+                + "stream_tar() {\n"
+                + "    rm -f /tmp/decomp.rc\n"
+                + "    " + decompCmd + "\n"
+                + "    printf '%s\\n' \"$?\" > /tmp/decomp.rc\n"
+                + "}\n"
+                + "check_decomp() {\n"
+                + "    decomp_rc=1\n"
+                + "    if [ -r /tmp/decomp.rc ]; then\n"
+                + "        read -r decomp_rc </tmp/decomp.rc || decomp_rc=1\n"
+                + "    fi\n"
+                + "    [ \"${decomp_rc:-1}\" -eq 0 ] || fail_prov decomp \"${decomp_rc:-1}\"\n"
+                + "}\n"
+                + "\"$BB\" echo 'ORCHESTELLA_PROVISION_STEP=stage1_gnutar'\n"
+                + "\"$BB\" mkdir -p /tmp/gnutar /tmp/gnutar/mnt/target\n"
+                + "stream_tar | \"$BB\" tar -xpf - -C /tmp/gnutar "
+                + "./bin ./lib ./sbin ./usr/bin/tar ./usr/lib/ld-linux-aarch64.so.1 ./usr/lib/aarch64-linux-gnu 2>/dev/null || :\n"
+                + "if [ ! -x /tmp/gnutar/usr/bin/tar ]; then\n"
+                + "    rm -rf /tmp/gnutar/*\n"
+                + "    \"$BB\" mkdir -p /tmp/gnutar/mnt/target\n"
+                + "    stream_tar | \"$BB\" tar -xpf - -C /tmp/gnutar "
+                + "bin lib sbin usr/bin/tar usr/lib/ld-linux-aarch64.so.1 usr/lib/aarch64-linux-gnu 2>/dev/null || :\n"
+                + "fi\n"
+                + "check_decomp\n"
+                + "[ -x /tmp/gnutar/usr/bin/tar ] || fail_prov gnutar_bootstrap 1\n"
+                + "\"$BB\" echo 'ORCHESTELLA_PROVISION_STEP=bind_and_stage2'\n"
+                + "\"$BB\" mount --bind /mnt/target /tmp/gnutar/mnt/target || fail_prov bind_target $?\n"
+                + "stream_tar | \"$BB\" chroot /tmp/gnutar /usr/bin/tar --numeric-owner -xpf - "
+                + "--acls --xattrs --xattrs-include='*' --keep-directory-symlink -C /mnt/target\n"
+                + "tar_rc=$?\n"
+                + "\"$BB\" umount /tmp/gnutar/mnt/target || fail_prov unbind_target $?\n"
+                + "check_decomp\n"
+                + "[ \"$tar_rc\" -eq 0 ] || fail_prov untar \"$tar_rc\"\n"
+                + "\"$BB\" echo 'ORCHESTELLA_PROVISION_STEP=stage2_done'\n"
+                + "\"$BB\" rm -rf /tmp/gnutar /tmp/decomp.rc\n"
+                + "\"$BB\" umount /mnt/seed || :\n"
+                + "\"$BB\" mkdir -p /mnt/target/etc/orchestella /mnt/target/usr/lib/orchestella "
+                + "/mnt/target/etc/profile.d /mnt/target/etc/systemd/system/multi-user.target.wants "
+                + "/mnt/target/etc/systemd/network /mnt/target/tmp /mnt/target/run /mnt/target/root "
+                + "/mnt/target/proc /mnt/target/sys /mnt/target/dev /mnt/target/dev/pts /mnt/target/sys/fs/cgroup\n"
+                + "\"$BB\" chmod 1777 /mnt/target/tmp 2>/dev/null || :\n"
+                + "\"$BB\" cp /bin/busybox /mnt/target/usr/lib/orchestella/busybox || fail_prov cp_busybox $?\n"
+                + "\"$BB\" chmod 0755 /mnt/target/usr/lib/orchestella/busybox || fail_prov chmod_busybox $?\n"
+                + "\"$BB\" cp /opt/droidlayer/guest-agent /mnt/target/usr/bin/orchestella-guest-agent || fail_prov cp_agent $?\n"
+                + "\"$BB\" chmod 0755 /mnt/target/usr/bin/orchestella-guest-agent || fail_prov chmod_agent $?\n"
+                + "\"$BB\" cp /guest-assets/etc/orchestella/forward-connection.sh /mnt/target/etc/orchestella/forward-connection.sh || fail_prov cp_forward $?\n"
+                + "\"$BB\" chmod 0755 /mnt/target/etc/orchestella/forward-connection.sh || fail_prov chmod_forward $?\n"
+                + "\"$BB\" cp /guest-assets/etc/orchestella/login-shell.sh /mnt/target/etc/orchestella/login-shell.sh || fail_prov cp_login $?\n"
+                + "\"$BB\" chmod 0755 /mnt/target/etc/orchestella/login-shell.sh || fail_prov chmod_login $?\n"
+                + "\"$BB\" cp /guest-assets/usr/lib/orchestella/setup-creds.sh /mnt/target/usr/lib/orchestella/setup-creds.sh || fail_prov cp_creds $?\n"
+                + "\"$BB\" chmod 0755 /mnt/target/usr/lib/orchestella/setup-creds.sh || fail_prov chmod_creds $?\n"
+                + "\"$BB\" cp /guest-assets/usr/lib/orchestella/guest-agent-launcher.sh /mnt/target/usr/lib/orchestella/guest-agent-launcher.sh || fail_prov cp_agent_launch $?\n"
+                + "\"$BB\" chmod 0755 /mnt/target/usr/lib/orchestella/guest-agent-launcher.sh || fail_prov chmod_agent_launch $?\n"
+                + "\"$BB\" cp /guest-assets/usr/lib/orchestella/uml-network.sh /mnt/target/usr/lib/orchestella/uml-network.sh || fail_prov cp_net $?\n"
+                + "\"$BB\" chmod 0755 /mnt/target/usr/lib/orchestella/uml-network.sh || fail_prov chmod_net $?\n"
+                + "\"$BB\" cp /guest-assets/etc/profile.d/20-orchestella-terminal-integration.sh /mnt/target/etc/profile.d/20-orchestella-terminal-integration.sh || fail_prov cp_prof $?\n"
+                + "\"$BB\" chmod 0644 /mnt/target/etc/profile.d/20-orchestella-terminal-integration.sh\n"
+                + "\"$BB\" cp /guest-assets/etc/systemd/network/10-orchestella-vec0.network /mnt/target/etc/systemd/network/10-orchestella-vec0.network || fail_prov cp_netd $?\n"
+                + "\"$BB\" chmod 0644 /mnt/target/etc/systemd/network/10-orchestella-vec0.network\n"
+                + "for unit in orchestella-uml-creds.service orchestella-guest-agent.service "
+                + "orchestella-uml-network.service orchestella-console.service orchestella-systemd-ready.service; do\n"
+                + "    \"$BB\" cp \"/guest-assets/etc/systemd/system/$unit\" \"/mnt/target/etc/systemd/system/$unit\" || fail_prov cp_unit $?\n"
+                + "    \"$BB\" chmod 0644 \"/mnt/target/etc/systemd/system/$unit\"\n"
+                + "    \"$BB\" ln -sf \"../$unit\" \"/mnt/target/etc/systemd/system/multi-user.target.wants/$unit\" || fail_prov link_unit $?\n"
+                + "done\n"
+                + "for masked in console-getty.service serial-getty@ttyS0.service getty@tty1.service systemd-networkd-wait-online.service; do\n"
+                + "    \"$BB\" ln -sf /dev/null \"/mnt/target/etc/systemd/system/$masked\" || :\n"
+                + "done\n"
+                + "\"$BB\" cp /guest-assets/etc/orchestella/provision-marker /mnt/target/etc/orchestella/provision-marker || fail_prov cp_marker $?\n"
+                + "\"$BB\" chmod 0644 /mnt/target/etc/orchestella/provision-marker\n"
+                + "\"$BB\" cp /guest-assets/etc/hostname /mnt/target/etc/hostname || fail_prov cp_host $?\n"
+                + "\"$BB\" chmod 0644 /mnt/target/etc/hostname\n"
+                + "[ -L /mnt/target/bin ] && [ -L /mnt/target/lib ] && [ -L /mnt/target/sbin ] || fail_prov verify_usrmerge 1\n"
+                + "[ -x /mnt/target/sbin/init ] || \"$BB\" chroot /mnt/target /usr/bin/test -x /sbin/init || fail_prov verify_init 1\n"
+                + "[ -x /mnt/target/usr/bin/orchestella-guest-agent ] || fail_prov verify_agent 1\n"
+                + "[ -x /mnt/target/usr/lib/orchestella/busybox ] || fail_prov verify_busybox 1\n"
+                + buildProvisionFinish(okLine);
+    }
+
+    private static String buildProvisionPreamble(
+            String safeParent, String ext4MountOpts, boolean mountTmpfs) {
+        return "#!/bin/busybox sh\n"
+                + "set -u\n"
+                + "BB=/bin/busybox\n"
+                + "PATH=/sbin:/bin:/usr/sbin:/usr/bin\n"
+                + "export PATH\n"
+                + "fail_prov() {\n"
+                + "    \"$BB\" printf 'ORCHESTELLA_UML_PROVISION_FAIL step=%s rc=%s\\n' \"$1\" \"$2\"\n"
+                + "    \"$BB\" umount /tmp/gnutar/mnt/target 2>/dev/null || :\n"
+                + "    \"$BB\" umount /mnt/seed 2>/dev/null || :\n"
+                + "    \"$BB\" umount /mnt/target 2>/dev/null || :\n"
+                + "    \"$BB\" sync 2>/dev/null || :\n"
+                + "    \"$BB\" poweroff -f 2>/dev/null || :\n"
+                + "    exit 1\n"
+                + "}\n"
+                + "\"$BB\" mkdir -p /tmp /mnt/target /mnt/seed /dev\n"
+                + (mountTmpfs
+                        ? "\"$BB\" mount -t tmpfs -o size=192m,mode=1777 tmpfs /tmp || fail_prov mount_tmpfs $?\n"
+                        : "")
+                + "[ -b /dev/ubda ] || \"$BB\" mknod -m 0660 /dev/ubda b 98 0 || fail_prov ubda_node $?\n"
+                + "MKE2FS_CONFIG=/etc/mke2fs.conf /sbin/mkfs.ext4 -F -q -m 1 -L orchestella-root /dev/ubda || fail_prov mkfs $?\n"
+                + ("umask=0000".equals(ext4MountOpts)
+                        ? "\"$BB\" mount -t ext4 /dev/ubda /mnt/target || fail_prov mount_target $?\n"
+                        : "\"$BB\" mount -t ext4 -o " + ext4MountOpts + " /dev/ubda /mnt/target || fail_prov mount_target $?\n")
+                + "\"$BB\" mount -t hostfs -o " + safeParent + " none /mnt/seed || fail_prov mount_seed $?\n";
+    }
+
+    private static String buildProvisionFinish(String okLine) {
+        return "\"$BB\" printf 'probe' >/mnt/target/tmp/.w302-hl-a && \"$BB\" chown 1000:1000 /mnt/target/tmp/.w302-hl-a && \"$BB\" ln /mnt/target/tmp/.w302-hl-a /mnt/target/tmp/.w302-hl-b || fail_prov verify_posix 1\n"
                 + "\"$BB\" rm -f /mnt/target/tmp/.w302-hl-a /mnt/target/tmp/.w302-hl-b\n"
                 + "\"$BB\" sync\n"
+                + "\"$BB\" echo 'ORCHESTELLA_PROVISION_STEP=sync_done'\n"
                 + "\"$BB\" umount /mnt/target || fail_prov umount_target $?\n"
                 + "\"$BB\" sync\n"
                 + "\"$BB\" printf '" + okLine + "\\n'\n"
@@ -705,11 +982,14 @@ public final class UmlInstanceRootfsProvisioner {
     }
 
     private static String formatProvisionMarker(ProvisionRequest request, String volumeId) {
+        boolean isDebian = "debian".equalsIgnoreCase(request.seedInput().distroId().trim());
         return "marker_version=" + PROVISION_MARKER_VERSION + "\n"
                 + "instance_id=" + request.instanceId() + "\n"
                 + "distro_id=" + request.seedInput().distroId().trim().toLowerCase(Locale.ROOT) + "\n"
                 + "distro_version=" + request.seedInput().distroVersion() + "\n"
                 + "rootfs_sha256=" + request.seedInput().expectedSha256().toLowerCase(Locale.ROOT) + "\n"
+                + "kernel_profile=" + UmlKernelPayloadContract.descriptorFor(request.kernelProfile()).profileId() + "\n"
+                + "init_path=" + (isDebian ? "/sbin/init" : "/um-command.sh") + "\n"
                 + "volume_id=" + volumeId + "\n"
                 + "format=RAW_SPARSE_EXT4\n";
     }

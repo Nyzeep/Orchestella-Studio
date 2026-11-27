@@ -159,4 +159,85 @@ class DistroCreatabilityProjectionTest {
             assertEquals(manifest.sizeBytes(), verdict.expectedSizeBytes())
         }
     }
+
+    @Test
+    fun fullSmpProfileProjectsDebian13AsCreatableWhileKeepingFastProfileRefused() {
+        val filesDir = tempFolder.newFolder("full-profile").toPath()
+        val fastDebian = DistroCreatabilityProjection.evaluateForStrategy(
+            strategy = FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+            distroId = "debian",
+            filesDir = filesDir,
+            isolatedQaEnabled = true,
+            umlRootfsDownloadEnabled = true,
+            kernelProfile = UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64,
+        )
+        assertFalse(fastDebian.creatable)
+
+        val fullEntries = DistroCreatabilityProjection.project(
+            strategy = FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+            filesDir = filesDir,
+            isolatedQaEnabled = true,
+            umlRootfsDownloadEnabled = true,
+            kernelProfile = UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64,
+        )
+        val fullDebian = fullEntries.first { it.distroId == "debian" }
+        val manifest = DistroCatalogRegistry.getInstance().require("debian")
+        assertTrue(fullDebian.creatable)
+        assertEquals("13", fullDebian.version)
+        assertEquals(manifest.rootfsFileName(), fullDebian.rootfsFileName)
+        assertEquals(manifest.sha256(), fullDebian.expectedSha256)
+        assertEquals(manifest.sizeBytes(), fullDebian.expectedSizeBytes)
+        assertTrue(fullDebian.missingRequirements.isEmpty())
+        assertEquals(DistroCreatabilityProjection.VerificationState.NOT_STAGED, fullDebian.verificationState)
+
+        val inputsDir = Files.createDirectories(filesDir.resolve("distro-inputs"))
+        Files.write(inputsDir.resolve(manifest.rootfsFileName()), byteArrayOf(1, 2, 3))
+        val badDebian = DistroCreatabilityProjection.evaluateForStrategy(
+            strategy = FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+            distroId = "debian",
+            filesDir = filesDir,
+            isolatedQaEnabled = true,
+            umlRootfsDownloadEnabled = true,
+            kernelProfile = UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64,
+        )
+        assertEquals(DistroCreatabilityProjection.VerificationState.SIZE_MISMATCH, badDebian.verificationState)
+    }
+
+    @Test
+    fun stagedSeedProbeSurfacesCorruptionInUmlRootfsAndExplainsNonQaRefusal() {
+        val filesDir = tempFolder.newFolder("probe-consistency").toPath()
+        val verdict = UmlDistroCapabilityCatalog.requireCreatable(
+            "debian",
+            UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64,
+        )
+        val umlRootfsDir = Files.createDirectories(filesDir.resolve("uml-rootfs"))
+        Files.write(umlRootfsDir.resolve(verdict.expectedFileName()), byteArrayOf(9, 8, 7))
+
+        val probe = UmlKernelAssets.probeStagedDistroSeed(filesDir, verdict)
+        assertEquals(UmlKernelAssets.StagedSeedStatus.SIZE_MISMATCH, probe.status())
+
+        val debianStatus = DistroCreatabilityProjection.evaluateForStrategy(
+            strategy = FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+            distroId = "debian",
+            filesDir = filesDir,
+            isolatedQaEnabled = true,
+            umlRootfsDownloadEnabled = true,
+            kernelProfile = UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64,
+        )
+        assertEquals(DistroCreatabilityProjection.VerificationState.SIZE_MISMATCH, debianStatus.verificationState)
+
+        val nonQaAlpine = DistroCreatabilityProjection.evaluateForStrategy(
+            strategy = FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+            distroId = "alpine",
+            filesDir = filesDir,
+            isolatedQaEnabled = false,
+            umlRootfsDownloadEnabled = true,
+            kernelProfile = UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64,
+        )
+        assertFalse(nonQaAlpine.creatable)
+        assertEquals(
+            "USER_MODE_KERNEL creation is gated to isolated QA builds.",
+            nonQaAlpine.refusalReason,
+        )
+    }
 }

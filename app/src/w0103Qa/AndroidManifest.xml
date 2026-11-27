@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <instrumentation
+        android:name="io.github.nyzeep.orchestella.W0103DebianLifecycleProbe"
+        android:targetPackage="${applicationId}"
+        android:label="Orchestella W01-03 Debian 13 persistent ext4 and native init probe" />
+</manifest>

@@ -190,4 +190,35 @@ public class UmlLaunchSpecTest {
             assertTrue(expected.getMessage().contains("distinct"));
         }
     }
+
+    @Test
+    public void includesExplicitUmInitArgWhenConfiguredAndRejectsInvalidValues() {
+        Path runtimeDir = Paths.get("/data/user/0/app/files/runtime/qa-deb");
+        Path rootVolume = Paths.get("/data/user/0/app/files/root-volumes/deb-1.raw");
+        UmlLaunchSpec spec = UmlLaunchSpec.builder()
+                .kernelPath("/data/app/lib/arm64/libuml_kernel_full.so")
+                .stubExePath("/data/app/lib/arm64/libuml_stub_full.so")
+                .memMb(1024)
+                .rootMode(UmlLaunchSpec.RootMode.EXT4_UBD)
+                .ubd0Path(rootVolume)
+                .umInitPath("/sbin/init")
+                .runtimeDir(runtimeDir)
+                .build();
+
+        assertEquals("/sbin/init", spec.umInitPath());
+        assertTrue(spec.argv().contains("uminit=/sbin/init"));
+
+        try {
+            UmlLaunchSpec.builder()
+                    .kernelPath("/k")
+                    .stubExePath("/s")
+                    .ephemeralRootDir(runtimeDir)
+                    .runtimeDir(runtimeDir)
+                    .umInitPath("sbin/init")
+                    .build();
+            fail("expected relative umInitPath rejection");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("umInitPath"));
+        }
+    }
 }
