@@ -10,12 +10,14 @@ import java.util.Objects;
  * Single source of truth for UML kernel-profile distro creatability gates (W3-02 / R-02).
  *
  * <p>Every verdict binds a pinned distro tarball digest/size and explicit kernel capability
- * gaps observed against {@code Raymer8639/linux-um-arm64 um-arm64-v0.3.0} ({@code defconfig-fast}).
+ * gaps observed against {@code Raymer8639/linux-um-arm64 um-arm64-v0.3.0}
+ * ({@code defconfig-fast} and {@code defconfig-full}).
  * Only distros passing every profile gate are marked {@link DistroProfileStatus#CREATABLE}.
  */
 public final class UmlDistroCapabilityCatalog {
     public enum KernelProfile {
-        FAST_UP_ARM64
+        FAST_UP_ARM64,
+        FULL_SMP_ARM64
     }
 
     public enum DistroProfileStatus {
@@ -123,16 +125,51 @@ public final class UmlDistroCapabilityCatalog {
                             KernelRequirementGap.MISSING_BUSYBOX_INIT_CONTRACT),
                     "Arch Linux ARM requires CONFIG_SECURITY_LANDLOCK (pacman sandbox fails with ENOSYS on fast-profile), systemd cgroup/ns stack, and lacks /bin/busybox."));
 
+    private static final Map<String, DistroGateVerdict> FULL_SMP_VERDICTS = Map.of(
+            "alpine",
+            new DistroGateVerdict(
+                    "alpine",
+                    "3.22.2",
+                    KernelProfile.FULL_SMP_ARM64,
+                    DistroProfileStatus.CREATABLE,
+                    "alpine-minirootfs-3.22.2-aarch64.tar.gz",
+                    "6bf491907b705caa5fc65773fbbc1d0954530b6c455d4446f670a4c1fdcea489",
+                    3_981_043L,
+                    List.of(),
+                    "Alpine 3.22.2 minirootfs passes BusyBox init + ext4 ubd0 verification on full-profile."),
+            "debian",
+            new DistroGateVerdict(
+                    "debian",
+                    "13",
+                    KernelProfile.FULL_SMP_ARM64,
+                    DistroProfileStatus.REFUSED,
+                    "debian-13-rootfs.tar.xz",
+                    "e4d504e13e43a384227639b74391ef164a67d916aa8f8a9871ecd73dc577db91",
+                    90_346_224L,
+                    List.of(KernelRequirementGap.UNVERIFIED_ON_PROFILE),
+                    "Debian 13 kernel requirements are compiled in full-profile; .tar.xz provisioning and physical 4 KB systemd boot verification belong to W01-03."),
+            "arch",
+            new DistroGateVerdict(
+                    "arch",
+                    "rolling",
+                    KernelProfile.FULL_SMP_ARM64,
+                    DistroProfileStatus.REFUSED,
+                    "ArchLinuxARM-aarch64-latest.tar.gz",
+                    "42a4eeaa038994ffd31fa173256ef2f0ef511358eeb41b9ea1f8626391b9b319",
+                    829_367_415L,
+                    List.of(KernelRequirementGap.UNVERIFIED_ON_PROFILE),
+                    "Arch Linux ARM kernel requirements are compiled in full-profile; rootfs provisioning and runtime verification remain unverified."));
+
     private UmlDistroCapabilityCatalog() {}
 
     public static DistroGateVerdict evaluate(String distroId, KernelProfile profile) {
         Objects.requireNonNull(profile, "profile");
         String normalized = distroId == null ? "" : distroId.trim().toLowerCase(Locale.ROOT);
-        if (profile == KernelProfile.FAST_UP_ARM64) {
-            DistroGateVerdict known = FAST_UP_VERDICTS.get(normalized);
-            if (known != null) {
-                return known;
-            }
+        Map<String, DistroGateVerdict> verdicts =
+                profile == KernelProfile.FULL_SMP_ARM64 ? FULL_SMP_VERDICTS : FAST_UP_VERDICTS;
+        DistroGateVerdict known = verdicts.get(normalized);
+        if (known != null) {
+            return known;
         }
         return new DistroGateVerdict(
                 normalized.isEmpty() ? "unknown" : normalized,
@@ -157,12 +194,11 @@ public final class UmlDistroCapabilityCatalog {
 
     public static List<DistroGateVerdict> listKnownForProfile(KernelProfile profile) {
         Objects.requireNonNull(profile, "profile");
-        if (profile == KernelProfile.FAST_UP_ARM64) {
-            return List.of(
-                    FAST_UP_VERDICTS.get("alpine"),
-                    FAST_UP_VERDICTS.get("debian"),
-                    FAST_UP_VERDICTS.get("arch"));
-        }
-        return List.of();
+        Map<String, DistroGateVerdict> verdicts =
+                profile == KernelProfile.FULL_SMP_ARM64 ? FULL_SMP_VERDICTS : FAST_UP_VERDICTS;
+        return List.of(
+                verdicts.get("alpine"),
+                verdicts.get("debian"),
+                verdicts.get("arch"));
     }
 }

@@ -607,6 +607,14 @@ class NoticeUmlDeclarationTest(unittest.TestCase):
             {KERNEL_ENTRY, STUB_ENTRY, NET_ENTRY, PASST_ENTRY}, declared_libs)
         self.assertEqual({ROOTFS_ENTRY}, declared_tars)
 
+    def test_real_repo_notice_declares_optional_full_profile_entries(self) -> None:
+        text = NOTICE_UML_ASSET.read_text(encoding="utf-8")
+        declared_full = gate.parse_notice_uml_full_entries(text)
+        self.assertEqual(
+            {LIB + "libuml_kernel_full.so", LIB + "libuml_stub_full.so"},
+            declared_full,
+        )
+
     def test_real_repo_notice_surfaces_expected_open_items_without_spillover(self) -> None:
         text = NOTICE_UML_ASSET.read_text(encoding="utf-8")
         items = gate.find_notice_uml_open_items(text)
@@ -757,6 +765,168 @@ class CommandLineTest(unittest.TestCase):
 
     def test_selftest_passes(self) -> None:
         self.assertEqual(0, gate.main(["--selftest"]))
+
+
+class FullProfilePayloadGateTest(unittest.TestCase):
+    """W01-02 dual-profile and --qa-full-profile gate contracts."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.fast_kernel = b"fast-kernel-bytes"
+        self.fast_stub = b"fast-stub-bytes"
+        self.full_kernel = b"full-kernel-bytes"
+        self.full_stub = b"full-stub-bytes"
+        self.rootfs = b"rootfs-tar-bytes"
+        self.umnet = b"umnet-bytes"
+        self.passt = b"passt-bytes"
+        self.llvm = b"llvm-bytes" * 100
+        self.cppshared = b"cpp-shared-bytes"
+        self.clang = b"clang-bytes" * 100
+        self.payload = b"fastlane-payload-bytes"
+        self.compiler = b"pvm-compiler-payload-bytes"
+        self.qemu_lib = b"qemu-lib-bytes" * 100
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _apk(self, name: str, entries: dict[str, bytes]) -> Path:
+        apk = self.root / name
+        with zipfile.ZipFile(apk, "w") as archive:
+            for entry_name, payload in entries.items():
+                archive.writestr(entry_name, payload)
+        return apk
+
+    def _full_manifest(self) -> bytes:
+        return (
+            "# profile=full-smp-arm64\n"
+            f"{_sha(self.full_kernel)}  libuml_kernel_full.so\n"
+            f"{_sha(self.full_stub)}  libuml_stub_full.so\n"
+        ).encode("utf-8")
+
+    def _fast_manifest(self) -> bytes:
+        return (
+            f"{_sha(self.fast_kernel)}  libuml_kernel.so\n"
+            f"{_sha(self.fast_stub)}  libuml_stub.so\n"
+            f"{_sha(self.rootfs)}  {ROOTFS_ENTRY}\n"
+        ).encode("utf-8")
+
+    def _net_manifest(self) -> bytes:
+        return (
+            f"{_sha(self.umnet)}  libuml_net.so\n"
+            f"{_sha(self.passt)}  libuml_passt.so\n"
+        ).encode("utf-8")
+
+    def _dual_notice(self) -> bytes:
+        return (
+            "NOTICE — UML engine components shipped in this application\n"
+            f"{KERNEL_ENTRY} and {STUB_ENTRY}, "
+            f"{LIB}libuml_kernel_full.so and {LIB}libuml_stub_full.so, "
+            f"{NET_ENTRY} and {PASST_ENTRY}, and {ROOTFS_ENTRY}.\n"
+        ).encode("utf-8")
+
+    def _qa_full_entries(self) -> dict[str, bytes]:
+        return {
+            LIB + "libuml_kernel_full.so": self.full_kernel,
+            LIB + "libuml_stub_full.so": self.full_stub,
+            NET_ENTRY: self.umnet,
+            PASST_ENTRY: self.passt,
+            "assets/uml-full-profile-v1.sha256": self._full_manifest(),
+            NET_MANIFEST: self._net_manifest(),
+            NOTICE_UML_ENTRY: (
+                "NOTICE — UML engine components\n"
+                f"{LIB}libuml_kernel_full.so {LIB}libuml_stub_full.so "
+                f"{NET_ENTRY} {PASST_ENTRY}\n"
+            ).encode("utf-8"),
+        }
+
+    def test_require_full_profile_rejects_fast_only_apk_with_profile_mismatch(self) -> None:
+        apk = self._apk("fast_only.apk", {
+            KERNEL_ENTRY: self.fast_kernel,
+            STUB_ENTRY: self.fast_stub,
+            ROOTFS_ENTRY: self.rootfs,
+            NET_ENTRY: self.umnet,
+            PASST_ENTRY: self.passt,
+            FAST_MANIFEST: self._fast_manifest(),
+            NET_MANIFEST: self._net_manifest(),
+        })
+        out = self.root / "mismatch.json"
+        buf = io.StringIO()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+            code = gate.main(["--apk", str(apk), "--require-full-profile", "--json", str(out)])
+        self.assertEqual(1, code)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertIn("PROFILE_MISMATCH", payload["failure_codes"])
+
+    def test_require_full_profile_detects_missing_stub_and_digest_mismatch(self) -> None:
+        no_stub = self._qa_full_entries()
+        del no_stub[LIB + "libuml_stub_full.so"]
+        out_stub = self.root / "nostub.json"
+        buf = io.StringIO()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+            code = gate.main([
+                "--apk", str(self._apk("nostub.apk", no_stub)),
+                "--qa-full-profile", "--json", str(out_stub),
+            ])
+        self.assertEqual(1, code)
+        self.assertIn("MISSING_STUB", json.loads(out_stub.read_text(encoding="utf-8"))["failure_codes"])
+
+        bad_kernel = self._qa_full_entries()
+        bad_kernel[LIB + "libuml_kernel_full.so"] = b"corrupt-full-kernel"
+        out_sha = self.root / "badsha.json"
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = gate.main([
+                "--apk", str(self._apk("badsha.apk", bad_kernel)),
+                "--qa-full-profile", "--json", str(out_sha),
+            ])
+        self.assertEqual(1, code)
+        self.assertIn("SHA256_MISMATCH", json.loads(out_sha.read_text(encoding="utf-8"))["failure_codes"])
+
+    def test_qa_full_profile_passes_without_qemu_or_pvm_and_reports_scope(self) -> None:
+        apk = self._apk("qa_full.apk", self._qa_full_entries())
+        out = self.root / "qa.json"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gate.main(["--apk", str(apk), "--qa-full-profile", "--json", str(out)])
+        self.assertEqual(0, code)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual("ok", payload["status"])
+        self.assertEqual("qa-uml-full-profile", payload["verified_scope"])
+        self.assertEqual(4, len(payload["verified"]))
+
+    def test_fullpkg_with_require_full_profile_verifies_all_17_entries(self) -> None:
+        base = FullpkgSmokeTest()
+        base.setUp()
+        try:
+            entries = base._fullpkg_entries()
+        finally:
+            base.tearDown()
+        # Replace fast kernel/stub/rootfs in entries with matching local test bytes
+        entries[KERNEL_ENTRY] = self.fast_kernel
+        entries[STUB_ENTRY] = self.fast_stub
+        entries[ROOTFS_ENTRY] = self.rootfs
+        entries[NET_ENTRY] = self.umnet
+        entries[PASST_ENTRY] = self.passt
+        entries[FAST_MANIFEST] = self._fast_manifest()
+        entries[NET_MANIFEST] = self._net_manifest()
+        entries[LIB + "libuml_kernel_full.so"] = self.full_kernel
+        entries[LIB + "libuml_stub_full.so"] = self.full_stub
+        entries["assets/uml-full-profile-v1.sha256"] = self._full_manifest()
+        entries[NOTICE_UML_ENTRY] = self._dual_notice()
+
+        apk = self._apk("dual_fullpkg.apk", entries)
+        out = self.root / "dual.json"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gate.main([
+                "--apk", str(apk), "--fullpkg", "--require-full-profile", "--json", str(out),
+            ])
+        self.assertEqual(0, code)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual("ok", payload["status"])
+        self.assertEqual(17, len(payload["verified"]))
 
 
 if __name__ == "__main__":

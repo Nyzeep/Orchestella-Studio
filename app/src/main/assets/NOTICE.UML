@@ -160,3 +160,33 @@ Upgrade discipline
 A UML kernel upgrade is one atomic change: a new fixed public tag, a new
 matching source record, and new PIN_MANIFEST values, updated in the same
 change as the binary. Shipped bytes and this notice must never disagree.
+
+full-smp-arm64 optional QA profile (staged via -Porchestella.uml.fullProfileDir)
+--------------------------------------------------------------------------------
+When an isolated QA build stages the W01-02 full-profile payload, it ships
+lib/arm64-v8a/libuml_kernel_full.so (linux-full) and
+lib/arm64-v8a/libuml_stub_full.so (16 KB relinked stub_exe_full) alongside the
+baseline components above:
+
+  - Kernel source: same pinned Raymer8639/linux-um-arm64 `um-arm64-v0.3.0`
+    (Linux 7.2.0-rc4, commit 169b17ff3f66d507cb137b770ceb1fd9f4547a32, GPL-2.0-only).
+  - Configuration and build entrypoints:
+    research/uml-kernel-build/defconfigs/linux-bionic-smp.config +
+    research/uml-full/defconfig-full.fragment ->
+    research/uml-full/defconfig-full; built by research/uml-full/build-full.sh
+    and cross-path verified by research/uml-full/verify-reproducible.sh;
+    manifest recorded in research/uml-full/manifest.md.
+  - Embedded initramfs (initramfs-full.cpio.gz): carries Alpine 3.22
+    busybox-static 1.37.0-r20 (GPL-2.0, binary sha256
+    a6bb1e6e349cbdfa690a78cd0017413c5446bdae02ee003ceb682d4ae1a004ff) and
+    project scripts research/uml-full/initramfs/init and
+    research/uml-full/initramfs/um-command.sh (GPL-3.0-or-later).
+  - Product pins (UmlKernelAssets.FullProfile.PIN_MANIFEST, cross-path
+    byte-identical across two clean workspace prefixes):
+      lib/arm64-v8a/libuml_kernel_full.so (linux-full)     d1ef40e68cdf73cadfb235e746b878d011209f677d8751b888768fa387f3b47f
+      lib/arm64-v8a/libuml_stub_full.so   (stub_exe_full)  87666f9167de09d0bf84b414618c39d9f460417a641f212f5f0f28c498a09a12
+      initramfs-full.cpio.gz                               ee1b03084b60eb846a3d1a2fd854904af9a4cd0fb3446ebbc5140439f4da7496
+  - Accounting manifest: assets/uml-full-profile-v1.sha256.
+  - Licensing status: libuml_kernel_full.so follows GPL-2.0-only;
+    libuml_stub_full.so carries the same open licensing-attribution ruling
+    recorded under `stub_exe` above without claiming a closed verdict.

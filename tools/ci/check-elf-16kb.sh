@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Shared AArch64 ELF / GNU_RELRO / 16 KB PT_LOAD check.
 #
-# Use for APK native libraries and for the QEMU product binaries:
+# Use for APK native libraries and for the QEMU/UML product binaries:
 #   READELF=/path/to/llvm-readelf bash tools/ci/check-elf-16kb.sh <file>...
 #
-# 16 KB page compatibility requires ELF64/AArch64 and 16 KB-aligned PT_LOAD
-# segments. GNU_RELRO is a separate hardening property and is NOT part of the
-# 16 KB requirement; Go-produced shared libraries legitimately omit it. Set
-# REQUIRE_RELRO=1 for product binaries that must also carry RELRO.
+# 16 KB page compatibility requires ELF64/AArch64, 16 KB-aligned PT_LOAD
+# segments (p_align >= 0x4000), and page congruence (p_vaddr % 0x4000 ==
+# p_offset % 0x4000). GNU_RELRO is checked when present (applicable to shared
+# objects / dynamic PIEs) and enforced fail-closed when REQUIRE_RELRO=1.
 set -uo pipefail
 
 RE="${READELF:-llvm-readelf}"
@@ -36,26 +36,67 @@ for f in "$@"; do
     fail=1
   fi
   printf '%s\n' "$header" | grep -Eq 'Machine:[[:space:]]*AArch64' || { echo "FAIL machine $f"; fail=1; }
-  if [ "$REQUIRE_RELRO" = "1" ]; then
-    "$RE" -l "$f" | grep -q 'GNU_RELRO' || { echo "FAIL relro $f"; fail=1; }
+
+  phdrs="$("$RE" -l "$f" 2>/dev/null || true)"
+  is_dynamic=0
+  if printf '%s\n' "$phdrs" | grep -qE '^[[:space:]]*DYNAMIC[[:space:]]'; then
+    is_dynamic=1
   fi
+
+  relro_line="$(printf '%s\n' "$phdrs" | awk '$1=="GNU_RELRO" {print $2, $3, $5, $6; exit}')"
+  if [ -n "$relro_line" ]; then
+    read -r _ r_vaddr r_filesz r_memsz <<< "$relro_line"
+    r_lo=$((r_vaddr))
+    r_fhi=$((r_lo + r_filesz))
+    r_mhi=$((r_lo + r_memsz))
+    relro_ok=0
+    while read -r p_vaddr p_filesz p_memsz p_align; do
+      l_lo=$((p_vaddr))
+      l_fhi=$((l_lo + p_filesz))
+      l_mhi_page=$(( ((l_lo + p_memsz + 4095) / 4096) * 4096 ))
+      l_al=$((p_align))
+      if (( r_lo >= l_lo && r_fhi <= l_fhi && r_mhi <= l_mhi_page && l_al >= 16384 )); then
+        relro_ok=1
+        break
+      fi
+    done < <(printf '%s\n' "$phdrs" | sed -n '/^Program Headers:/,/^ Section to Segment mapping:/p' | awk '$1=="LOAD" {print $3, $5, $6, $NF}')
+    if [ "$relro_ok" = "1" ]; then
+      echo "GNU_RELRO_OK $f"
+    else
+      echo "FAIL relro_16kb_coverage $f"
+      fail=1
+    fi
+  else
+    if [ "$REQUIRE_RELRO" = "1" ]; then
+      echo "FAIL relro $f"
+      fail=1
+    elif [ "$is_dynamic" = "0" ]; then
+      echo "GNU_RELRO=NOT_APPLICABLE(static-et-exec) $f"
+    else
+      echo "GNU_RELRO=ABSENT $f"
+    fi
+  fi
+
   bad=0
-  while read -r _ align; do
+  load_count=0
+  while read -r _ offset vaddr align; do
+    load_count=$((load_count + 1))
     case "$align" in
-      0x*) if (( align < 16384 )); then bad=1; fi ;;
+      0x*)
+        if (( align < 16384 )); then bad=1; fi
+        if (( (vaddr % 16384) != (offset % 16384) )); then bad=1; fi
+        ;;
       *) bad=1 ;;
     esac
-  done < <("$RE" -l "$f" | sed -n '/^Program Headers:/,/^ Section to Segment mapping:/p' | awk '$1=="LOAD" {print $1, $NF}')
-  [ "$bad" -eq 0 ] || { echo "FAIL load_align $f"; fail=1; }
+  done < <(printf '%s\n' "$phdrs" | sed -n '/^Program Headers:/,/^ Section to Segment mapping:/p' | awk '$1=="LOAD" {print $1, $2, $3, $NF}')
+  if [ "$load_count" -eq 0 ] || [ "$bad" -ne 0 ]; then
+    echo "FAIL load_align $f"
+    fail=1
+  fi
   echo "DT_NEEDED for $f:"
   "$RE" -d "$f" | grep NEEDED || true
 done
 
-# Optional bundled-DT_NEEDED closure. External/system libraries are outside the
-# product payload and cannot be resolved from the build output; the assertion
-# is that every NEEDED entry present beside a checked ELF was itself passed to
-# this gate. APK packaging enables it; QEMU product binaries keep the legacy
-# behaviour until their build output is enumerated.
 if [ "${REQUIRE_BUNDLED_CLOSURE:-0}" = "1" ]; then
   declare -A checked=()
   for f in "$@"; do

@@ -1,5 +1,7 @@
 package io.github.nyzeep.orchestella;
 
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroCapabilityCatalog;
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlKernelPayloadContract;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -276,13 +278,20 @@ public final class UmlKernelAssets {
      */
     public static Map<String, String> readManifest(File manifestFile) throws IOException {
         Objects.requireNonNull(manifestFile, "manifestFile");
-        Map<String, String> digests = new LinkedHashMap<>();
         if (!manifestFile.isFile()) {
-            return digests;
+            return new LinkedHashMap<>();
         }
+        try (FileInputStream in = new FileInputStream(manifestFile)) {
+            return readManifest(in);
+        }
+    }
+
+    /** Parses a manifest stream using {@link #MANIFEST_LINE}. */
+    public static Map<String, String> readManifest(InputStream in) throws IOException {
+        Objects.requireNonNull(in, "in");
+        Map<String, String> digests = new LinkedHashMap<>();
         try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                new java.io.InputStreamReader(
-                        new FileInputStream(manifestFile), java.nio.charset.StandardCharsets.UTF_8))) {
+                new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 java.util.regex.Matcher match = MANIFEST_LINE.matcher(line.trim());
@@ -496,6 +505,208 @@ public final class UmlKernelAssets {
             }
             return pin;
         }
+    }
+
+    /**
+     * The {@code full-smp-arm64} asset family built reproducibly from
+     * {@code Raymer8639/linux-um-arm64 um-arm64-v0.3.0} with
+     * {@code research/uml-full/defconfig-full} (Debian 13 systemd + Docker
+     * workload support, 16 KB guest pages, 16 KB relinked {@code stub_exe_full},
+     * and XZ-capable provisioning {@code initramfs-full.cpio.gz}).
+     *
+     * <p>Artifact keys in {@link #PIN_MANIFEST} are deliberately disjoint from
+     * {@link FastProfile#PIN_MANIFEST} so build-time pin parsing cannot collide.
+     */
+    public static final class FullProfile {
+
+        public static final String PROFILE_ID = "full-smp-arm64";
+        public static final String BUNDLED_MANIFEST_FILE_NAME = "uml-full-profile-v1.sha256";
+        public static final String KERNEL_LIB_NAME = "libuml_kernel_full.so";
+        public static final String STUB_LIB_NAME = "libuml_stub_full.so";
+
+        public static final String KERNEL = "linux-full";
+        public static final String KERNEL_NOINITRD = "linux-full-noinitrd";
+        public static final String STUB = "stub_exe_full";
+        public static final String INITRAMFS = "initramfs-full.cpio.gz";
+        public static final String KERNEL_CONFIG = "kernel-full.config";
+
+        public static final String DEFAULT_KERNEL = KERNEL;
+
+        public static final String PIN_MANIFEST = String.join("\n",
+                "d1ef40e68cdf73cadfb235e746b878d011209f677d8751b888768fa387f3b47f  linux-full",
+                "ebf88b1f1b48fc15f4a24cfc6d9eb9fbb62e4fa9667a1ee3a193fbf4084d4b09  linux-full-noinitrd",
+                "87666f9167de09d0bf84b414618c39d9f460417a641f212f5f0f28c498a09a12  stub_exe_full",
+                "ee1b03084b60eb846a3d1a2fd854904af9a4cd0fb3446ebbc5140439f4da7496  initramfs-full.cpio.gz",
+                "d2a6223dff0c8b9ec16279b44b8984122d702af06a9cd6f0c1dffdd336793896  kernel-full.config");
+
+        private static final Map<String, String> PINS = parsePins(PIN_MANIFEST);
+
+        private FullProfile() {
+        }
+
+        public static Map<String, String> pins() {
+            return PINS;
+        }
+
+        public static List<FastProfile.PinnedArtifact> artifacts() {
+            return List.of(
+                    new FastProfile.PinnedArtifact(KERNEL, PINS.get(KERNEL), 14_393_208L),
+                    new FastProfile.PinnedArtifact(KERNEL_NOINITRD, PINS.get(KERNEL_NOINITRD), 13_737_848L),
+                    new FastProfile.PinnedArtifact(STUB, PINS.get(STUB), 2_056L),
+                    new FastProfile.PinnedArtifact(INITRAMFS, PINS.get(INITRAMFS), 662_027L),
+                    new FastProfile.PinnedArtifact(KERNEL_CONFIG, PINS.get(KERNEL_CONFIG), 50_330L));
+        }
+
+        public static String packagedLibName(String artifact) {
+            if (KERNEL.equals(artifact) || KERNEL_NOINITRD.equals(artifact)) {
+                return KERNEL_LIB_NAME;
+            }
+            if (STUB.equals(artifact)) {
+                return STUB_LIB_NAME;
+            }
+            throw new IllegalArgumentException(
+                    "full-profile artifact has no packaged lib placement: " + artifact);
+        }
+
+        public static Map<String, String> packagedPinsFor(String kernelArtifact) {
+            return Map.of(
+                    packagedLibName(kernelArtifact), requireFullPin(kernelArtifact),
+                    packagedLibName(STUB), requireFullPin(STUB));
+        }
+
+        public static Map<String, String> packagedPins() {
+            return packagedPinsFor(DEFAULT_KERNEL);
+        }
+
+        private static String requireFullPin(String artifact) {
+            String pin = PINS.get(artifact);
+            if (pin == null) {
+                throw new IllegalArgumentException("full-profile artifact is not pinned: " + artifact);
+            }
+            return pin;
+        }
+    }
+
+    /** Outcome of selecting and verifying a specific UML kernel profile payload without fallback. */
+    public record ProfileVerificationResult(
+            boolean ok,
+            UmlDistroCapabilityCatalog.KernelProfile profile,
+            UmlKernelPayloadContract.FailureCode failureCode,
+            String kernelPath,
+            String stubPath,
+            String detail) {
+        public ProfileVerificationResult {
+            Objects.requireNonNull(profile, "profile");
+            detail = detail == null ? "" : detail;
+        }
+    }
+
+    /**
+     * Verifies that the requested kernel profile ({@code FAST_UP_ARM64} or {@code FULL_SMP_ARM64})
+     * has its matching kernel binary, matching relinked stub binary, and consistent manifest
+     * digests on disk. Never falls back from {@code FULL_SMP_ARM64} to {@code FAST_UP_ARM64}.
+     */
+    public static ProfileVerificationResult verifyProfilePayload(
+            UmlDistroCapabilityCatalog.KernelProfile requestedProfile,
+            File nativeLibraryDir,
+            Map<String, String> inApkManifestDigests,
+            Map<String, String> expectedPins) {
+        Objects.requireNonNull(requestedProfile, "requestedProfile");
+        Objects.requireNonNull(expectedPins, "expectedPins");
+        UmlKernelPayloadContract.ProfileDescriptor descriptor =
+                UmlKernelPayloadContract.descriptorFor(requestedProfile);
+        if (nativeLibraryDir == null || !nativeLibraryDir.isDirectory()) {
+            return new ProfileVerificationResult(
+                    false, requestedProfile, UmlKernelPayloadContract.FailureCode.MISSING_PAYLOAD,
+                    null, null, "nativeLibraryDir is missing");
+        }
+        File kernelFile = new File(nativeLibraryDir, descriptor.kernelLibName());
+        File stubFile = new File(nativeLibraryDir, descriptor.stubLibName());
+
+        if (!kernelFile.isFile() || kernelFile.length() <= 0L || !kernelFile.canExecute()) {
+            if (requestedProfile == UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64) {
+                File fastKernel = new File(nativeLibraryDir, UmlFaceLauncher.KERNEL_LIB_NAME);
+                boolean hasFastInManifest = inApkManifestDigests != null
+                        && inApkManifestDigests.containsKey(UmlFaceLauncher.KERNEL_LIB_NAME);
+                if (fastKernel.isFile() || hasFastInManifest) {
+                    return new ProfileVerificationResult(
+                            false, requestedProfile,
+                            UmlKernelPayloadContract.FailureCode.PROFILE_MISMATCH,
+                            null, null,
+                            "requested full-smp-arm64 payload (" + descriptor.kernelLibName()
+                                    + ") is missing while only fast-up-arm64 payload is present");
+                }
+            }
+            return new ProfileVerificationResult(
+                    false, requestedProfile, UmlKernelPayloadContract.FailureCode.MISSING_PAYLOAD,
+                    null, null,
+                    "missing or non-executable kernel binary: " + descriptor.kernelLibName());
+        }
+        if (!stubFile.isFile() || stubFile.length() <= 0L || !stubFile.canExecute()) {
+            return new ProfileVerificationResult(
+                    false, requestedProfile, UmlKernelPayloadContract.FailureCode.MISSING_STUB,
+                    null, null,
+                    "missing or non-executable stub binary: " + descriptor.stubLibName());
+        }
+
+        String expectedKernelPin = expectedPins.get(descriptor.kernelLibName());
+        String expectedStubPin = expectedPins.get(descriptor.stubLibName());
+        if (inApkManifestDigests == null
+                || !inApkManifestDigests.containsKey(descriptor.kernelLibName())
+                || !inApkManifestDigests.containsKey(descriptor.stubLibName())
+                || expectedKernelPin == null
+                || expectedStubPin == null) {
+            return new ProfileVerificationResult(
+                    false, requestedProfile,
+                    UmlKernelPayloadContract.FailureCode.MANIFEST_APK_MISMATCH,
+                    null, null,
+                    "accounting manifest " + descriptor.manifestAssetName()
+                            + " or expected pin set is missing or incomplete");
+        }
+        String manifestKernelPin = inApkManifestDigests.get(descriptor.kernelLibName());
+        String manifestStubPin = inApkManifestDigests.get(descriptor.stubLibName());
+        if (!expectedKernelPin.equalsIgnoreCase(manifestKernelPin)
+                || !expectedStubPin.equalsIgnoreCase(manifestStubPin)) {
+            return new ProfileVerificationResult(
+                    false, requestedProfile,
+                    UmlKernelPayloadContract.FailureCode.MANIFEST_APK_MISMATCH,
+                    null, null,
+                    "accounting manifest digests disagree with pinned " + descriptor.profileId()
+                            + " expectations");
+        }
+
+        try {
+            String actualKernelSha = sha256Hex(kernelFile);
+            if (!actualKernelSha.equalsIgnoreCase(expectedKernelPin)) {
+                return new ProfileVerificationResult(
+                        false, requestedProfile,
+                        UmlKernelPayloadContract.FailureCode.SHA256_MISMATCH,
+                        null, null,
+                        "kernel sha256 mismatch for " + descriptor.kernelLibName()
+                                + ": expected=" + expectedKernelPin + " actual=" + actualKernelSha);
+            }
+            String actualStubSha = sha256Hex(stubFile);
+            if (!actualStubSha.equalsIgnoreCase(expectedStubPin)) {
+                return new ProfileVerificationResult(
+                        false, requestedProfile,
+                        UmlKernelPayloadContract.FailureCode.STUB_CONFIG_MISMATCH,
+                        null, null,
+                        "stub sha256 mismatch for " + descriptor.stubLibName()
+                                + ": expected=" + expectedStubPin + " actual=" + actualStubSha);
+            }
+        } catch (IOException readError) {
+            return new ProfileVerificationResult(
+                    false, requestedProfile,
+                    UmlKernelPayloadContract.FailureCode.MISSING_PAYLOAD,
+                    null, null,
+                    "failed to hash UML kernel payload: " + readError.getMessage());
+        }
+
+        return new ProfileVerificationResult(
+                true, requestedProfile, null,
+                kernelFile.getAbsolutePath(), stubFile.getAbsolutePath(),
+                "verified " + descriptor.profileId() + " (" + descriptor.kernelLibName()
+                        + " + " + descriptor.stubLibName() + ")");
     }
 
     /** The strict parser for the {@link FastProfile#PIN_MANIFEST} constant: every non-blank line must conform. */

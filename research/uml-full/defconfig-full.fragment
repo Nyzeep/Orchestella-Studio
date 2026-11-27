@@ -1,0 +1,158 @@
+# Orchestella Studio — full-smp-arm64 UML kernel profile fragment.
+#
+# Base: research/uml-kernel-build/defconfigs/linux-bionic-smp.config
+# Target workloads:
+#   - Debian 13 (trixie) + systemd v257 (PID 1, cgroup v2, namespaces, PSI, ACL/xattr)
+#   - Docker 26.1.5 / containerd 1.7.24 / runc 1.1.15 (overlay2/ext4, seccomp, veth/bridge/NAT/iptables)
+#   - Wave 2 Arch pacman 7 Landlock sandbox readiness (CONFIG_SECURITY + CONFIG_SECURITY_LANDLOCK)
+#   - Cross-path reproducible build & 16 KB guest page (CONFIG_PAGE_SHIFT=14)
+#
+# Note: CONFIG_SMP=y + NR_CPUS=16 allows SMP compilation; Studio QA launches
+# Debian+Docker first-proof at 1 vCPU (ncpus=1) until multi-vCPU profiling in W01-05.
+
+# ---------------------------------------------------------------------------
+# 1. Core UML / SMP / 16 KB guest page / initrd contract (kept & asserted)
+# ---------------------------------------------------------------------------
+CONFIG_UML=y
+CONFIG_MMU=y
+CONFIG_SMP=y
+CONFIG_NR_CPUS=16
+CONFIG_PAGE_SHIFT=14
+CONFIG_STATIC_LINK=y
+CONFIG_HOSTFS=y
+CONFIG_BLK_DEV_UBD=y
+CONFIG_BLK_DEV_INITRD=y
+CONFIG_RD_GZIP=y
+CONFIG_RD_XZ=y
+CONFIG_KALLSYMS=y
+CONFIG_IKCONFIG=y
+CONFIG_IKCONFIG_PROC=y
+CONFIG_PRINTK_TIME=y
+CONFIG_NULL_CHAN=y
+CONFIG_MCONSOLE=y
+CONFIG_MAGIC_SYSRQ=y
+
+# ---------------------------------------------------------------------------
+# 2. Rootfs / systemd v257 / OverlayFS / FUSE
+# ---------------------------------------------------------------------------
+CONFIG_EXT4_FS=y
+CONFIG_EXT4_FS_POSIX_ACL=y
+CONFIG_EXT4_FS_SECURITY=y
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_UNIX98_PTYS=y
+CONFIG_PROC_FS=y
+CONFIG_SYSFS=y
+CONFIG_TMPFS=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_TMPFS_XATTR=y
+CONFIG_OVERLAY_FS=y
+CONFIG_AUTOFS_FS=y
+CONFIG_FUSE_FS=y
+CONFIG_FHANDLE=y
+CONFIG_INOTIFY_USER=y
+CONFIG_FANOTIFY=y
+CONFIG_MEMFD_CREATE=y
+CONFIG_EPOLL=y
+CONFIG_SIGNALFD=y
+CONFIG_TIMERFD=y
+CONFIG_EVENTFD=y
+CONFIG_DNOTIFY=y
+CONFIG_FILE_LOCKING=y
+CONFIG_SHMEM=y
+CONFIG_AIO=y
+CONFIG_BINFMT_ELF=y
+CONFIG_BINFMT_SCRIPT=y
+CONFIG_BINFMT_MISC=y
+
+# ---------------------------------------------------------------------------
+# 3. Cgroup v2 controllers + PSI (systemd-oomd / Docker memory & pids limits)
+# ---------------------------------------------------------------------------
+CONFIG_CGROUPS=y
+CONFIG_MEMCG=y
+CONFIG_CGROUP_PIDS=y
+CONFIG_CGROUP_CPUACCT=y
+CONFIG_CGROUP_SCHED=y
+CONFIG_CFS_BANDWIDTH=y
+CONFIG_CGROUP_FREEZER=y
+CONFIG_CGROUP_DEVICE=y
+CONFIG_BLK_CGROUP=y
+CONFIG_CGROUP_BPF=y
+CONFIG_CPUSETS=y
+CONFIG_PSI=y
+
+# ---------------------------------------------------------------------------
+# 4. Namespaces / IPC / Seccomp / BPF / Keys / Landlock
+# ---------------------------------------------------------------------------
+CONFIG_NAMESPACES=y
+CONFIG_UTS_NS=y
+CONFIG_IPC_NS=y
+CONFIG_USER_NS=y
+CONFIG_PID_NS=y
+CONFIG_NET_NS=y
+CONFIG_SYSVIPC=y
+CONFIG_POSIX_MQUEUE=y
+CONFIG_SECCOMP=y
+CONFIG_SECCOMP_FILTER=y
+CONFIG_BPF_SYSCALL=y
+CONFIG_KEYS=y
+CONFIG_SECURITY=y
+CONFIG_SECURITY_LANDLOCK=y
+
+# ---------------------------------------------------------------------------
+# 5. Container networking: veth / bridge / netfilter / iptables-nft / NAT
+# ---------------------------------------------------------------------------
+CONFIG_NET=y
+CONFIG_UNIX=y
+CONFIG_INET=y
+CONFIG_IPV6=y
+CONFIG_PACKET=y
+CONFIG_UML_NET_VECTOR=y
+CONFIG_TUN=y
+CONFIG_DUMMY=y
+CONFIG_VETH=y
+CONFIG_BRIDGE=y
+CONFIG_BRIDGE_NETFILTER=y
+CONFIG_NETFILTER=y
+CONFIG_NETFILTER_ADVANCED=y
+CONFIG_NF_CONNTRACK=y
+CONFIG_NF_TABLES=y
+CONFIG_NF_TABLES_IPV4=y
+CONFIG_NF_TABLES_IPV6=y
+CONFIG_NF_TABLES_INET=y
+CONFIG_NF_NAT=y
+CONFIG_NF_NAT_MASQUERADE=y
+CONFIG_NF_NAT_REDIRECT=y
+CONFIG_NFT_CT=y
+CONFIG_NFT_NAT=y
+CONFIG_NFT_MASQ=y
+CONFIG_NFT_COMPAT=y
+CONFIG_NFT_REJECT=y
+CONFIG_NFT_LIMIT=y
+CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
+CONFIG_NETFILTER_XT_MATCH_CONNTRACK=y
+CONFIG_NETFILTER_XT_MATCH_COMMENT=y
+CONFIG_NETFILTER_XT_MATCH_STATE=y
+CONFIG_NETFILTER_XT_NAT=y
+CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y
+CONFIG_NETFILTER_XT_MARK=y
+CONFIG_NETFILTER_XT_TARGET_MARK=y
+CONFIG_IP_NF_IPTABLES=y
+CONFIG_IP_NF_IPTABLES_LEGACY=y
+CONFIG_IP_NF_FILTER=y
+CONFIG_IP_NF_NAT=y
+CONFIG_IP_NF_TARGET_MASQUERADE=y
+CONFIG_IP_NF_MANGLE=y
+CONFIG_IP_NF_RAW=y
+CONFIG_IP6_NF_IPTABLES=y
+CONFIG_IP6_NF_FILTER=y
+CONFIG_IP6_NF_NAT=y
+
+# ---------------------------------------------------------------------------
+# 6. Determinism & monolithic footprint
+# ---------------------------------------------------------------------------
+# CONFIG_LOCALVERSION_AUTO is not set
+# CONFIG_DEBUG_INFO is not set
+CONFIG_DEBUG_INFO_NONE=y
+# CONFIG_MODULES is not set
+# CONFIG_RUST is not set

@@ -123,4 +123,36 @@ public final class UmlDistroCapabilityCatalogTest {
                                             .UNVERIFIED_ON_PROFILE));
         }
     }
+
+    @Test
+    public void fullSmpArm64SupportsAlpineAndHasNoKernelConfigGapsForDebianOrArch()
+            throws Exception {
+        UmlDistroCapabilityCatalog.DistroGateVerdict alpine =
+                UmlDistroCapabilityCatalog.requireCreatable(
+                        "alpine", UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64);
+        assertEquals(UmlDistroCapabilityCatalog.DistroProfileStatus.CREATABLE, alpine.status());
+        assertEquals("alpine-minirootfs-3.22.2-aarch64.tar.gz", alpine.expectedFileName());
+        assertTrue(alpine.missingRequirements().isEmpty());
+
+        UmlDistroCapabilityCatalog.DistroGateVerdict debian =
+                UmlDistroCapabilityCatalog.evaluate(
+                        "debian", UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64);
+        assertEquals(UmlDistroCapabilityCatalog.DistroProfileStatus.REFUSED, debian.status());
+        assertEquals("debian-13-rootfs.tar.xz", debian.expectedFileName());
+        assertEquals(
+                "e4d504e13e43a384227639b74391ef164a67d916aa8f8a9871ecd73dc577db91",
+                debian.expectedSha256());
+        assertEquals(90_346_224L, debian.expectedSizeBytes());
+        assertEquals(
+                List.of(UmlDistroCapabilityCatalog.KernelRequirementGap.UNVERIFIED_ON_PROFILE),
+                debian.missingRequirements());
+
+        UmlDistroCapabilityCatalog.DistroGateVerdict arch =
+                UmlDistroCapabilityCatalog.evaluate(
+                        "arch", UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64);
+        assertEquals(UmlDistroCapabilityCatalog.DistroProfileStatus.REFUSED, arch.status());
+        assertEquals(
+                List.of(UmlDistroCapabilityCatalog.KernelRequirementGap.UNVERIFIED_ON_PROFILE),
+                arch.missingRequirements());
+    }
 }

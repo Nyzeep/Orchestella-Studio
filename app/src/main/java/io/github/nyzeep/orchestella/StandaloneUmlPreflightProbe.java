@@ -4,9 +4,12 @@ import android.content.Context;
 import android.system.Os;
 import android.system.OsConstants;
 import io.github.nyzeep.orchestella.runtime.capability.ExecutionStrategyAdmissionEvaluator;
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroCapabilityCatalog;
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlKernelPayloadContract;
 import java.io.File;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -49,9 +52,16 @@ public final class StandaloneUmlPreflightProbe {
 
     /** Creates the production Android probe inspecting host page size, native libs, and rootfs seed. */
     public static StandaloneUmlPreflightProbe forAndroid(Context context) {
+        return forAndroid(context, UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64);
+    }
+
+    /** Creates a profile-scoped Android preflight probe (fast-up-arm64 or full-smp-arm64). */
+    public static StandaloneUmlPreflightProbe forAndroid(
+            Context context, UmlDistroCapabilityCatalog.KernelProfile profile) {
         Context appContext = Objects.requireNonNull(context, "context").getApplicationContext();
+        Objects.requireNonNull(profile, "profile");
         return new StandaloneUmlPreflightProbe(
-                () -> probeAndroid(appContext),
+                () -> probeAndroid(appContext, profile),
                 DEFAULT_TIMEOUT_MS,
                 android.os.SystemClock::elapsedRealtimeNanos);
     }
@@ -117,7 +127,8 @@ public final class StandaloneUmlPreflightProbe {
     }
 
     private static ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight probeAndroid(
-            Context appContext) throws java.io.IOException {
+            Context appContext, UmlDistroCapabilityCatalog.KernelProfile profile)
+            throws java.io.IOException {
         int pageSize;
         try {
             long raw = Os.sysconf(OsConstants._SC_PAGESIZE);
@@ -145,6 +156,35 @@ public final class StandaloneUmlPreflightProbe {
                     "缺少 nativeLibraryDir");
         }
         File libDir = new File(nativeDir);
+        if (profile == UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64) {
+            UmlKernelPayloadContract.ProfileDescriptor desc =
+                    UmlKernelPayloadContract.descriptorFor(profile);
+            Map<String, String> manifestDigests = readAssetManifest(appContext, desc.manifestAssetName());
+            // W01-03 will extend this helper with Debian rootfs seed readiness.
+            boolean hasRootfsSeed = hasBundledOrStagedAlpineRootfs(appContext);
+            ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight profileCheck =
+                    evaluateProfilePreflight(
+                            profile,
+                            pageSize,
+                            libDir,
+                            manifestDigests,
+                            UmlKernelAssets.FullProfile.packagedPins(),
+                            hasRootfsSeed);
+            if (profileCheck.status() != ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.READY) {
+                return profileCheck;
+            }
+            for (String netLib : List.of("libuml_net.so", "libuml_passt.so")) {
+                File target = new File(libDir, netLib);
+                if (!target.isFile() || target.length() <= 0L || !target.canExecute()) {
+                    return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
+                            ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.ASSETS_MISSING,
+                            pageSize,
+                            0L,
+                            "[" + UmlKernelPayloadContract.FailureCode.MISSING_PAYLOAD + "] 缺少网络辅助载荷：" + netLib);
+                }
+            }
+            return profileCheck;
+        }
         for (String lib : REQUIRED_LIBRARIES) {
             File target = new File(libDir, lib);
             if (!target.isFile() || target.length() <= 0L) {
@@ -155,30 +195,83 @@ public final class StandaloneUmlPreflightProbe {
                         "缺少独立 UML 原生载荷：" + lib);
             }
         }
-        boolean hasEmbeddedRootfs = false;
-        try (InputStream in = PackagedAssetStreams.openResource(
-                appContext, UmlKernelAssets.FastProfile.ROOTFS_TAR)) {
-            hasEmbeddedRootfs = in != null;
-        } catch (Exception ignored) {
-            hasEmbeddedRootfs = false;
-        }
-        if (!hasEmbeddedRootfs) {
-            UmlRootfsProvisioner.ReadinessReport staged = UmlRootfsProvisioner.readiness(
-                    UmlKernelAssets.RootfsDownload.Entry.alpineMinirootfsAarch64(),
-                    appContext.getFilesDir().toPath(),
-                    BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED);
-            if (!staged.ready()) {
-                return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
-                        ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.ASSETS_MISSING,
-                        pageSize,
-                        0L,
-                        "缺少 Alpine 3.22.2 minirootfs 载荷");
-            }
+        if (!hasBundledOrStagedAlpineRootfs(appContext)) {
+            return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
+                    ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.ASSETS_MISSING,
+                    pageSize,
+                    0L,
+                    "缺少 Alpine 3.22.2 minirootfs 载荷");
         }
         return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
                 ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.READY,
                 pageSize,
                 0L,
                 "独立 UML 载荷与 " + (pageSize / 1024) + " KB 宿主页预检通过");
+    }
+
+    private static boolean hasBundledOrStagedAlpineRootfs(Context appContext)
+            throws java.io.IOException {
+        try (InputStream in = PackagedAssetStreams.openResource(
+                appContext, UmlKernelAssets.FastProfile.ROOTFS_TAR)) {
+            if (in != null) {
+                return true;
+            }
+        } catch (Exception ignored) {
+            // Fall through to staged rootfs cache check.
+        }
+        UmlRootfsProvisioner.ReadinessReport staged = UmlRootfsProvisioner.readiness(
+                UmlKernelAssets.RootfsDownload.Entry.alpineMinirootfsAarch64(),
+                appContext.getFilesDir().toPath(),
+                BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED);
+        return staged.ready();
+    }
+
+    /** Pure-JVM profile preflight check returning explicit failure codes without fallback. */
+    public static ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight evaluateProfilePreflight(
+            UmlDistroCapabilityCatalog.KernelProfile profile,
+            int hostPageSize,
+            File nativeLibDir,
+            Map<String, String> manifestDigests,
+            Map<String, String> expectedPins,
+            boolean hasRootfsSeed) {
+        Objects.requireNonNull(profile, "profile");
+        if (hostPageSize != 4096 && hostPageSize != 16384) {
+            return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
+                    ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.UNSUPPORTED_HOST_PAGE_SIZE,
+                    hostPageSize,
+                    0L,
+                    "不支持的宿主页大小：" + hostPageSize + " B");
+        }
+        UmlKernelAssets.ProfileVerificationResult result = UmlKernelAssets.verifyProfilePayload(
+                profile, nativeLibDir, manifestDigests, expectedPins);
+        if (!result.ok()) {
+            return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
+                    ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.ASSETS_MISSING,
+                    hostPageSize,
+                    0L,
+                    "[" + result.failureCode() + "] " + result.detail());
+        }
+        if (!hasRootfsSeed) {
+            return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
+                    ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.ASSETS_MISSING,
+                    hostPageSize,
+                    0L,
+                    "[" + UmlKernelPayloadContract.FailureCode.MISSING_PAYLOAD + "] 缺少目标根盘种子");
+        }
+        UmlKernelPayloadContract.ProfileDescriptor desc =
+                UmlKernelPayloadContract.descriptorFor(profile);
+        return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
+                ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.READY,
+                hostPageSize,
+                0L,
+                "独立 UML " + desc.profileId() + " 载荷与 " + (hostPageSize / 1024) + " KB 宿主页预检通过");
+    }
+
+    private static Map<String, String> readAssetManifest(Context context, String assetName) {
+        try (InputStream in = context.getAssets().open(assetName)) {
+            return UmlKernelAssets.readManifest(in);
+        } catch (Exception ignored) {
+            return Map.of();
+        }
     }
 }

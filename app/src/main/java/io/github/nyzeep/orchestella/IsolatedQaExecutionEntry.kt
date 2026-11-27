@@ -11,6 +11,7 @@ import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -331,5 +332,31 @@ class IsolatedQaExecutionEntry(
             "SAF archive round-trip altered execution identity: expected=${exported.executionIdentity()}, actual=${restored.executionIdentity()}"
         }
         return restored
+    }
+
+    /**
+     * Explicit QA kernel-profile payload selector for W01-02 / W01-03 handoff.
+     * Verifies the requested profile's kernel, relinked stub, and manifest pins
+     * without falling back across profiles.
+     */
+    @JvmOverloads
+    fun selectKernelPayload(
+        profile: UmlDistroCapabilityCatalog.KernelProfile,
+        nativeLibraryDir: File,
+        inApkManifestDigests: Map<String, String>,
+        expectedPins: Map<String, String> = when (profile) {
+            UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64 -> UmlKernelAssets.FastProfile.packagedPins()
+            UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64 -> UmlKernelAssets.FullProfile.packagedPins()
+        },
+    ): UmlKernelAssets.ProfileVerificationResult {
+        check(isEnabled()) {
+            "Isolated QA execution entry is disabled outside QA builds (buildChannel=${BuildConfig.BUILD_CHANNEL})"
+        }
+        return UmlKernelAssets.verifyProfilePayload(
+            profile,
+            nativeLibraryDir,
+            inApkManifestDigests,
+            expectedPins,
+        )
     }
 }

@@ -4,14 +4,25 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import io.github.nyzeep.orchestella.runtime.capability.ExecutionStrategyAdmissionEvaluator;
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroCapabilityCatalog;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 /**
  * Pure-JVM unit tests for {@link StandaloneUmlPreflightProbe}: verifies bounded timeout
  * classification, failure/incomplete handling, and strict isolation from ride-along face state.
  */
 public final class StandaloneUmlPreflightProbeTest {
+
+    @Rule
+    public TemporaryFolder tmp = new TemporaryFolder();
 
     @Test
     public void returnsReadyWhenCheckSucceedsWithinTimeout() {
@@ -66,5 +77,62 @@ public final class StandaloneUmlPreflightProbeTest {
         ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight result = probe.probe();
         assertEquals(ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.INCOMPLETE, result.status());
         assertTrue(result.detail().contains("sysconf unavailable"));
+    }
+
+    @Test
+    public void fullProfilePreflightRefusesFastOnlyPayloadWithExplicitProfileMismatchCode()
+            throws IOException {
+        File libDir = tmp.newFolder("preflight-full-mismatch");
+        File fastKernel = new File(libDir, "libuml_kernel.so");
+        File fastStub = new File(libDir, "libuml_stub.so");
+        Files.write(fastKernel.toPath(), "fast-k".getBytes(StandardCharsets.UTF_8));
+        Files.write(fastStub.toPath(), "fast-s".getBytes(StandardCharsets.UTF_8));
+        assertTrue(fastKernel.setExecutable(true));
+        assertTrue(fastStub.setExecutable(true));
+
+        ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight result =
+                StandaloneUmlPreflightProbe.evaluateProfilePreflight(
+                        UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64,
+                        4096,
+                        libDir,
+                        Map.of(),
+                        Map.of(
+                                "libuml_kernel_full.so", "a".repeat(64),
+                                "libuml_stub_full.so", "b".repeat(64)),
+                        true);
+
+        assertEquals(
+                ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.ASSETS_MISSING,
+                result.status());
+        assertTrue(result.detail().contains("PROFILE_MISMATCH"));
+    }
+
+    @Test
+    public void fullProfilePreflightReturnsReadyWhenFullAssetsAndRootfsAreValid()
+            throws IOException {
+        File libDir = tmp.newFolder("preflight-full-ok");
+        File fullKernel = new File(libDir, "libuml_kernel_full.so");
+        File fullStub = new File(libDir, "libuml_stub_full.so");
+        Files.write(fullKernel.toPath(), "full-k".getBytes(StandardCharsets.UTF_8));
+        Files.write(fullStub.toPath(), "full-s".getBytes(StandardCharsets.UTF_8));
+        assertTrue(fullKernel.setExecutable(true));
+        assertTrue(fullStub.setExecutable(true));
+        Map<String, String> pins = Map.of(
+                "libuml_kernel_full.so", UmlKernelAssets.sha256Hex(fullKernel),
+                "libuml_stub_full.so", UmlKernelAssets.sha256Hex(fullStub));
+
+        ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight result =
+                StandaloneUmlPreflightProbe.evaluateProfilePreflight(
+                        UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64,
+                        4096,
+                        libDir,
+                        pins,
+                        pins,
+                        true);
+
+        assertEquals(
+                ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.READY,
+                result.status());
+        assertTrue(result.detail().contains("full-smp-arm64"));
     }
 }

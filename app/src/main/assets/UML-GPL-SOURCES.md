@@ -60,6 +60,33 @@ release gate opens.
   - `initramfs.cpio.gz` (embedded in `linux-fast`, gzip-only):
     `7523c9a20b956a3104d04540559422a7b566ef630a592c9d4ca8fdb2e5bd8381` (661,899 bytes)
 
+### 1b. Optional QA Full-Profile ARM64 SMP Kernel and Stub (W01-02)
+
+- Profile identifier: `full-smp-arm64` (staged optionally via
+  `-Porchestella.uml.fullProfileDir` into `lib/arm64-v8a/libuml_kernel_full.so`,
+  `lib/arm64-v8a/libuml_stub_full.so`, and
+  `assets/uml-full-profile-v1.sha256`).
+- Same pinned upstream source (`Raymer8639/linux-um-arm64`, tag `um-arm64-v0.3.0`,
+  commit `169b17ff3f66d507cb137b770ceb1fd9f4547a32`) and stock Android NDK r29
+  (`aarch64-linux-android30`).
+- Build and verification control scripts (preferred form for modification):
+  - `research/uml-full/build-full.sh`
+  - `research/uml-full/verify-reproducible.sh`
+  - `research/uml-kernel-build/defconfigs/linux-bionic-smp.config` +
+    `research/uml-full/defconfig-full.fragment` ->
+    `research/uml-full/defconfig-full`
+  - `research/uml-full/initramfs/init` and `research/uml-full/initramfs/um-command.sh`
+  - `research/uml-full/manifest.md` and `tools/ci/check-elf-16kb.sh`
+- Cross-path reproducible products (`UmlKernelAssets.FullProfile.PIN_MANIFEST`):
+  - `lib/arm64-v8a/libuml_kernel_full.so` (`linux-full`):
+    `d1ef40e68cdf73cadfb235e746b878d011209f677d8751b888768fa387f3b47f` (14,393,208 bytes)
+  - `linux-full-noinitrd`:
+    `ebf88b1f1b48fc15f4a24cfc6d9eb9fbb62e4fa9667a1ee3a193fbf4084d4b09` (13,737,848 bytes)
+  - `lib/arm64-v8a/libuml_stub_full.so` (`stub_exe_full`, 16 KB relinked):
+    `87666f9167de09d0bf84b414618c39d9f460417a641f212f5f0f28c498a09a12` (2,056 bytes)
+  - `initramfs-full.cpio.gz`:
+    `ee1b03084b60eb846a3d1a2fd854904af9a4cd0fb3446ebbc5140439f4da7496` (662,027 bytes)
+
 ## 2. Embedded Initramfs and Alpine Minirootfs Baseline
 
 | Component | Version / Pin | License | Source and Verified SHA-256 |
@@ -105,8 +132,8 @@ repository.
 
 The complete corresponding source for every GPL work listed above consists of
 the pinned upstream kernel, passt-android, and Alpine sources (§1–§3), the
-build and configuration scripts in `research/uml-fastboot/` and
-`research/uml-kernel-build/`, the JNI bridge source in
+build and configuration scripts in `research/uml-fastboot/`,
+`research/uml-full/`, and `research/uml-kernel-build/`, the JNI bridge source in
 `app/src/main/cpp/uml_pty_jni.cpp`, the machine-readable build-input pin record
 `app/src/main/assets/UML-BUILD-INPUTS`, `app/src/main/assets/NOTICE.UML`, and
 this manifest. Written-offer requests ride `guest-assets/SOURCE-OFFER.txt`.

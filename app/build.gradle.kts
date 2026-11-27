@@ -216,6 +216,10 @@ val umlNetHelperDir: String? = providers.gradleProperty("orchestella.uml.netHelp
     .orNull
     ?.trim()
     ?.ifEmpty { null }
+val umlFullProfileDir: String? = providers.gradleProperty("orchestella.uml.fullProfileDir")
+    .orNull
+    ?.trim()
+    ?.ifEmpty { null }
 
 plugins {
     alias(libs.plugins.android.application)
@@ -266,6 +270,7 @@ android {
         // these into UmlKernelAssets.verifyBundledFastProfile / the RootfsDownload
         // gate; off answers a disabled report / closed gate with zero side effects.
         buildConfigField("boolean", "UML_BUNDLED_FAST_PROFILE", umlBundledFastProfile.toString())
+        buildConfigField("boolean", "UML_BUNDLED_FULL_PROFILE", (umlFullProfileDir != null).toString())
         buildConfigField("boolean", "UML_ROOTFS_DOWNLOAD_ENABLED", umlRootfsDownload.toString())
         // UML fast-profile launch shape (research/uml-fastboot README §4);
         // consumed by UmlFaceLauncher.FastProfile.currentBuild() through the
@@ -565,6 +570,8 @@ android {
             // (same reason as the QEMU payload libs above; ~1.4 MB APK cost).
             keepDebugSymbols += "**/libuml_kernel.so"
             keepDebugSymbols += "**/libuml_stub.so"
+            keepDebugSymbols += "**/libuml_kernel_full.so"
+            keepDebugSymbols += "**/libuml_stub_full.so"
             // Gate 2 net helper (2026-11-13, umnet 候选 a): libuml_net.so /
             // libuml_passt.so are static bionic executables carrying a .so
             // name (the umnet supervisor and its passt child, staged by
@@ -1505,6 +1512,120 @@ val stageUmlNetHelper = tasks.register("stageUmlNetHelper") {
 }
 if (umlCompileBridge || umlNetHelperDir != null) {
     tasks.named("preBuild") { dependsOn(stageUmlNetHelper) }
+}
+
+// W01-02: optional full-smp-arm64 UML payload staging for isolated QA builds.
+// When -Porchestella.uml.fullProfileDir is omitted, no task is scheduled and
+// existing builds (including CI and release gates) remain untouched. When
+// provided, staging is fail-closed against UmlKernelAssets.FullProfile.PIN_MANIFEST.
+val stageUmlFullProfile = tasks.register("stageUmlFullProfile") {
+    group = "verification"
+    description = "Stages full-smp-arm64 UML kernel and 16 KB stub artifacts with sha accounting."
+    onlyIf { umlFullProfileDir != null }
+    doLast {
+        val dirPath = umlFullProfileDir ?: return@doLast
+        val repoRoot = projectDir
+        val relative: (File) -> String = { it.relativeToOrSelf(repoRoot).invariantSeparatorsPath }
+        fun sha256Of(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(1 shl 16)
+                var read = input.read(buffer)
+                while (read != -1) {
+                    digest.update(buffer, 0, read)
+                    read = input.read(buffer)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        val fullArtifactKeys = setOf(
+            "linux-full",
+            "linux-full-noinitrd",
+            "stub_exe_full",
+            "initramfs-full.cpio.gz",
+            "kernel-full.config",
+        )
+        val kernelAssetsSource = file(
+            "src/main/java/io/github/nyzeep/orchestella/UmlKernelAssets.java")
+        val pinPattern = Regex("\"([0-9a-f]{64})  ([A-Za-z0-9._\\-]+)\"")
+        val pins = linkedMapOf<String, String>()
+        kernelAssetsSource.readLines().forEach { line ->
+            pinPattern.find(line)?.let {
+                val artifactName = it.groupValues[2]
+                if (artifactName in fullArtifactKeys) {
+                    pins[artifactName] = it.groupValues[1]
+                }
+            }
+        }
+        require(pins.containsKey("linux-full") && pins.containsKey("stub_exe_full")) {
+            "stageUmlFullProfile: could not parse full-profile pins from UmlKernelAssets.java FullProfile.PIN_MANIFEST"
+        }
+
+        val profileRoot = rootProject.file(dirPath)
+        if (!profileRoot.isDirectory) {
+            throw GradleException(
+                "stageUmlFullProfile: orchestella.uml.fullProfileDir is not an existing directory: " +
+                    relative(profileRoot)
+            )
+        }
+
+        val kernelSource = File(profileRoot, "linux-full")
+        val stubSource = File(profileRoot, "stub_exe_full").takeIf { it.isFile }
+            ?: File(profileRoot, "stub_exe")
+        val kernelTarget = file("src/main/jniLibs/arm64-v8a/libuml_kernel_full.so")
+        val stubTarget = file("src/main/jniLibs/arm64-v8a/libuml_stub_full.so")
+
+        // Verify source existence and digests before mutating jniLibs so a failure leaves zero partial files.
+        val problems = mutableListOf<String>()
+        if (!kernelSource.isFile) {
+            problems += "  - missing artifact: linux-full (${relative(kernelSource)})"
+        } else {
+            val actual = sha256Of(kernelSource)
+            val expected = pins["linux-full"]!!
+            if (!actual.equals(expected, ignoreCase = true)) {
+                problems += "  - sha256 mismatch: linux-full expected=$expected actual=$actual"
+            }
+        }
+        if (!stubSource.isFile) {
+            problems += "  - missing artifact: stub_exe_full/stub_exe (${relative(stubSource)})"
+        } else {
+            val actual = sha256Of(stubSource)
+            val expected = pins["stub_exe_full"]!!
+            if (!actual.equals(expected, ignoreCase = true)) {
+                problems += "  - sha256 mismatch: stub_exe_full expected=$expected actual=$actual"
+            }
+        }
+
+        if (problems.isNotEmpty()) {
+            problems.forEach { logger.error("stageUmlFullProfile: $it") }
+            throw GradleException(
+                "The full-smp-arm64 UML staging failed sha accounting.\n" +
+                    problems.joinToString("\n")
+            )
+        }
+
+        kernelTarget.parentFile.mkdirs()
+        stubTarget.parentFile.mkdirs()
+        kernelSource.copyTo(kernelTarget, overwrite = true)
+        stubSource.copyTo(stubTarget, overwrite = true)
+
+        val accounting = file("src/main/assets/uml-full-profile-v1.sha256")
+        accounting.parentFile.mkdirs()
+        accounting.writeText(
+            "# profile=full-smp-arm64\n" +
+                "# initramfs=initramfs-full.cpio.gz sha256=" + (pins["initramfs-full.cpio.gz"] ?: "unknown") + "\n" +
+                pins["linux-full"] + "  libuml_kernel_full.so\n" +
+                pins["stub_exe_full"] + "  libuml_stub_full.so\n"
+        )
+        logger.lifecycle(
+            "stageUmlFullProfile: staged full-smp-arm64 kernel and 16 KB stub with matching pins; " +
+                "accounting manifest at " + relative(accounting) + "."
+        )
+    }
+}
+if (umlFullProfileDir != null) {
+    tasks.named("preBuild") { dependsOn(stageUmlFullProfile) }
 }
 
 tasks.register<Copy>("packageOrchestellaRelease") {

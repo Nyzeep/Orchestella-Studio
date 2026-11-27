@@ -79,6 +79,7 @@ from pathlib import Path
 from typing import Sequence
 
 FAST_MANIFEST_ENTRY = "assets/uml-fast-profile-v1.sha256"
+FULL_MANIFEST_ENTRY = "assets/uml-full-profile-v1.sha256"
 NET_HELPER_MANIFEST_ENTRY = "assets/uml-net-helper-v1.sha256"
 PVM_MANIFEST_ENTRY = "assets/PVM-COMPILER-MANIFEST"
 QEMU_MANIFEST_ENTRY = "assets/runtime-artifacts-v1.sha256"
@@ -87,6 +88,8 @@ LIB_DIR = "lib/arm64-v8a/"
 # image, stub_exe -> the 16 KB-relinked helper). Named under their packaged
 # names; the manifest itself spells packaged names for exactly these two.
 REQUIRED_FAST_NAMES: tuple[str, ...] = ("libuml_kernel.so", "libuml_stub.so")
+# W01-02 full-smp-arm64 artifacts staged by stageUmlFullProfile.
+REQUIRED_FULL_NAMES: tuple[str, ...] = ("libuml_kernel_full.so", "libuml_stub_full.so")
 # The Gate 2 pair stageUmlNetHelper always stages (umnet supervisor + passt).
 REQUIRED_NET_HELPER_NAMES: tuple[str, ...] = ("libuml_net.so", "libuml_passt.so")
 # The embedded rootfs tar a full-package build must carry (the provisioner's
@@ -137,12 +140,16 @@ _NOTICE_TAR_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\.tar\.gz")
 _NOTICE_OPEN_MARKER = re.compile(r"\bOPEN:")
 _NOTICE_LIST_ITEM_RE = re.compile(r"^\s*-\s+")
 _NOTICE_HEADING_RULE_RE = re.compile(r"^\s*[-=]{3,}\s*$")
+_NOTICE_OPTIONAL_FULL_SECTION_RE = re.compile(
+    r"(?ms)^full-smp-arm64 optional QA profile.*?(?=^[A-Za-z0-9_./() -]+\n[-=]{3,}\s*$|\Z)"
+)
 
 
 @dataclass(frozen=True)
 class Problem:
     entry: str
     reason: str
+    code: str = ""
 
 
 @dataclass(frozen=True)
@@ -158,6 +165,8 @@ class Result:
     verified: list[Verified] = field(default_factory=list)
     reason: str = ""
     notice_open_items: list[str] = field(default_factory=list)
+    failure_codes: list[str] = field(default_factory=list)
+    verified_scope: str = "uml-payload"
 
 
 def parse_manifest(text: str, manifest_entry: str) -> tuple[dict[str, str], list[Problem]]:
@@ -337,8 +346,20 @@ def check_qemu_manifest(archive: zipfile.ZipFile) -> tuple[list[Problem], list[V
     return problems, verified
 
 
+def _extract_notice_lib_entries(text: str, *, full_only: bool = False) -> set[str]:
+    declared: set[str] = set()
+    for token in _NOTICE_LIB_PATH_TOKEN.findall(text):
+        if not full_only or "_full.so" in token:
+            declared.add(token)
+    remainder = _NOTICE_LIB_PATH_TOKEN.sub(" ", text)
+    for name in _NOTICE_LIB_NAME_TOKEN.findall(remainder):
+        if not full_only or "_full.so" in name:
+            declared.add(apk_entry_for(name))
+    return declared
+
+
 def parse_notice_uml_entries(text: str) -> tuple[set[str], set[str]]:
-    """NOTICE.UML text -> (declared APK entries, declared rootfs tars).
+    """NOTICE.UML text -> (declared baseline APK entries, declared rootfs tars).
 
     Dynamic by design: the notice is the GPL declaration of record, so this
     gate pins none of its contents — the packaged text is the one source and
@@ -347,31 +368,33 @@ def parse_notice_uml_entries(text: str) -> tuple[set[str], set[str]]:
     included; bare packaged names (`libuml_*.so`) reconcile through the same
     jniLibs unpacking rule the accounting manifests use (apk_entry_for), so
     both spellings land on the same APK entry.
+
+    The optional QA `full-smp-arm64` section is parsed separately by
+    `parse_notice_uml_full_entries` so historical fast-only `--fullpkg` builds
+    and baseline declaration tests keep exact parity.
     """
-    declared: set[str] = set()
-    for token in _NOTICE_LIB_PATH_TOKEN.findall(text):
-        declared.add(token)
-    # Remove the path-form matches first so a path token is not also re-read
-    # as a bare name with the default ABI (which would mask a declared ABI
-    # the APK does not ship).
-    remainder = _NOTICE_LIB_PATH_TOKEN.sub(" ", text)
-    for name in _NOTICE_LIB_NAME_TOKEN.findall(remainder):
-        declared.add(apk_entry_for(name))
-    return declared, set(_NOTICE_TAR_TOKEN.findall(text))
+    baseline_text = _NOTICE_OPTIONAL_FULL_SECTION_RE.sub("", text)
+    return _extract_notice_lib_entries(baseline_text), set(_NOTICE_TAR_TOKEN.findall(baseline_text))
 
 
-def check_notice_uml_consistency(archive: zipfile.ZipFile) -> list[Problem]:
+def parse_notice_uml_full_entries(text: str) -> set[str]:
+    """Extract declared full-profile UML native library entries from NOTICE.UML."""
+    return _extract_notice_lib_entries(text, full_only=True)
+
+
+def check_notice_uml_consistency(
+    archive: zipfile.ZipFile,
+    *,
+    include_full_profile: bool = False,
+    qa_full_only: bool = False,
+) -> list[Problem]:
     """assets/NOTICE.UML's declared UML lane <-> the APK's shipped entries.
 
     W1-04 (R-08, 2026-11-22): the notice says "Shipped bytes and this notice
     must never disagree", so the fullpkg smoke enforces exactly that, in both
-    directions: every entry the packaged notice declares (the libuml_* native
-    libraries and the Alpine rootfs tar) must be really shipped, and every
-    shipped UML library and the pinned rootfs tar must be declared. The notice carries
-    no digests, so this check is presence/declaration-level — the digest
-    proof stays with the accounting manifests — and it only appends problems,
-    no Verified. Missing notice, unreadable notice, or any disagreement all
-    fail closed.
+    directions. When `include_full_profile` is True (or full-profile entries are
+    present in the APK), the full-profile libraries must also agree with
+    NOTICE.UML.
     """
     problems: list[Problem] = []
     names = set(archive.namelist())
@@ -379,23 +402,64 @@ def check_notice_uml_consistency(archive: zipfile.ZipFile) -> list[Problem]:
         problems.append(Problem(
             NOTICE_UML_ENTRY,
             "the single-package build ships the UML engine and must ship its notice",
+            code="MANIFEST_APK_MISMATCH",
         ))
         return problems
     try:
         text = archive.read(NOTICE_UML_ENTRY).decode("utf-8")
     except UnicodeDecodeError as exc:
-        problems.append(Problem(NOTICE_UML_ENTRY, f"unreadable notice text: {exc}"))
+        problems.append(Problem(
+            NOTICE_UML_ENTRY,
+            f"unreadable notice text: {exc}",
+            code="MANIFEST_APK_MISMATCH",
+        ))
         return problems
     declared_libs, declared_tars = parse_notice_uml_entries(text)
-    declared = declared_libs | declared_tars
-    shipped = {entry for entry in names if _APK_UML_LIB_ENTRY.match(entry)}
-    shipped.update(names & {FULLPKG_ROOTFS_TAR})
+    declared_full = parse_notice_uml_full_entries(text)
+    full_shipped = {
+        entry for entry in names
+        if _APK_UML_LIB_ENTRY.match(entry) and "_full.so" in entry
+    }
+    check_full = include_full_profile or bool(full_shipped) or (FULL_MANIFEST_ENTRY in names)
+    if qa_full_only:
+        mandatory_qa = {
+            LIB_DIR + n for n in (REQUIRED_FULL_NAMES + REQUIRED_NET_HELPER_NAMES)
+        }
+        shipped = {
+            entry for entry in names
+            if _APK_UML_LIB_ENTRY.match(entry)
+        }
+        declared_all_libs = declared_libs | declared_full
+        # In --qa-full-profile mode, full-profile + net-helper libs are required
+        # in both NOTICE.UML and the APK; co-shipped fast-profile libs (in a
+        # dual-profile fullpkg APK) are allowed whenever NOTICE.UML declares them.
+        declared = mandatory_qa | (declared_all_libs & shipped)
+        for missing_decl in sorted(mandatory_qa - declared_all_libs):
+            problems.append(Problem(
+                missing_decl,
+                f"required for --qa-full-profile but not declared by {NOTICE_UML_ENTRY}",
+                code="MANIFEST_APK_MISMATCH",
+            ))
+    else:
+        declared = declared_libs | declared_tars
+        shipped = {entry for entry in names if _APK_UML_LIB_ENTRY.match(entry)}
+        shipped.update(names & {FULLPKG_ROOTFS_TAR})
+        if check_full:
+            declared = declared | declared_full
     for entry in sorted(declared - names):
-        problems.append(Problem(entry, f"declared by {NOTICE_UML_ENTRY} but missing from the APK "
-                                      "(the notice and the shipped payload must never disagree)"))
+        problems.append(Problem(
+            entry,
+            f"declared by {NOTICE_UML_ENTRY} but missing from the APK "
+            "(the notice and the shipped payload must never disagree)",
+            code="MISSING_STUB" if entry.endswith("libuml_stub_full.so") else "MANIFEST_APK_MISMATCH",
+        ))
     for entry in sorted(shipped - declared):
-        problems.append(Problem(entry, f"shipped in the APK but not declared by {NOTICE_UML_ENTRY} "
-                                      "(the GPL notice of record is incomplete)"))
+        problems.append(Problem(
+            entry,
+            f"shipped in the APK but not declared by {NOTICE_UML_ENTRY} "
+            "(the GPL notice of record is incomplete)",
+            code="MANIFEST_APK_MISMATCH",
+        ))
     return problems
 
 
@@ -488,25 +552,115 @@ def check_release_attribution_closed(
     return problems
 
 
+def _classify_manifest_problems(problems: list[Problem]) -> list[Problem]:
+    classified: list[Problem] = []
+    for p in problems:
+        if p.code:
+            classified.append(p)
+            continue
+        code = "MANIFEST_APK_MISMATCH"
+        if p.entry.endswith("libuml_stub_full.so") or p.entry == "libuml_stub_full.so":
+            if "missing" in p.reason:
+                code = "MISSING_STUB"
+            elif "!=" in p.reason:
+                code = "STUB_CONFIG_MISMATCH"
+        elif p.entry.endswith("libuml_kernel_full.so") or p.entry == "libuml_kernel_full.so":
+            if "missing" in p.reason:
+                code = "MISSING_PAYLOAD"
+            elif "!=" in p.reason:
+                code = "SHA256_MISMATCH"
+        elif "!=" in p.reason:
+            code = "SHA256_MISMATCH"
+        elif "missing from the APK" in p.reason:
+            code = "MISSING_PAYLOAD"
+        classified.append(Problem(p.entry, p.reason, code=code))
+    return classified
+
+
+def _missing_full_manifest_problem(fast_present: bool, names: set[str]) -> Problem:
+    has_fast = fast_present or ((LIB_DIR + "libuml_kernel.so") in names)
+    return Problem(
+        FULL_MANIFEST_ENTRY,
+        "missing full-profile accounting manifest " + FULL_MANIFEST_ENTRY
+        + (" (only fast-up-arm64 payload detected)" if has_fast else ""),
+        code="PROFILE_MISMATCH" if has_fast else "MISSING_PAYLOAD",
+    )
+
+
+def _check_qa_full_profile(
+    archive: zipfile.ZipFile,
+    names: set[str],
+    require_attribution_closed: bool,
+) -> Result:
+    problems: list[Problem] = []
+    verified: list[Verified] = []
+    full_problems, full_verified, full_present = reconcile_manifest(
+        archive, FULL_MANIFEST_ENTRY, REQUIRED_FULL_NAMES)
+    net_problems, net_verified, net_present = reconcile_manifest(
+        archive, NET_HELPER_MANIFEST_ENTRY, REQUIRED_NET_HELPER_NAMES)
+    problems.extend(_classify_manifest_problems(full_problems))
+    problems.extend(_classify_manifest_problems(net_problems))
+    verified.extend(full_verified)
+    verified.extend(net_verified)
+    fast_present = FAST_MANIFEST_ENTRY in names
+    if not full_present:
+        problems.append(_missing_full_manifest_problem(fast_present, names))
+    if not net_present:
+        problems.append(Problem(
+            NET_HELPER_MANIFEST_ENTRY,
+            "missing UML net-helper manifest " + NET_HELPER_MANIFEST_ENTRY,
+            code="MISSING_PAYLOAD",
+        ))
+    problems.extend(check_notice_uml_consistency(
+        archive, include_full_profile=True, qa_full_only=True))
+    notice_open_items = _read_notice_uml_open_items(archive)
+    if require_attribution_closed:
+        problems.extend(check_release_attribution_closed(
+            archive, notice_open_items, notice_already_checked=True))
+    return Result(
+        status="fail" if problems else "ok",
+        problems=problems,
+        verified=verified,
+        notice_open_items=notice_open_items,
+        failure_codes=sorted({p.code for p in problems if p.code}),
+        verified_scope="qa-uml-full-profile",
+    )
+
+
 def check_apk(
     apk: Path,
     require_payload: bool,
     fullpkg: bool,
     require_attribution_closed: bool = False,
+    require_full_profile: bool = False,
+    qa_full_profile: bool = False,
 ) -> Result:
     """The artifact-level verdict: ok / skip / fail (error is the caller's)."""
     problems: list[Problem] = []
     verified: list[Verified] = []
     notice_open_items: list[str] = []
     with zipfile.ZipFile(apk) as archive:
+        names = set(archive.namelist())
+        if qa_full_profile:
+            return _check_qa_full_profile(archive, names, require_attribution_closed)
+
         fast_problems, fast_verified, fast_present = reconcile_manifest(
             archive, FAST_MANIFEST_ENTRY, REQUIRED_FAST_NAMES)
         net_problems, net_verified, net_present = reconcile_manifest(
             archive, NET_HELPER_MANIFEST_ENTRY, REQUIRED_NET_HELPER_NAMES)
-        problems.extend(fast_problems)
-        problems.extend(net_problems)
+        problems.extend(_classify_manifest_problems(fast_problems))
+        problems.extend(_classify_manifest_problems(net_problems))
         verified.extend(fast_verified)
         verified.extend(net_verified)
+
+        full_present = False
+        if require_full_profile or FULL_MANIFEST_ENTRY in names:
+            full_problems, full_verified, full_present = reconcile_manifest(
+                archive, FULL_MANIFEST_ENTRY, REQUIRED_FULL_NAMES)
+            problems.extend(_classify_manifest_problems(full_problems))
+            verified.extend(full_verified)
+            if require_full_profile and not full_present:
+                problems.append(_missing_full_manifest_problem(fast_present, names))
 
         if fullpkg:
             pvm_problems, pvm_verified = check_pvm_manifest(archive)
@@ -515,36 +669,46 @@ def check_apk(
             problems.extend(qemu_problems)
             verified.extend(pvm_verified)
             verified.extend(qemu_verified)
-            # The embedded rootfs tar: the fast-profile manifest must account
-            # for it and the APK must carry it (reconcile_manifest already
-            # proved the bytes when the line exists; here the line itself is
-            # required).
             fast_digests, _ = parse_manifest(
                 archive.read(FAST_MANIFEST_ENTRY).decode("utf-8"), FAST_MANIFEST_ENTRY
-            ) if FAST_MANIFEST_ENTRY in archive.namelist() else ({}, [])
+            ) if FAST_MANIFEST_ENTRY in names else ({}, [])
             if FULLPKG_ROOTFS_TAR not in fast_digests:
                 problems.append(Problem(
                     FULLPKG_ROOTFS_TAR,
                     "the single-package build must embed the rootfs baseline tar "
                     "(the fast-profile accounting manifest must name it)",
+                    code="MISSING_PAYLOAD",
                 ))
-            elif FULLPKG_ROOTFS_TAR not in archive.namelist():
+            elif FULLPKG_ROOTFS_TAR not in names:
                 problems.append(Problem(
                     FULLPKG_ROOTFS_TAR,
                     "accounted by the fast-profile manifest but missing from the APK",
+                    code="MISSING_PAYLOAD",
                 ))
             for name in REQUIRED_NET_HELPER_NAMES:
-                if LIB_DIR + name not in archive.namelist():
-                    problems.append(Problem(LIB_DIR + name, "net-helper entry missing from the APK"))
+                if LIB_DIR + name not in names:
+                    problems.append(Problem(
+                        LIB_DIR + name, "net-helper entry missing from the APK",
+                        code="MISSING_PAYLOAD",
+                    ))
             for name in REQUIRED_FAST_NAMES:
-                if LIB_DIR + name not in archive.namelist():
-                    problems.append(Problem(LIB_DIR + name, "fast-profile entry missing from the APK"))
-            # W1-04 (R-08): the GPL notice must agree with the shipped UML
-            # lane in both directions (declared-but-missing and
-            # shipped-but-undeclared both fail; missing notice fails too).
-            problems.extend(check_notice_uml_consistency(archive))
-            # W3-05 (R-05): always surface unresolved OPEN: markers in fullpkg
-            # output; fail closed when --require-release-attribution-closed is set.
+                if LIB_DIR + name not in names:
+                    problems.append(Problem(
+                        LIB_DIR + name, "fast-profile entry missing from the APK",
+                        code="MISSING_STUB" if name == "libuml_stub.so" else "MISSING_PAYLOAD",
+                    ))
+            if require_full_profile or full_present:
+                for name in REQUIRED_FULL_NAMES:
+                    if LIB_DIR + name not in names:
+                        problems.append(Problem(
+                            LIB_DIR + name, "full-profile entry missing from the APK",
+                            code="MISSING_STUB" if name == "libuml_stub_full.so" else "MISSING_PAYLOAD",
+                        ))
+            problems.extend(check_notice_uml_consistency(
+                archive,
+                include_full_profile=(require_full_profile or full_present),
+                qa_full_only=False,
+            ))
             notice_open_items = _read_notice_uml_open_items(archive)
             if require_attribution_closed:
                 problems.extend(check_release_attribution_closed(
@@ -555,12 +719,6 @@ def check_apk(
                 archive, notice_open_items, notice_already_checked=False))
 
     if require_payload or fullpkg:
-        # Single-package discipline (review fix, 2026-11-14): BOTH UML
-        # accounting manifests must be present. A build that stages only one
-        # half must not pass: the fast profile without the net helper answers
-        # MISSING_ASSET / SPAWN_FAILED (named detail) at runtime, and the net
-        # helper without the kernel cannot launch a face at all — either way
-        # the APK is not the payload the flag defaults promise.
         missing = [
             entry for entry, present in (
                 (FAST_MANIFEST_ENTRY, fast_present),
@@ -568,19 +726,23 @@ def check_apk(
             ) if not present
         ]
         if missing:
+            all_problems = [Problem(
+                " / ".join(missing),
+                "missing UML accounting manifest(s): " + ", ".join(missing)
+                + " — this mode requires BOTH ("
+                + ("--fullpkg" if fullpkg else "--require-payload")
+                + "; were -Porchestella.uml.fastProfileDir and "
+                "-Porchestella.uml.netHelperDir actually passed?)",
+                code="MISSING_PAYLOAD",
+            )] + problems
             return Result(
                 status="fail",
-                problems=[Problem(
-                    " / ".join(missing),
-                    "missing UML accounting manifest(s): " + ", ".join(missing)
-                    + " — this mode requires BOTH ("
-                    + ("--fullpkg" if fullpkg else "--require-payload")
-                    + "; were -Porchestella.uml.fastProfileDir and "
-                    "-Porchestella.uml.netHelperDir actually passed?)",
-                )],
+                problems=all_problems,
                 notice_open_items=notice_open_items,
+                failure_codes=sorted({p.code for p in all_problems if p.code}),
+                verified_scope="fullpkg" if fullpkg else "uml-payload",
             )
-    if not fast_present and not net_present and not require_attribution_closed:
+    if not fast_present and not net_present and not full_present and not require_full_profile and not require_attribution_closed:
         return Result(
             status="skip",
             reason=(
@@ -590,19 +752,29 @@ def check_apk(
                 "MISSING_ASSET at width 0 — the honest-degradation shape. Pass "
                 "--require-payload to assert the payload positively on a packaging machine."
             ),
+            verified_scope="uml-payload",
         )
 
+    scope = (
+        "fullpkg+full-profile" if (fullpkg and (require_full_profile or full_present))
+        else ("fullpkg" if fullpkg else ("uml-full-profile" if (require_full_profile or full_present) else "uml-payload"))
+    )
+    failure_codes = sorted({p.code for p in problems if p.code})
     if problems:
         return Result(
             status="fail",
             problems=problems,
             verified=verified,
             notice_open_items=notice_open_items,
+            failure_codes=failure_codes,
+            verified_scope=scope,
         )
     return Result(
         status="ok",
         verified=verified,
         notice_open_items=notice_open_items,
+        failure_codes=[],
+        verified_scope=scope,
     )
 
 
@@ -1023,6 +1195,46 @@ def run_selftest() -> int:
             ["--apk", apk("empty.apk", {kernel_entry: b"unrelated-native-lib"}), "--fullpkg"],
             "1", "UML_PAYLOAD_GATE_FAIL",
         ))
+        # W01-02 dual-profile selftest cases:
+        full_kernel = b"full-kernel-bytes"
+        full_stub = b"full-stub-bytes"
+        full_profile_manifest = (
+            "# profile=full-smp-arm64\n"
+            f"{hashlib.sha256(full_kernel).hexdigest()}  libuml_kernel_full.so\n"
+            f"{hashlib.sha256(full_stub).hexdigest()}  libuml_stub_full.so\n"
+        ).encode("utf-8")
+        qa_full_notice = (
+            "NOTICE — UML engine components shipped in this application\n"
+            f"{LIB_DIR}libuml_net.so and {LIB_DIR}libuml_passt.so.\n\n"
+            "full-smp-arm64 optional QA profile (staged via -Porchestella.uml.fullProfileDir)\n"
+            "------------------------------------------------------------------------------\n"
+            f"ships {LIB_DIR}libuml_kernel_full.so and {LIB_DIR}libuml_stub_full.so.\n"
+        ).encode("utf-8")
+        cases.append((
+            "ok-qa-full-profile",
+            ["--apk", apk("qa_full.apk", {
+                LIB_DIR + "libuml_kernel_full.so": full_kernel,
+                LIB_DIR + "libuml_stub_full.so": full_stub,
+                net_entry: umnet,
+                passt_entry: passt,
+                FULL_MANIFEST_ENTRY: full_profile_manifest,
+                NET_HELPER_MANIFEST_ENTRY: net_manifest.encode(),
+                NOTICE_UML_ENTRY: qa_full_notice,
+            }), "--qa-full-profile"],
+            "0", "UML_QA_FULL_PROFILE_GATE_OK",
+        ))
+        cases.append((
+            "fail-require-full-profile-mismatch",
+            ["--apk", apk("fast_only_for_full.apk", {
+                kernel_entry: kernel,
+                stub_entry: stub,
+                net_entry: umnet,
+                passt_entry: passt,
+                FAST_MANIFEST_ENTRY: no_tar_manifest.encode(),
+                NET_HELPER_MANIFEST_ENTRY: net_manifest.encode(),
+            }), "--require-full-profile"],
+            "1", "PROFILE_MISMATCH",
+        ))
 
         # Usage error: not a zip at all.
         not_zip = root / "not-a-zip.apk"
@@ -1083,6 +1295,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                              "assets/NOTICE.UML still contains any OPEN: marker or if "
                              "assets/UML-BUILD-INPUTS / assets/UML-GPL-SOURCES.md is "
                              "missing from the APK")
+    parser.add_argument("--require-full-profile", action="store_true",
+                        help="require the full-smp-arm64 kernel, relinked stub, and manifest "
+                             "to be shipped and reconciled (never fall back to fast-up-arm64)")
+    parser.add_argument("--qa-full-profile", action="store_true",
+                        help="isolated QA check for full-smp-arm64 + net-helper + NOTICE.UML "
+                             "without requiring QEMU/pVM fullpkg entries")
     parser.add_argument("--json", type=Path, help="write a machine-readable result")
     parser.add_argument("--selftest", action="store_true",
                         help="run the built-in synthetic fixture cases and exit")
@@ -1094,6 +1312,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--apk is required (or use --selftest)")
     if args.require_release_attribution_closed and not args.fullpkg:
         parser.error("--require-release-attribution-closed requires --fullpkg")
+    if args.qa_full_profile and args.fullpkg:
+        parser.error("--qa-full-profile cannot be combined with --fullpkg")
     require_payload = args.require_payload or args.fullpkg
 
     if not args.apk.is_file():
@@ -1106,6 +1326,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             require_payload,
             args.fullpkg,
             require_attribution_closed=args.require_release_attribution_closed,
+            require_full_profile=args.require_full_profile,
+            qa_full_profile=args.qa_full_profile,
         )
     except zipfile.BadZipFile as exc:
         result = Result(status="error", reason=f"not a zip/apk: {exc}")
@@ -1114,7 +1336,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     for problem in result.problems:
-        print(f"UML_PAYLOAD_GATE_FAIL {problem.entry}: {problem.reason}")
+        code_tag = f" [{problem.code}]" if problem.code else ""
+        print(f"UML_PAYLOAD_GATE_FAIL{code_tag} {problem.entry}: {problem.reason}")
     for item in result.verified:
         print(f"UML_PAYLOAD_GATE_VERIFIED {item.entry}: sha256 {item.digest}")
     for open_item in result.notice_open_items:
@@ -1126,8 +1349,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         names = ", ".join(item.entry for item in result.verified)
         if args.fullpkg:
             print(f"FULLPKG_GATE_OK the single-package APK carries every engine it accounts "
-                  f"for (UML fast profile, net helper, embedded rootfs tar, pVM compiler "
-                  f"manifest pins, QEMU manifest, NOTICE.UML declarations): {names}")
+                  f"for (scope={result.verified_scope}): {names}")
+        elif args.qa_full_profile:
+            print(f"UML_QA_FULL_PROFILE_GATE_OK scope={result.verified_scope}: {names}")
         else:
             print(f"UML_PAYLOAD_GATE_OK every accounted payload artifact is present "
                   f"and matches the in-APK manifest: {names}")
@@ -1143,6 +1367,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "-Porchestella.fastlane.payloadLibDir / -Porchestella.pvmCompiler.libDir) "
                 "and rerun the repack pipeline; shipped bytes, the manifests and "
                 "NOTICE.UML must all agree.",
+                file=sys.stderr,
+            )
+        elif args.qa_full_profile or args.require_full_profile:
+            print(
+                "UML_PAYLOAD_GATE_HINT full-profile manifest, NOTICE.UML, and shipped bytes must agree. "
+                "Rebuild with -Porchestella.uml.fullProfileDir pointing at the reproducible "
+                "full-smp-arm64 artifacts (research/uml-full/manifest.md).",
                 file=sys.stderr,
             )
         else:
@@ -1167,11 +1398,18 @@ def _write_json(path: Path | None, args: argparse.Namespace, result: Result) -> 
                 "apk": str(args.apk) if args.apk else None,
                 "require_payload": args.require_payload,
                 "fullpkg": args.fullpkg,
+                "require_full_profile": args.require_full_profile,
+                "qa_full_profile": args.qa_full_profile,
                 "require_release_attribution_closed": args.require_release_attribution_closed,
                 "status": result.status,
+                "verified_scope": result.verified_scope,
+                "failure_codes": list(result.failure_codes),
                 "reason": result.reason,
                 "verified": [{"entry": v.entry, "sha256": v.digest} for v in result.verified],
-                "problems": [{"entry": p.entry, "reason": p.reason} for p in result.problems],
+                "problems": [
+                    {"entry": p.entry, "code": p.code, "reason": p.reason}
+                    for p in result.problems
+                ],
                 "notice_open_items": list(result.notice_open_items),
             },
             ensure_ascii=False,
