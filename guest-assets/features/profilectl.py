@@ -13,7 +13,7 @@ import sys
 import time
 from types import SimpleNamespace
 
-PROFILES = ("desktop-labwc", "podman", "code-server", "docker-cli")
+PROFILES = ("desktop-labwc", "podman", "code-server", "docker-cli", "docker-engine")
 ACTIONS = ("probe", "install", "status", "start", "stop", "cancel", "confirm-frame", "resize", "expose", "unexpose", "recover")
 PACKAGES = {
     # DW-04: pulseaudio belongs to the desktop profile. Without it the audio-relay
@@ -23,11 +23,13 @@ PACKAGES = {
     "podman": ("python3", "podman", "uidmap", "fuse-overlayfs", "slirp4netns", "passt", "netavark", "aardvark-dns", "dbus-user-session", "libseccomp2", "util-linux"),
     "code-server": ("python3", "ca-certificates", "libc6", "libstdc++6", "dbus-user-session"),
     "docker-cli": ("python3", "docker-cli"),
+    "docker-engine": ("python3", "docker.io", "docker-cli", "containerd", "runc", "ca-certificates", "iptables", "nftables"),
 }
 UNITS = {
     "desktop-labwc": ("orchestella-desktop-compositor.service", "orchestella-desktop-wayvnc.service", "orchestella-display-relay.service", "orchestella-audio-relay.service"),
     "code-server": ("orchestella-code-server.service", "orchestella-code-server-relay.service"),
     "podman": (), "docker-cli": (),
+    "docker-engine": ("containerd.service", "docker.service"),
 }
 # DW-03: the compositor and wayvnc own the desktop session and are installed as
 # persistent user units (~/.config/systemd/user) under a lingered user manager,
@@ -188,7 +190,9 @@ class Controller:
         return {"version": 1, "profile": self.profile, "state": "planned", "installed": False,
                 "reason": "none", "phase": "none", "generation": "none", "job_id": "none",
                 "capture": "unverified", "protocols": "unverified", "health": "unverified",
-                "container_info": "unverified", "container_run": "unverified", "docker_daemon": "unverified",
+                "container_info": "unverified", "container_run": "unverified",
+                "docker_cli": "unverified", "docker_daemon": "unverified",
+                "docker_seccomp": "unverified", "docker_storage": "unverified", "docker_cgroup": "unverified",
                 # DW-08: audio closure reported separately from the display chain; the
                 # desktop never inherits an audio failure as its own reason.
                 "audio_relay": "unverified", "audio_relay_reason": "none",
@@ -292,7 +296,7 @@ class Controller:
         if arch not in ("aarch64", "arm64"):
             raise Failure("unsupported-architecture")
         distro = (values.get("ID"), values.get("VERSION_ID"))
-        supported = (("debian", "13"),) if self.profile in ("desktop-labwc", "docker-cli") else (("debian", "13"), ("ubuntu", "24.04"))
+        supported = (("debian", "13"),) if self.profile in ("desktop-labwc", "docker-cli", "docker-engine") else (("debian", "13"), ("ubuntu", "24.04"))
         if distro not in supported:
             raise Failure("unsupported-distro")
         return {"distro": distro[0], "distro_version": distro[1], "architecture": "arm64"}
@@ -565,13 +569,16 @@ class Controller:
             versions[package] = output.split("\t", 1)[1].strip()
         if self.profile == "docker-cli":
             self.run(["dpkg", "--compare-versions", versions["docker-cli"], "ge", "26.1.5"], reason="package-version-unsupported")
+        if self.profile == "docker-engine":
+            for package, minimum in self.inputs()["docker_engine"]["minimum_versions"].items():
+                self.run(["dpkg", "--compare-versions", versions[package], "ge", minimum], reason="package-version-unsupported")
         if self.profile == "desktop-labwc":
             for package, minimum in self.inputs()["desktop"]["minimum_versions"].items():
                 self.run(["dpkg", "--compare-versions", versions[package], "ge", minimum], reason="package-version-unsupported")
         return versions
 
     def ensure_disk(self):
-        minimum = {"desktop-labwc": 700 << 20, "podman": 600 << 20, "code-server": 1800 << 20, "docker-cli": 400 << 20}[self.profile]
+        minimum = {"desktop-labwc": 700 << 20, "podman": 600 << 20, "code-server": 1800 << 20, "docker-cli": 400 << 20, "docker-engine": 1500 << 20}[self.profile]
         if self.testing and "free_bytes" in self.fixture:
             free = self.fixture["free_bytes"]
         else:
@@ -690,7 +697,7 @@ class Controller:
     def units_active(self, profile, timeout=0.6):
         if profile == "desktop-labwc" and not self.testing:
             return self.desktop_units_active(timeout=timeout)
-        count = 3 if profile == "desktop-labwc" else 1
+        count = 3 if profile == "desktop-labwc" else (1 if profile == "code-server" else len(UNITS[profile]))
         return [self.unit_ctl(["is-active", "--quiet", unit], timeout=timeout, required=False)[0] == 0
                 for unit in UNITS[profile][:count]]
 
@@ -1352,6 +1359,8 @@ class Controller:
             self.as_user(["docker", "--version"], reason="docker-cli-unavailable")
             # Do not start a root daemon; the distribution's CLI package may also contain one.
             self.save(state="installed", phase="cli-verified", reason="daemon-unverified", docker_cli="verified", docker_daemon="unverified")
+        elif self.profile == "docker-engine":
+            self.start_docker_engine()
 
     def prepare_audio_device(self):
         if self.testing:
@@ -1498,13 +1507,118 @@ class Controller:
         self.check_cancel()
         self.save(state="ready", phase="rootless-run-verified", reason="none")
 
+    def _wait_local_http_acceptance(self, port, failure_reason):
+        deadline = time.monotonic() + 20
+        while True:
+            self.check_cancel()
+            try:
+                status, _, body = self.http("GET", "/", port)
+                if status == 200 and body == b"orchestella-port-acceptance":
+                    return
+            except OSError:
+                pass
+            if time.monotonic() >= deadline:
+                raise Failure(failure_reason)
+            time.sleep(0.1)
+
+    def start_docker_engine(self):
+        import socket
+        self.run(["docker", "--version"], reason="docker-cli-unavailable")
+        self.save(phase="docker-daemon", docker_cli="verified", docker_daemon="unverified",
+                  docker_seccomp="unverified", docker_storage="unverified", docker_cgroup="unverified",
+                  container_info="unverified", container_run="unverified")
+        containerd_unit, docker_unit = UNITS[self.profile]
+        self.unit_ctl(["start", containerd_unit], timeout=30, reason="containerd-start-failed")
+        self.unit_ctl(["is-active", "--quiet", containerd_unit], timeout=5, reason="containerd-start-failed")
+        self.unit_ctl(["start", docker_unit], timeout=45, reason="docker-daemon-unavailable")
+        self.unit_ctl(["is-active", "--quiet", docker_unit], timeout=5, reason="docker-daemon-unavailable")
+        _, output = self.run(["docker", "info", "--format", "{{json .}}"], timeout=30, reason="docker-daemon-unavailable")
+        try:
+            info = json.loads(output)
+        except ValueError:
+            raise Failure("docker-daemon-unavailable") from None
+        if not isinstance(info, dict) or not info.get("ServerVersion"):
+            raise Failure("docker-daemon-unavailable")
+        self.save(docker_daemon="verified")
+        if str(info.get("CgroupVersion", "")) != "2":
+            raise Failure("cgroup-unavailable")
+        security_options = [str(item) for item in (info.get("SecurityOptions") or [])]
+        if not any("name=seccomp" in opt and "profile=unconfined" not in opt for opt in security_options):
+            raise Failure("docker-seccomp-unavailable")
+        driver = str(info.get("Driver", "") or "unverified")
+        if driver not in ("overlay2", "overlayfs"):
+            self.save(docker_storage=driver)
+            raise Failure("docker-storage-degraded")
+        self.save(container_info="verified", docker_seccomp="verified", docker_storage=driver,
+                  docker_cgroup="v2", phase="container-run")
+        pin = self.inputs().get("docker_engine", {})
+        image = pin.get("alpine", "")
+        if not re.fullmatch(r"docker\.io/library/alpine@sha256:[0-9a-f]{64}", image):
+            raise Failure("missing-container-pin")
+        dns_name = str(pin.get("dns_name", "") or "example.com")
+        tls_url = str(pin.get("tls_url", "") or "https://example.com/")
+        if not re.fullmatch(r"[A-Za-z0-9.-]+", dns_name) or not re.fullmatch(r"https://[A-Za-z0-9./:_-]+", tls_url):
+            raise Failure("missing-container-pin")
+        names = ["orchestella-docker-accept-" + self.job + suffix for suffix in ("-run", "-net", "-vol-w", "-vol-r", "-port")]
+        vol_name = "orchestella-docker-vol-" + self.job
+        try:
+            self.run(["docker", "run", "--rm", "--name", names[0], "--memory=64m", "--pids-limit=32",
+                      image, "sh", "-ec", "cat /sys/fs/cgroup/memory.max /sys/fs/cgroup/pids.max"],
+                     timeout=300, reason="container-run-failed")
+            self.save(phase="container-dns-tls", container_run="verified")
+            self.run(["docker", "run", "--rm", "--name", names[1], image, "sh", "-ec",
+                      "nslookup \"$1\" >/dev/null; wget -q -O /dev/null \"$2\"", "w0104-net", dns_name, tls_url],
+                     timeout=300, reason="container-network-failed")
+            self.save(container_dns="verified", container_tls="verified", phase="container-volume")
+            self.run(["docker", "volume", "create", vol_name], timeout=30, reason="container-volume-failed")
+            self.run(["docker", "run", "--rm", "--name", names[2], "--network", "none", "-v", vol_name + ":/probe",
+                      image, "sh", "-ec", "printf orchestella-docker-volume-acceptance\\\\n >/probe/probe.txt"],
+                     timeout=60, reason="container-volume-failed")
+            _, content = self.run(["docker", "run", "--rm", "--name", names[3], "--network", "none", "-v", vol_name + ":/probe:ro",
+                                   image, "cat", "/probe/probe.txt"], timeout=60, reason="container-volume-failed")
+            if content != "orchestella-docker-volume-acceptance\n":
+                raise Failure("container-volume-failed")
+            self.save(container_volume="verified", phase="container-port")
+            with socket.socket() as reservation:
+                reservation.bind(("127.0.0.1", 0))
+                port = reservation.getsockname()[1]
+            self.run(["docker", "run", "--detach", "--name", names[4], "--publish", "127.0.0.1:%d:8080" % port,
+                      image, "sh", "-ec",
+                      "printf '%s\\n' '#!/bin/sh' 'IFS= read -r _ || :' 'printf \"HTTP/1.0 200 OK\\r\\nContent-Length: 27\\r\\n\\r\\norchestella-port-acceptance\"' >/tmp/h.sh && chmod 0755 /tmp/h.sh && exec nc -ll -p 8080 -e /tmp/h.sh"],
+                     timeout=60, reason="container-port-failed")
+            self._wait_local_http_acceptance(port, "container-port-failed")
+            self.save(container_port="verified")
+        finally:
+            for name in names:
+                self.run(["docker", "rm", "--force", name], timeout=10, required=False, cancellable=False)
+            self.run(["docker", "volume", "rm", "--force", vol_name], timeout=10, required=False, cancellable=False)
+        self.check_cancel()
+        self.save(state="ready", phase="docker-engine-verified", reason="none")
+
     def as_user_cleanup(self, args):
         uid, _ = self.user()
         return self.run(["runuser", "--user", self.username, "--", "env", "HOME=" + self.home, "XDG_RUNTIME_DIR=/run/user/%d" % uid, *args],
                         timeout=10, required=False, cancellable=False)
 
+    def docker_runtime_reset(self):
+        return {
+            "docker_daemon": "unverified",
+            "docker_seccomp": "unverified",
+            "docker_storage": "unverified",
+            "docker_cgroup": "unverified",
+            "container_info": "unverified",
+            "container_run": "unverified",
+            "container_dns": "unverified",
+            "container_tls": "unverified",
+            "container_volume": "unverified",
+            "container_port": "unverified",
+        }
+
     def stop_profile(self):
-        for unit in reversed(UNITS[self.profile]):
+        stop_units = list(reversed(UNITS[self.profile]))
+        if self.profile == "docker-engine":
+            stop_units = ["docker.socket", *stop_units]
+        for unit in stop_units:
             self.unit_ctl(["stop", unit], timeout=10, required=False, cancellable=False)
             rc, _ = self.unit_ctl(["is-active", "--quiet", unit], timeout=2, required=False, cancellable=False)
             if rc == 0:
@@ -1688,7 +1802,8 @@ class Controller:
                 self.start_profile()
             elif self.options.action == "stop":
                 self.stop_profile()
-                self.save(state="installed" if self.state()["installed"] else "planned", phase="stopped", reason="none", generation="none", health="unverified", capture="unverified", authenticationConfigured=False, guest_relay=False, guest_relay_address="none", guest_relay_port=0, audio_relay="unverified", audio_relay_reason="none")
+                self.save(state="installed" if self.state()["installed"] else "planned", phase="stopped", reason="none", generation="none", health="unverified", capture="unverified", authenticationConfigured=False, guest_relay=False, guest_relay_address="none", guest_relay_port=0, audio_relay="unverified", audio_relay_reason="none",
+                          **self.docker_runtime_reset())
             elif self.options.action in ("expose", "unexpose"):
                 self.relay_profile(self.options.action == "expose")
         except (Failure, OSError, ValueError, KeyError) as error:
@@ -1725,7 +1840,8 @@ class Controller:
                 state = self.state()
                 changed = False
                 if state["state"] in ("awaiting-frame", "ready") and state.get("verified_boot") != self.boot_id():
-                    state.update(state="installed", reason="restart-required", generation="none", health="unverified", capture="unverified", authenticationConfigured=False, guest_relay=False, audio_relay="unverified", audio_relay_reason="none")
+                    state.update(state="installed", reason="restart-required", generation="none", health="unverified", capture="unverified", authenticationConfigured=False, guest_relay=False, audio_relay="unverified", audio_relay_reason="none",
+                                 **self.docker_runtime_reset())
                     changed = True
                 if state["state"] in ("installing", "starting") and not self.live_job(self.job_owner(allow_corrupt=True)):
                     state.update(state="failed", reason="interrupted", phase="recovery-required")
@@ -1744,9 +1860,11 @@ class Controller:
                         raise Failure("auth-unverified")
                 except (Failure, OSError):
                     state = self.save(state="failed", reason="auth-unverified", authenticationConfigured=False, health="unverified")
-            if state["state"] in ("awaiting-frame", "ready") and self.profile in ("desktop-labwc", "code-server"):
+            if state["state"] in ("awaiting-frame", "ready") and self.profile in ("desktop-labwc", "code-server", "docker-engine"):
                 if not all(self.units_active(self.profile, timeout=0.7)):
-                    state = self.save(state="failed", reason="service-not-active", health="unverified", capture="unverified")
+                    unit_reason = "docker-daemon-unavailable" if self.profile == "docker-engine" else "service-not-active"
+                    extra_reset = self.docker_runtime_reset() if self.profile == "docker-engine" else {}
+                    state = self.save(state="failed", reason=unit_reason, health="unverified", capture="unverified", **extra_reset)
             if self.profile == "code-server" and state.get("guest_relay"):
                 rc, _ = self.run(["systemctl", "is-active", "--quiet", UNITS[self.profile][1]], timeout=0.5, required=False)
                 relay_live = not rc and self.listener_present("192.168.127.15", 18080)
@@ -1774,9 +1892,9 @@ class Controller:
             finally:
                 self.options.action = previous_action
             result.update(metadata, selectable=True, runtime_verified=result["state"] == "ready", packages=",".join(PACKAGES[self.profile]),
-                          minimum_disk_free_bytes={"desktop-labwc": 700 << 20, "podman": 600 << 20, "code-server": 1800 << 20, "docker-cli": 400 << 20}[self.profile],
-                          recommended_ram_bytes={"desktop-labwc": 1024 << 20, "podman": 1024 << 20, "code-server": 1024 << 20, "docker-cli": 256 << 20}[self.profile],
-                          backend="labwc-headless-pixman" if self.profile == "desktop-labwc" else "rootless-slirp4netns" if self.profile == "podman" else "local-service" if self.profile == "code-server" else "cli-only",
+                          minimum_disk_free_bytes={"desktop-labwc": 700 << 20, "podman": 600 << 20, "code-server": 1800 << 20, "docker-cli": 400 << 20, "docker-engine": 1500 << 20}[self.profile],
+                          recommended_ram_bytes={"desktop-labwc": 1024 << 20, "podman": 1024 << 20, "code-server": 1024 << 20, "docker-cli": 256 << 20, "docker-engine": 1024 << 20}[self.profile],
+                          backend="labwc-headless-pixman" if self.profile == "desktop-labwc" else "rootless-slirp4netns" if self.profile == "podman" else "local-service" if self.profile == "code-server" else "dockerd-systemd" if self.profile == "docker-engine" else "cli-only",
                           research_status="signed-packages-and-fixed-inputs", resource_estimate="planning-budget-not-measured")
             return result, 0
         if action in ("expose", "unexpose"):

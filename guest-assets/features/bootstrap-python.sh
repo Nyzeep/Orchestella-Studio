@@ -22,7 +22,7 @@ profile="${2:-}"
 command_run() {
     if [ -n "$ROOT" ]; then "$RUNNER" "$ROOT" "$@"; else "$@"; fi
 }
-case "$profile" in desktop-labwc|podman|code-server|docker-cli) ;; *) printf '%s\n' '{"version":1,"profile":"none","state":"failed","installed":false,"reason":"unknown-profile"}'; exit 1 ;; esac
+case "$profile" in desktop-labwc|podman|code-server|docker-cli|docker-engine) ;; *) printf '%s\n' '{"version":1,"profile":"none","state":"failed","installed":false,"reason":"unknown-profile"}'; exit 1 ;; esac
 state="$DIR/bootstrap-$profile.json"
 response() {
     printf '{"version":1,"profile":"%s","state":"%s","installed":false,"reason":"%s","phase":"%s","generation":"none","input":{"keyboard":false,"unicodeText":false,"pointer":false},"authenticationConfigured":false}\n' "$profile" "$1" "$2" "$3"

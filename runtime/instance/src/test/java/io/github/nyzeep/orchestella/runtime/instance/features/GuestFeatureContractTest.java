@@ -34,6 +34,24 @@ public final class GuestFeatureContractTest {
         require(editor.authenticationConfigured() && !editor.exposed(), "private authenticated editor");
         rejects(() -> GuestFeatureStatus.parse(
                 "{\"version\":1,\"profile\":\"code-server\",\"state\":\"ready\",\"installed\":true,\"reason\":\"none\",\"generation\":\"0123456789abcdef0123456789abcdef\",\"health\":\"authenticated-http\",\"authenticationConfigured\":false}"));
+        // W01-04: CLI-only docker-cli must never claim ready even with installed=true and generation.
+        String synthGen = "01234567".repeat(4);
+        rejects(() -> GuestFeatureStatus.parse(
+                "{\"version\":1,\"profile\":\"docker-cli\",\"state\":\"ready\",\"installed\":true,\"reason\":\"none\",\"generation\":\"" + synthGen + "\",\"docker_cli\":\"verified\",\"docker_daemon\":\"unverified\"}"));
+        GuestFeatureStatus dockerCliOnly = GuestFeatureStatus.parse(
+                "{\"version\":1,\"profile\":\"docker-cli\",\"state\":\"installed\",\"installed\":true,\"reason\":\"daemon-unverified\",\"generation\":\"" + synthGen + "\",\"docker_cli\":\"verified\",\"docker_daemon\":\"unverified\"}");
+        require(!dockerCliOnly.ready(), "docker-cli installed without daemon must not be ready");
+        // W01-04: docker-engine requires daemon, seccomp, non-vfs overlay storage, container_info, and container_run.
+        rejects(() -> GuestFeatureStatus.parse(
+                "{\"version\":1,\"profile\":\"docker-engine\",\"state\":\"ready\",\"installed\":true,\"reason\":\"none\",\"generation\":\"" + synthGen + "\",\"container_info\":\"verified\",\"container_run\":\"verified\",\"docker_daemon\":\"unverified\",\"docker_seccomp\":\"verified\",\"docker_storage\":\"overlay2\"}"));
+        rejects(() -> GuestFeatureStatus.parse(
+                "{\"version\":1,\"profile\":\"docker-engine\",\"state\":\"ready\",\"installed\":true,\"reason\":\"none\",\"generation\":\"" + synthGen + "\",\"container_info\":\"verified\",\"container_run\":\"verified\",\"docker_daemon\":\"verified\",\"docker_seccomp\":\"unverified\",\"docker_storage\":\"overlay2\"}"));
+        rejects(() -> GuestFeatureStatus.parse(
+                "{\"version\":1,\"profile\":\"docker-engine\",\"state\":\"ready\",\"installed\":true,\"reason\":\"none\",\"generation\":\"" + synthGen + "\",\"container_info\":\"verified\",\"container_run\":\"verified\",\"docker_daemon\":\"verified\",\"docker_seccomp\":\"verified\",\"docker_storage\":\"vfs\"}"));
+        GuestFeatureStatus dockerEngineReady = GuestFeatureStatus.parse(
+                "{\"version\":1,\"profile\":\"docker-engine\",\"state\":\"ready\",\"installed\":true,\"reason\":\"none\",\"generation\":\"" + synthGen + "\",\"container_info\":\"verified\",\"container_run\":\"verified\",\"docker_daemon\":\"verified\",\"docker_seccomp\":\"verified\",\"docker_storage\":\"overlay2\"}");
+        require(dockerEngineReady.ready() && dockerEngineReady.containerInfoVerified() && dockerEngineReady.containerRunVerified(),
+                "docker-engine ready requires verified daemon, seccomp, storage, info and run");
         selectionDriverStopsBeforeEveryStaleMutation();
         selectionDriverRetainsPendingAfterAcceptedStartBecomesStale();
         selectionDriverStopsPollingWithoutCancellingGuestJob();

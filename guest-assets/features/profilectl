@@ -11,7 +11,7 @@ if ! command -v python3 >/dev/null 2>&1 || [ -d /var/lib/orchestella/features/py
     exit 1
 fi
 if [ "${1:-}" = status ] && [ "$#" -eq 2 ]; then
-    case "$2" in desktop-labwc|podman|code-server|docker-cli)
+    case "$2" in desktop-labwc|podman|code-server|docker-cli|docker-engine)
         if [ -f "/var/lib/orchestella/features/bootstrap-$2.json" ] && [ ! -f "/var/lib/orchestella/features/$2.json" ]; then
             exec /bin/sh /usr/local/lib/orchestella/bootstrap-python.sh status "$2"
         fi ;;

@@ -9,10 +9,21 @@ import java.util.Set;
 public record GuestFeatureStatus(String profile, String state, boolean installed, String reason,
                                  String generation, boolean captureVerified, Input input,
                                  boolean authenticationConfigured, boolean exposed,
-                                 boolean containerInfoVerified, boolean containerRunVerified) {
+                                 boolean containerInfoVerified, boolean containerRunVerified,
+                                 boolean dockerDaemonVerified, boolean dockerSeccompVerified,
+                                 boolean dockerStorageVerified) {
     public record Input(boolean keyboard, boolean unicodeText, boolean pointer) { }
-    private static final Set<String> PROFILES = Set.of("desktop-labwc", "podman", "code-server", "docker-cli");
+    private static final Set<String> PROFILES = Set.of("desktop-labwc", "podman", "code-server", "docker-cli", "docker-engine");
     private static final Set<String> STATES = Set.of("planned", "installing", "installed", "starting", "awaiting-frame", "ready", "failed", "cancelled");
+
+    public GuestFeatureStatus(String profile, String state, boolean installed, String reason,
+                              String generation, boolean captureVerified, Input input,
+                              boolean authenticationConfigured, boolean exposed,
+                              boolean containerInfoVerified, boolean containerRunVerified) {
+        this(profile, state, installed, reason, generation, captureVerified, input,
+                authenticationConfigured, exposed, containerInfoVerified, containerRunVerified,
+                false, false, false);
+    }
 
     public GuestFeatureStatus {
         if (!PROFILES.contains(profile) || !STATES.contains(state) || reason == null || !reason.matches("[a-z0-9-]{1,96}") || input == null
@@ -29,7 +40,10 @@ public record GuestFeatureStatus(String profile, String state, boolean installed
                 || profile.equals("desktop-labwc") && !captureVerified
                 || profile.equals("code-server") && !authenticationConfigured
                 || profile.equals("podman") && !(containerInfoVerified && containerRunVerified)
-                || profile.equals("docker-cli"))) {
+                || profile.equals("docker-cli")
+                || profile.equals("docker-engine")
+                && !(containerInfoVerified && containerRunVerified
+                && dockerDaemonVerified && dockerSeccompVerified && dockerStorageVerified))) {
             throw new IllegalArgumentException("ready-unverified");
         }
     }
@@ -59,9 +73,14 @@ public record GuestFeatureStatus(String profile, String state, boolean installed
         }
         Map<?, ?> inputs = inputFields == null ? Map.of() : (Map<?, ?>) inputFields;
         boolean auth = bool(fields, "authenticationConfigured") && text(fields, "health", "unverified").equals("authenticated-http") && (state.equals("ready") || state.equals("starting"));
+        String dockerStorage = text(fields, "docker_storage", "unverified");
+        boolean dockerStorageOk = dockerStorage.equals("overlay2") || dockerStorage.equals("overlayfs");
         return new GuestFeatureStatus(profile, state, bool(fields, "installed"), text(fields, "reason", "none"), generation, captured,
                 new Input(bool(inputs, "keyboard"), bool(inputs, "unicodeText"), bool(inputs, "pointer")), auth, bool(fields, "exposed"),
-                text(fields, "container_info", "unverified").equals("verified"), text(fields, "container_run", "unverified").equals("verified"));
+                text(fields, "container_info", "unverified").equals("verified"), text(fields, "container_run", "unverified").equals("verified"),
+                text(fields, "docker_daemon", "unverified").equals("verified"),
+                text(fields, "docker_seccomp", "unverified").equals("verified"),
+                dockerStorageOk);
     }
 
     private static String text(Map<?, ?> fields, String name, String fallback) {

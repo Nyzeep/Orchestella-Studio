@@ -337,6 +337,11 @@ android {
             manifest.srcFile("src/w0103Qa/AndroidManifest.xml")
             java.srcDir("src/w0103Qa/java")
         }
+    } else if (buildChannel == "qa" && buildPurpose == "w0104") {
+        sourceSets.getByName("androidTest") {
+            manifest.srcFile("src/w0104Qa/AndroidManifest.xml")
+            java.srcDir("src/w0104Qa/java")
+        }
     }
 
     if (qemuNativeLibDir != null || qemuAssetsDir != null || qemuInitramfsDir != null) {

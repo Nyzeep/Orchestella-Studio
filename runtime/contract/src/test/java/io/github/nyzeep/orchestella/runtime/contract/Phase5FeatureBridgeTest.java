@@ -51,4 +51,16 @@ public class Phase5FeatureBridgeTest {
         assertEquals("ok-features", result.responseKind());
         assertEquals(json, result.payload());
     }
+
+    @Test public void dockerEngineProfileIsAcceptedOnBridgeWhitelist() throws Exception {
+        ByteArrayOutputStream wire = new ByteArrayOutputStream();
+        BridgeClient client = new BridgeClient(new ByteArrayInputStream(("ORCHESTELLA/READY 1\n"
+                + "ORCHESTELLA/OK features {\"version\":1,\"profile\":\"docker-engine\",\"state\":\"ready\"}\n")
+                .getBytes(StandardCharsets.US_ASCII)), wire);
+        assertTrue(client.handshake("a".repeat(64)).accepted());
+        BridgeClient.Result result = client.feature("STATUS", "docker-engine");
+        assertTrue(result.accepted());
+        assertTrue(wire.toString(StandardCharsets.US_ASCII)
+                .contains("ORCHESTELLA/FEATURES 1 STATUS docker-engine\n"));
+    }
 }

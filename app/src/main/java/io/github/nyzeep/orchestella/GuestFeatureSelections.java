@@ -11,7 +11,7 @@ import java.util.function.BooleanSupplier;
 
 /** Persists explicit experimental choices; no selection means no optional download. */
 public final class GuestFeatureSelections {
-    private static final Set<String> PROFILES = Set.of("desktop-labwc", "podman", "code-server", "docker-cli");
+    private static final Set<String> PROFILES = Set.of("desktop-labwc", "podman", "code-server", "docker-cli", "docker-engine");
     private static final ConcurrentHashMap<String, BooleanSupplier> ACTIVE = new ConcurrentHashMap<>();
     private GuestFeatureSelections() { }
 

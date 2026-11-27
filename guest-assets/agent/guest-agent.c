@@ -214,7 +214,8 @@ static int setup_bridge_ipc_socket(void) {
 
 static int feature_profile_allowed(const char *profile) {
     return strcmp(profile, "desktop-labwc") == 0 || strcmp(profile, "podman") == 0
-        || strcmp(profile, "code-server") == 0 || strcmp(profile, "docker-cli") == 0;
+        || strcmp(profile, "code-server") == 0 || strcmp(profile, "docker-cli") == 0
+        || strcmp(profile, "docker-engine") == 0;
 }
 
 static int feature_action_allowed(const char *action) {

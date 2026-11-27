@@ -6,7 +6,7 @@ import java.util.Set;
 
 /** Builds the whitelist extension only; authentication/transport belong to BridgeClient. */
 public record GuestFeatureRequest(String action, String profile, List<String> arguments) {
-    private static final Set<String> PROFILES = Set.of("desktop-labwc", "podman", "code-server", "docker-cli");
+    private static final Set<String> PROFILES = Set.of("desktop-labwc", "podman", "code-server", "docker-cli", "docker-engine");
     private static final Set<String> COMMANDS = Set.of("PROBE", "INSTALL", "STATUS", "START", "STOP", "CANCEL", "EXPOSE", "UNEXPOSE");
 
     public GuestFeatureRequest {

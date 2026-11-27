@@ -1242,6 +1242,87 @@ class ProfileContracts(unittest.TestCase):
         self.assertEqual("installed", installed["state"])
         self.assertFalse(install_lock.exists())
 
+    def test_docker_cli_available_without_daemon_never_reports_ready(self):
+        self.ctl("install", "docker-cli")
+        installed = self.wait("docker-cli", {"installed", "failed"})
+        self.assertEqual("installed", installed["state"])
+        self.ctl("start", "docker-cli")
+        started = self.wait("docker-cli", {"installed", "ready", "failed"})
+        self.assertEqual("installed", started["state"])
+        self.assertNotEqual("ready", started["state"])
+        self.assertEqual("daemon-unverified", started["reason"])
+        self.assertEqual("verified", started["docker_cli"])
+        self.assertEqual("unverified", started["docker_daemon"])
+
+    def test_docker_engine_missing_daemon_or_seccomp_or_vfs_fails_honestly(self):
+        self.ctl("install", "docker-engine")
+        installed = self.wait("docker-engine", {"installed", "failed"})
+        self.assertEqual("installed", installed["state"])
+
+        # Daemon down / unreachable after unit start
+        self.fixture(docker_daemon_down=True)
+        self.ctl("start", "docker-engine")
+        failed = self.wait("docker-engine", {"failed"})
+        self.assertEqual("docker-daemon-unavailable", failed["reason"])
+        self.assertEqual("verified", failed["docker_cli"])
+        self.assertEqual("unverified", failed["docker_daemon"])
+
+        # Unconfined / missing seccomp
+        self.fixture(docker_daemon_down=False, docker_seccomp_unconfined=True)
+        self.ctl("start", "docker-engine")
+        failed = self.wait("docker-engine", {"failed"})
+        self.assertEqual("docker-seccomp-unavailable", failed["reason"])
+        self.assertEqual("unverified", failed["docker_seccomp"])
+
+        # Degraded vfs storage driver must not pass
+        self.fixture(docker_seccomp_unconfined=False, docker_storage_driver="vfs")
+        self.ctl("start", "docker-engine")
+        failed = self.wait("docker-engine", {"failed"})
+        self.assertEqual("docker-storage-degraded", failed["reason"])
+        self.assertEqual("vfs", failed["docker_storage"])
+        self.assertNotEqual("ready", failed["state"])
+
+    def test_docker_engine_network_failure_classifies_and_cleans_probes(self):
+        self.ctl("install", "docker-engine")
+        self.wait("docker-engine", {"installed"})
+        self.fixture(docker_network_fail=True)
+        self.ctl("start", "docker-engine")
+        failed = self.wait("docker-engine", {"failed"})
+        self.assertEqual("container-network-failed", failed["reason"])
+        self.assertEqual("verified", failed["container_info"])
+        self.assertEqual("verified", failed["container_run"])
+        self.assertNotEqual("ready", failed["state"])
+        fixture = json.loads((self.root / "fixture.json").read_text())
+        self.assertEqual({}, fixture.get("docker_containers", {}))
+        self.assertEqual({}, fixture.get("docker_volumes", {}))
+
+    def test_docker_engine_acceptance_verifies_daemon_limits_volume_port_and_cleans(self):
+        self.ctl("install", "docker-engine")
+        self.wait("docker-engine", {"installed"})
+        self.ctl("start", "docker-engine")
+        ready = self.wait("docker-engine", {"ready", "failed"})
+        self.assertEqual("ready", ready["state"], ready)
+        for key in ("docker_cli", "docker_daemon", "docker_seccomp",
+                    "container_info", "container_run", "container_dns",
+                    "container_tls", "container_volume", "container_port"):
+            self.assertEqual("verified", ready[key], key)
+        self.assertEqual("overlay2", ready["docker_storage"])
+        self.assertEqual("v2", ready["docker_cgroup"])
+        fixture = json.loads((self.root / "fixture.json").read_text())
+        self.assertEqual({}, fixture.get("docker_containers", {}))
+        self.assertEqual({}, fixture.get("docker_volumes", {}))
+        with self.assertRaises(OSError):
+            socket.create_connection(("127.0.0.1", fixture["docker_port"]), timeout=0.3)
+        commands = (self.root / "commands.jsonl").read_text()
+        self.assertIn("--memory=", commands)
+        self.assertIn("--pids-limit=", commands)
+        self.assertNotIn("--privileged", commands)
+        self.assertIn("sha256:", commands)
+        self.ctl("stop", "docker-engine")
+        stopped = self.wait("docker-engine", {"installed"})
+        self.assertEqual("installed", stopped["state"])
+        self.assertEqual("unverified", stopped["docker_daemon"])
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

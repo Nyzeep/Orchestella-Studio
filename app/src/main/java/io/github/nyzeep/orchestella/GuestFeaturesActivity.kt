@@ -88,10 +88,11 @@ class GuestFeaturesActivity : AppCompatActivity() {
             "desktop-labwc" to "labwc 轻量 Wayland 桌面 · Debian 13",
             "podman" to "Rootless Podman · 普通用户容器",
             "code-server" to "code-server · 本机开发服务",
-            "docker-cli" to "Docker CLI · 客户端与 daemon 分别检查",
+            "docker-cli" to "Docker CLI · 仅客户端（未验证 daemon）",
+            "docker-engine" to "Docker Engine · systemd 守护进程与容器闭环",
         )
         val visibleProfiles = allProfiles.filterKeys { profile ->
-            if (profile in setOf("desktop-labwc", "docker-cli")) distro == "debian" else distro in setOf("debian", "ubuntu")
+            if (profile in setOf("desktop-labwc", "docker-cli", "docker-engine")) distro == "debian" else distro in setOf("debian", "ubuntu")
         }
         visibleProfiles.keys.forEach { profile ->
             statusMap[profile] = "尚未查询 guest 状态"

@@ -106,8 +106,17 @@ def systemctl_fixture(service_args):
 if command == "apt-get":
     if "install" in args:
         packages = fixture.get("packages", {})
+        defaults = {
+            "labwc": "0.8.3-1", "wayvnc": "0.9.1-1", "wlr-randr": "0.4.1-1",
+            "docker.io": "26.1.5+dfsg1-9+deb13u1", "docker-cli": "26.1.5+dfsg1-9+deb13u1",
+            "containerd": "1.7.24~ds1-6", "runc": "1.1.15+ds1-2",
+            "iptables": "1.8.11-2", "nftables": "1.1.3-1", "ca-certificates": "20250419", "python3": "3.13.3-1",
+        }
+        defaults.update(fixture.get("package_versions", {}))
         for package in args[args.index("install") + 1:]:
-            packages[package] = {"labwc": "0.8.3-1", "wayvnc": "0.9.1-1", "wlr-randr": "0.4.1-1"}.get(package, "1.0")
+            if package.startswith("-"):
+                continue
+            packages[package] = defaults.get(package, "1.0")
         fixture["packages"] = packages
         store(root / "fixture.json", fixture)
 elif command == "dpkg-query":
@@ -193,7 +202,81 @@ elif command == "runuser":
                     pass
                 store(root / "fixture.json", fixture)
     elif nested_command == "docker":
-        print("Docker version 28.0.0 (synthetic CLI)")
+        print("Docker version 26.1.5+dfsg1, build a72d7cd")
+elif command == "docker":
+    sub = args[1] if len(args) > 1 else ""
+    if sub == "--version":
+        print("Docker version 26.1.5+dfsg1, build a72d7cd")
+    elif sub == "info":
+        if fixture.get("docker_daemon_down") or not fixture.get("services", {}).get("docker.service"):
+            print("Client: Docker Engine - Community\nCannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")
+            sys.exit(1)
+        sec_opts = [] if fixture.get("docker_seccomp_off") else (
+            ["name=seccomp,profile=unconfined"] if fixture.get("docker_seccomp_unconfined")
+            else ["name=seccomp,profile=builtin", "name=cgroupns"]
+        )
+        print(json.dumps({
+            "ServerVersion": "26.1.5+dfsg1",
+            "Driver": fixture.get("docker_storage_driver", "overlay2"),
+            "CgroupVersion": fixture.get("docker_cgroup_version", "2"),
+            "CgroupDriver": "systemd",
+            "SecurityOptions": sec_opts,
+            "DefaultRuntime": "runc",
+        }))
+    elif sub == "volume":
+        op = args[2] if len(args) > 2 else ""
+        vol = args[-1]
+        if op == "create":
+            if fixture.get("docker_volume_fail"):
+                print("synthetic docker volume create failed")
+                sys.exit(1)
+            fixture.setdefault("docker_volumes", {})[vol] = ""
+            store(root / "fixture.json", fixture)
+        elif op == "rm":
+            fixture.get("docker_volumes", {}).pop(vol, None)
+            store(root / "fixture.json", fixture)
+    elif sub == "run":
+        if "--publish" in args:
+            if fixture.get("docker_port_fail"):
+                print("synthetic docker port failed")
+                sys.exit(1)
+            published = args[args.index("--publish") + 1]
+            port = int(published.split(":")[1])
+            name = args[args.index("--name") + 1]
+            process = subprocess.Popen([sys.executable, "-B", str(Path(__file__).with_name("fixture-port.py")), str(port)],
+                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            fixture.setdefault("docker_containers", {})[name] = process.pid
+            fixture["docker_port"] = port
+            store(root / "fixture.json", fixture)
+        elif "--volume" in args or "-v" in args:
+            flag = "--volume" if "--volume" in args else "-v"
+            vol_spec = args[args.index(flag) + 1]
+            vol_name = vol_spec.split(":", 1)[0]
+            if fixture.get("docker_volume_fail") or vol_name not in fixture.get("docker_volumes", {}):
+                print("synthetic docker volume missing")
+                sys.exit(1)
+            cmd_text = " ".join(args)
+            if "orchestella-docker-volume-acceptance" in cmd_text and "cat " not in cmd_text:
+                fixture["docker_volumes"][vol_name] = "orchestella-docker-volume-acceptance\n"
+                store(root / "fixture.json", fixture)
+            else:
+                print(fixture["docker_volumes"].get(vol_name, ""), end="")
+        elif "nslookup" in " ".join(args) or "https://" in " ".join(args):
+            if fixture.get("docker_network_fail"):
+                print("synthetic docker network/tls failed")
+                sys.exit(1)
+            print("docker-net-tls-ok")
+        else:
+            print("memory_max=67108864 pids_max=32")
+    elif sub == "rm":
+        name = args[-1]
+        pid = fixture.get("docker_containers", {}).pop(name, None)
+        if pid:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+            store(root / "fixture.json", fixture)
 elif command == "held-stdout":
     child = subprocess.Popen([sys.executable, "-B", "-c", "import time; time.sleep(3)"], stdin=subprocess.DEVNULL)
     (root / "stdout-descendant.pid").write_text(str(child.pid))

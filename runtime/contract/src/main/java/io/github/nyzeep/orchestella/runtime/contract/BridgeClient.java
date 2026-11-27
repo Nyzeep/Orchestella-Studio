@@ -453,7 +453,7 @@ public final class BridgeClient {
     /** Versioned optional feature extension; legacy agents can reject it without ending the session. */
     public synchronized Result feature(String action, String profile) throws IOException {
         if (action == null || !java.util.Set.of("PROBE", "INSTALL", "STATUS", "START", "STOP", "CANCEL", "EXPOSE", "UNEXPOSE").contains(action)
-                || profile == null || !java.util.Set.of("desktop-labwc", "podman", "code-server", "docker-cli").contains(profile)) {
+                || profile == null || !java.util.Set.of("desktop-labwc", "podman", "code-server", "docker-cli", "docker-engine").contains(profile)) {
             throw new IllegalArgumentException("unsupported feature operation");
         }
         if (!isReady()) throw new IOException("Bridge has not authenticated");

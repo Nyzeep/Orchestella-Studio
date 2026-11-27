@@ -26,5 +26,20 @@
     "dns_name": "example.com",
     "tls_url": "https://example.com/",
     "evidence": "OCI ARM64 manifest bytes and digest verified by coordinator; layers/run unverified"
+  },
+  "docker_engine": {
+    "distro": "debian",
+    "version": "13",
+    "architecture": "arm64",
+    "minimum_versions": {
+      "docker.io": "26.1.5",
+      "docker-cli": "26.1.5",
+      "containerd": "1.7.24",
+      "runc": "1.1.15"
+    },
+    "alpine": "docker.io/library/alpine@sha256:24bb3511a0db7b5114a4aee033c65a8a4148f39b7b80a398e548546db967a36f",
+    "dns_name": "example.com",
+    "tls_url": "https://example.com/",
+    "evidence": "Debian 13 trixie arm64 signed package baseline and pinned linux/arm64 OCI digest"
   }
 }
