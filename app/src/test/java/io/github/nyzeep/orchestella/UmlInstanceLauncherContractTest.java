@@ -285,7 +285,11 @@ public final class UmlInstanceLauncherContractTest {
         assertTrue("Coordinator launch thread must finish after guest exit",
                 launchDone.await(5, TimeUnit.SECONDS));
         assertNull(coordinatorFailure.get());
-        awaitCondition(() -> isStopped(store, alpine.id()) && !registry.isReserved(alpine.rootVolume()),
+        awaitCondition(
+                () -> isStopped(store, alpine.id())
+                        && !registry.isReserved(alpine.rootVolume())
+                        && ExecutionSessionRegistry.get(alpine.id()) == null
+                        && !InstanceLaunchGuard.isInFlight(alpine.id()),
                 5_000, "coordinator exit-watcher did not transition instance1 to STOPPED and release root");
         assertFalse("ephemeral rootfs must be cleaned after reap",
                 Files.exists(session.ephemeralRootDir()));
@@ -304,7 +308,11 @@ public final class UmlInstanceLauncherContractTest {
         InstanceLaunchCoordinator.LaunchOutcome second = coordinator.launch(store.load(alpine.id()));
         assertTrue(second instanceof InstanceLaunchCoordinator.LaunchOutcome.Launched);
         assertEquals(2, spawnCount.get());
-        awaitCondition(() -> isStopped(store, alpine.id()) && !registry.isReserved(alpine.rootVolume()),
+        awaitCondition(
+                () -> isStopped(store, alpine.id())
+                        && !registry.isReserved(alpine.rootVolume())
+                        && ExecutionSessionRegistry.get(alpine.id()) == null
+                        && !InstanceLaunchGuard.isInFlight(alpine.id()),
                 5_000, "second coordinator launch did not finish transitioning to STOPPED and release root");
     }
 
@@ -1723,26 +1731,32 @@ public final class UmlInstanceLauncherContractTest {
                         false,
                         null,
                         debian.kernelProfile());
-        ExecutionSession session = launcher.launch(matching);
-        assertTrue(session instanceof UmlInstanceLauncher.Session);
-        UmlInstanceLauncher.Session umlSession = (UmlInstanceLauncher.Session) session;
-        assertEquals(-1L, umlSession.launchTimeline().elapsedMs(LaunchTimeline.Stage.SYSTEMD_READY));
-        handle.guestPtyOut().write(
-                ("\u001b]133;B;orchestella=prompt\u0007"
-                        + "\u001b]133;O;orchestella=systemd-ready\u0007\n")
-                        .getBytes(StandardCharsets.UTF_8));
-        handle.guestPtyOut().flush();
-        handle.guestPtyOut().close();
-        try (InputStream out = session.terminalOutput()) {
-            byte[] buf = new byte[256];
-            while (out.read(buf) != -1) {
-                // drain stream through FilterInputStream
+        String launchGen = InstanceLaunchGuard.begin(debian.id());
+        assertNotNull("expected launch guard generation", launchGen);
+        try {
+            ExecutionSession session = launcher.launch(matching);
+            assertTrue(session instanceof UmlInstanceLauncher.Session);
+            UmlInstanceLauncher.Session umlSession = (UmlInstanceLauncher.Session) session;
+            assertEquals(-1L, umlSession.launchTimeline().elapsedMs(LaunchTimeline.Stage.SYSTEMD_READY));
+            handle.guestPtyOut().write(
+                    ("\u001b]133;B;orchestella=prompt\u0007"
+                            + "\u001b]133;O;orchestella=systemd-ready\u0007\n")
+                            .getBytes(StandardCharsets.UTF_8));
+            handle.guestPtyOut().flush();
+            handle.guestPtyOut().close();
+            try (InputStream out = session.terminalOutput()) {
+                byte[] buf = new byte[256];
+                while (out.read(buf) != -1) {
+                    // drain stream through FilterInputStream
+                }
             }
+            assertTrue(
+                    "expected SYSTEMD_READY to be marked automatically",
+                    umlSession.launchTimeline().elapsedMs(LaunchTimeline.Stage.SYSTEMD_READY) >= 0L);
+            ((RuntimeOwnedSession) session).stopRuntime(200L);
+        } finally {
+            InstanceLaunchGuard.end(debian.id(), launchGen);
         }
-        assertTrue(
-                "expected SYSTEMD_READY to be marked automatically",
-                umlSession.launchTimeline().elapsedMs(LaunchTimeline.Stage.SYSTEMD_READY) >= 0L);
-        ((RuntimeOwnedSession) session).stopRuntime(200L);
     }
 
     private static InstanceLaunchCoordinator.FactsSource unarmedFacts() {

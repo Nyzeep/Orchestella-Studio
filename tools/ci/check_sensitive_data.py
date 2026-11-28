@@ -302,14 +302,31 @@ def _line_has_absolute_path(line: str) -> bool:
     return bool(_WINDOWS_DRIVE_RE.search(line) or _HOME_PATH_RE.search(line))
 
 
+_SYSTEMD_UNIT_SUFFIXES = (
+    ".service",
+    ".socket",
+    ".target",
+    ".timer",
+    ".mount",
+    ".path",
+    ".slice",
+    ".scope",
+)
+
+
 def _line_has_personal_email(line: str) -> bool:
     for match in _EMAIL_RE.finditer(line):
         # Generic git remote pseudo-address, not a personal mailbox.
-        if match.group(0).lower() == "git@github.com":
+        lower = match.group(0).lower()
+        if lower == "git@github.com":
             continue
         # Kotlin qualified-this expressions such as this@Activity.member
         # are shaped like an address but are code, not an email.
-        if match.group(0).lower().startswith("this@"):
+        if lower.startswith("this@"):
+            continue
+        # Systemd template units such as serial-getty@ttyS0.service and
+        # getty@tty1.service match <user>@<host>.<tld> syntactically.
+        if lower.endswith(_SYSTEMD_UNIT_SUFFIXES):
             continue
         return True
     return False
@@ -479,6 +496,8 @@ def run_self_test() -> bool:
             "android" + "_id=" + "redacted",
             "@Composable",
             "this" + "@" + "GuestFeaturesActivity" + "." + "id",
+            "serial-getty" + "@" + "ttyS0.service",
+            "getty" + "@" + "tty1.service",
             "/tmp/fixture",
             "/var/tmp/fixture",
             "/dev/shm/fixture",
