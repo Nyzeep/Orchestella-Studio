@@ -992,11 +992,19 @@ public final class UmlInstanceLauncherContractTest {
         byte[] echoedPlusReady = ("\r\nORCHESTELLA/HELLO 1 1 " + TOKEN + "\r\n"
                 + "DROIDLAYER/HELLO 1 1 " + TOKEN + "\r\n"
                 + "ORCHESTELLA/READY 1\n").getBytes(StandardCharsets.US_ASCII);
-        ByteArrayOutputStream capturedOutbound = new ByteArrayOutputStream();
         try (PipedOutputStream fakeGuestOut = new PipedOutputStream();
              PipedInputStream inbound = new PipedInputStream(fakeGuestOut)) {
-            fakeGuestOut.write(echoedPlusReady);
-            fakeGuestOut.flush();
+            AtomicBoolean guestResponded = new AtomicBoolean(false);
+            ByteArrayOutputStream capturedOutbound = new ByteArrayOutputStream() {
+                @Override
+                public void flush() throws IOException {
+                    super.flush();
+                    if (size() > 0 && guestResponded.compareAndSet(false, true)) {
+                        fakeGuestOut.write(echoedPlusReady);
+                        fakeGuestOut.flush();
+                    }
+                }
+            };
             BridgeClient client = new BridgeClient(
                     new UmlInstanceLauncher.PreAuthHelloEchoFilterInputStream(inbound),
                     capturedOutbound);
@@ -1032,11 +1040,20 @@ public final class UmlInstanceLauncherContractTest {
                 + "ORCHESTELLA/ERROR unauthorized\n").getBytes(StandardCharsets.US_ASCII);
         try (PipedOutputStream errGuestOut = new PipedOutputStream();
              PipedInputStream errInbound = new PipedInputStream(errGuestOut)) {
-            errGuestOut.write(genuineError);
-            errGuestOut.flush();
+            AtomicBoolean errResponded = new AtomicBoolean(false);
+            ByteArrayOutputStream errOutbound = new ByteArrayOutputStream() {
+                @Override
+                public void flush() throws IOException {
+                    super.flush();
+                    if (size() > 0 && errResponded.compareAndSet(false, true)) {
+                        errGuestOut.write(genuineError);
+                        errGuestOut.flush();
+                    }
+                }
+            };
             BridgeClient failingClient = new BridgeClient(
                     new UmlInstanceLauncher.PreAuthHelloEchoFilterInputStream(errInbound),
-                    new ByteArrayOutputStream());
+                    errOutbound);
             failingClient.startResponsePump(line -> "ORCHESTELLA/ERROR unauthenticated\n", 1_000L, 1_000L);
             BridgeClient.Result failed = failingClient.handshake(TOKEN);
             assertFalse(failed.accepted());
@@ -1743,16 +1760,10 @@ public final class UmlInstanceLauncherContractTest {
                             + "\u001b]133;O;orchestella=systemd-ready\u0007\n")
                             .getBytes(StandardCharsets.UTF_8));
             handle.guestPtyOut().flush();
-            handle.guestPtyOut().close();
-            try (InputStream out = session.terminalOutput()) {
-                byte[] buf = new byte[256];
-                while (out.read(buf) != -1) {
-                    // drain stream through FilterInputStream
-                }
-            }
-            assertTrue(
-                    "expected SYSTEMD_READY to be marked automatically",
-                    umlSession.launchTimeline().elapsedMs(LaunchTimeline.Stage.SYSTEMD_READY) >= 0L);
+            awaitCondition(
+                    () -> umlSession.launchTimeline().elapsedMs(LaunchTimeline.Stage.SYSTEMD_READY) >= 0L,
+                    5_000,
+                    "expected SYSTEMD_READY to be marked automatically");
             ((RuntimeOwnedSession) session).stopRuntime(200L);
         } finally {
             InstanceLaunchGuard.end(debian.id(), launchGen);
