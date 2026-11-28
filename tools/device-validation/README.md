@@ -117,3 +117,75 @@ To explicitly retry baseline installation on that preserved openSUSE QA root, ad
 Retry collection uses the remaining overall `--timeout` (up to 7200 seconds), rather than the readonly collector's 60-second bound. A matching zero command/end return code and final persisted `status=awaiting-init` or `status=ready` are required for `retryCheckpointReached: true`; historical ready lines in package logs do not count. Package failure still saves complete terminal output and `recovery-diagnostics.json` before controlled POWER/owned cleanup. Results add `ownerOperation: baseline-retry`, `retryExitCode`, `retryState`, and `retryCheckpointReached`. They retain `diagnosticOnly: true`, `baselinePassed: false`, `distroPassed: false`, and `passed: false`; awaiting-init confirms a package checkpoint, not native services readiness. `operationSucceeded`/exit 0 require that checkpoint, complete collection and successful controlled shutdown/cleanup. Failed packages, missing end markers or shutdown errors leave the operation failed.
 
 An earlier completed openSUSE diagnostic result can be an explicit resume source even without `failedStage`, provided it is diagnostic-only, baseline-not-passed, has collected diagnostics and a successful controlled diagnostic operation, retains the raw, and contains matching APK/plan/launch hashes. The original identity/credentials/runtime/phone/PID ownership checks still run. A successful distro result, incomplete diagnostic, fabricated baseline pass or missing source hashes is refused. Use the most recent QA run and its matching plan so phone runtime hashes reflect the last attempt.
+
+## Wave 02+ Isolated QA Validation, Exact Package Cleanup & Provenance (`run_w0105_full_validation.py`)
+
+`run_w0105_full_validation.py` (backed by `qa_package_guard.py` and `evidence_provenance.py`) enforces isolated QA package boundaries and strict candidate/device provenance before touching any device or evidence ledger.
+
+### Key Safety Rules
+
+1. **Exact QA target only**: Only `io.github.nyzeep.orchestella.qa.<purpose>` (`[a-z0-9]{1,32}`, default `w0105`, override via `--qa-purpose <purpose>` or `--package`) and its exact `<pkg>.test` instrumentation package are accepted. Release (`io.github.nyzeep.orchestella`), dev (`io.github.nyzeep.orchestella.dev`), mismatched QA purposes, mismatched signing certificates, missing ABIs (`arm64-v8a`), or wrong instrumentation `targetPackage`s fail closed on the host with **zero ADB write calls**.
+2. **Incremental install by default**: Normal runs execute `adb install -r -t` with **zero uninstalls**, preserving QA app data and all non-target packages (including daily-use release/dev/other-QA apps). On signing-key conflict (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`), installation aborts immediately and prompts the operator to either re-sign with the matching key or pass `--clean-install`.
+3. **Explicit `--clean-install`**: Opt-in only; uninstalls strictly `<qa_pkg>.test` and `<qa_pkg>` (never wildcard prefix deletion).
+4. **Read-only `--skip-install`**: Verifies on-device installed app APK SHA-256, test APK SHA-256, exact instrumentation registration (`pm list instrumentation`), and staged `files/` input SHA-256s via `run-as` before running any test action.
+5. **Evidence provenance & `--resume`**:
+   - Fresh runs require a new `--evidence-dir`; if `candidate-manifest.json`, `ledger.jsonl`, or `summary.json` already exists, the runner refuses and instructs the operator to use a new directory or `--resume`.
+   - `--resume` acquires `.evidence.lock` (preventing concurrent writes), rejects legacy v1 manifests (`LEGACY_SCHEMA_NO_PROVENANCE`, keeping historical records read-only), performs a field-by-field diff of Studio commit, runner/helper digests, app/test APK & cert digests, built-in kernel/stub/initramfs/Alpine payloads, rootfs/fixture inputs, device alias, and `host_page_size`, preserves `candidate-manifest.json` byte-for-byte, and records each run action in `run-actions.jsonl`.
+   - Every ledger row carries v2 provenance digests and monotonic `attempt_index` / `supersedes_run_id` / `supersedes_row_index` retry links; `--resume` skipping and `summary.json` aggregation share `evidence_provenance.validate_and_select_ledger`.
+
+### Sanitized Usage Examples (Wave 02+)
+
+All logs, manifests, and device aliases must use sanitized aliases (such as `device-4k` or `device-16k`) and store artifacts outside the git repository under `$EVIDENCE_ROOT` (see `docs/standards/WORKSPACE-LAYOUT.md`).
+
+```powershell
+# 1. Host preflight + read-only multi-package device check (zero ADB writes)
+python -B tools/device-validation/run_w0105_full_validation.py `
+  --device-alias device-4k `
+  --qa-purpose w0203 `
+  --app-apk "$EVIDENCE_ROOT/app-debug-fullpkg.apk" `
+  --test-apk "$EVIDENCE_ROOT/app-debug-androidTest.apk" `
+  --debian-tar "$ARTIFACTS_ROOT/debian-13-rootfs.tar.xz" `
+  --fixtures-dir "$EVIDENCE_ROOT/fixtures" `
+  --evidence-dir "$EVIDENCE_ROOT/w02-03-run1" `
+  --mode smoke --dry-run
+
+# 2. Fresh run with default incremental install (preserves all other packages)
+python -B tools/device-validation/run_w0105_full_validation.py `
+  --device-alias device-4k `
+  --qa-purpose w0203 `
+  --app-apk "$EVIDENCE_ROOT/app-debug-fullpkg.apk" `
+  --test-apk "$EVIDENCE_ROOT/app-debug-androidTest.apk" `
+  --debian-tar "$ARTIFACTS_ROOT/debian-13-rootfs.tar.xz" `
+  --fixtures-dir "$EVIDENCE_ROOT/fixtures" `
+  --evidence-dir "$EVIDENCE_ROOT/w02-03-run1" `
+  --mode all
+
+# 3. Resume same verified candidate without reinstalling
+python -B tools/device-validation/run_w0105_full_validation.py `
+  --device-alias device-4k `
+  --qa-purpose w0203 `
+  --app-apk "$EVIDENCE_ROOT/app-debug-fullpkg.apk" `
+  --test-apk "$EVIDENCE_ROOT/app-debug-androidTest.apk" `
+  --debian-tar "$ARTIFACTS_ROOT/debian-13-rootfs.tar.xz" `
+  --fixtures-dir "$EVIDENCE_ROOT/fixtures" `
+  --evidence-dir "$EVIDENCE_ROOT/w02-03-run1" `
+  --mode all --resume --skip-install
+
+# 4. Read-only audit of any historical (v1) or current (v2) evidence directory
+python -B tools/device-validation/run_w0105_full_validation.py `
+  --evidence-dir "$EVIDENCE_ROOT/w01-05" --audit-only
+```
+
+### Package Cleanup & Device Mutation Audit (`tools/device-validation/`)
+
+| Script | Package Install / Uninstall Scope | Cleanup Scope & Guard Status |
+| --- | --- | --- |
+| `run_w0105_full_validation.py` | Incremental `install -r -t` by default; `--skip-install` read-only check; `--clean-install` opt-in. | **Safe (W02·01 converged)**: `qa_package_guard.clean_uninstall_qa_target` uninstalls strictly `<qa_pkg>.test` and `<qa_pkg>`; stages only into `/data/local/tmp/w0105-stage` and `files/w0104-fixtures` under the verified QA package. |
+| `run_w305_perf_bench.py` | Incremental `install -r -t` by default; `--clean-install` opt-in. | **Safe (W02·01 converged)**: `clean_uninstall_orchestella_packages` delegates to `qa_package_guard.clean_uninstall_qa_target(adb, args.package)`, rejecting release/dev/non-QA names. |
+| `run_uml_matrix.py` | Incremental `install -r -t` by default; `--clean-install` opt-in. | **Safe (W02·01 converged)**: `clean_uninstall_orchestella_packages` delegates to `qa_package_guard.clean_uninstall_qa_target(adb, args.package)`, rejecting release/dev/non-QA names. |
+| `run_w0104_docker_probe.py` | Legacy Wave 01 runner; uninstalls hardcoded `qa.w0103{.test,}` (unless `--keep-old-w0103`) and `qa.w0104{.test,}`. | **Legacy Wave 01 only (not for Wave 02+)**: does not touch release `io.github.nyzeep.orchestella`, but always reinstalls `qa.w0104` cleanly. |
+| `avf_device_mode.py` / `run_avf_device_validation.py` | Incremental `install -r [-t]` only; requires `.qa.` package. | No uninstall; read-only `run-as cat` for probe JSON. |
+| `avf_qa_staging.py` / `run_distro_smoke.py` | No package install/uninstall. | Removes only its own `/data/local/tmp/*` staging directory and newly created staging files on failure. |
+| `dv_pvm_compiler.py` / `dv_pvm_probe.py` / `dv_pvm_crossfire.py` | Incremental `install -r -t` on `--qa-package` (default `qa.dvpvm`). | No package uninstall; `run-as rm -f` removes only per-run `files/avf-qa/*` probe files. |
+| `test_terminal_keyboard.py` | None. | Removes only `/data/local/tmp/orchestella-terminal-ime-test.xml`. |
+| `avf_preflight.py` / `gui_desktop_acceptance.py` / `read_qa_ext4_file.py` | Read-only ADB only (`gui_desktop_acceptance.py` `INSTALL` is a guest `profilectl` action, not ADB). | Zero package install/uninstall or filesystem cleanup. |

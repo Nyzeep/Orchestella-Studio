@@ -690,24 +690,30 @@ class TestThermalCleanInstallAndHygiene(unittest.TestCase):
                 bench.validate_device_alias(bad)
 
         class _FakeResult:
-            def __init__(self, stdout: str) -> None:
+            def __init__(self, stdout: str, stderr: str = "", returncode: int = 0) -> None:
                 self.stdout = stdout
+                self.stderr = stderr
+                self.returncode = returncode
 
         class _FakeAdb:
             def __init__(self) -> None:
                 self.calls: list[tuple[str, ...]] = []
+                self.installed = {
+                    "io.github.nyzeep.orchestella",
+                    "io.github.nyzeep.orchestella.qa.w304",
+                    "io.github.nyzeep.orchestella.qa.w305",
+                    "io.github.nyzeep.orchestella.qa.w305.test",
+                    "com.unrelated.other",
+                    "io.github.other.orchestella",
+                }
 
             def run(self, *args: str, timeout: int = 120, check: bool = True) -> _FakeResult:
                 self.calls.append(args)
-                if args[:3] == ("shell", "pm", "list"):
-                    return _FakeResult(
-                        "package:io.github.nyzeep.orchestella\n"
-                        "package:io.github.nyzeep.orchestella.qa.w304\n"
-                        "package:io.github.nyzeep.orchestella.qa.w305\n"
-                        "package:io.github.nyzeep.orchestella.qa.w305.test\n"
-                        "package:com.unrelated.other\n"
-                        "package:io.github.other.orchestella\n"
-                    )
+                if args[:3] == ("shell", "pm", "path"):
+                    pkg = args[3]
+                    if pkg in self.installed:
+                        return _FakeResult(f"package:/data/app/{pkg}/base.apk\n")
+                    return _FakeResult("", returncode=1)
                 return _FakeResult("Success\n")
 
         fake_adb = _FakeAdb()
@@ -715,21 +721,19 @@ class TestThermalCleanInstallAndHygiene(unittest.TestCase):
         self.assertEqual(
             removed,
             [
-                "io.github.nyzeep.orchestella",
-                "io.github.nyzeep.orchestella.qa.w304",
-                "io.github.nyzeep.orchestella.qa.w305",
                 "io.github.nyzeep.orchestella.qa.w305.test",
+                "io.github.nyzeep.orchestella.qa.w305",
             ],
         )
         self.assertEqual(
-            fake_adb.calls[1:],
+            [c for c in fake_adb.calls if c[0] == "uninstall"],
             [
-                ("uninstall", "io.github.nyzeep.orchestella"),
-                ("uninstall", "io.github.nyzeep.orchestella.qa.w304"),
-                ("uninstall", "io.github.nyzeep.orchestella.qa.w305"),
                 ("uninstall", "io.github.nyzeep.orchestella.qa.w305.test"),
+                ("uninstall", "io.github.nyzeep.orchestella.qa.w305"),
             ],
         )
+        with self.assertRaises(ValueError):
+            bench.clean_uninstall_orchestella_packages(fake_adb, "io.github.nyzeep.orchestella")
 
     def test_residual_processes_detects_uml_and_qemu_and_sanitize_redacts_paths(self) -> None:
         clean_ps = (

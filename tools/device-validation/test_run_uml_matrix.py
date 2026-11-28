@@ -390,8 +390,10 @@ class TestIncrementalLedgerAndSummary(unittest.TestCase):
                 run_uml_matrix.validate_device_alias(bad)
 
         class _FakeResult:
-            def __init__(self, stdout: str) -> None:
+            def __init__(self, stdout: str, stderr: str = "", returncode: int = 0) -> None:
                 self.stdout = stdout
+                self.stderr = stderr
+                self.returncode = returncode
 
         class _FakeAdb:
             def __init__(self) -> None:
@@ -399,12 +401,15 @@ class TestIncrementalLedgerAndSummary(unittest.TestCase):
 
             def run(self, *args: str, timeout: int = 120, check: bool = True) -> _FakeResult:
                 self.calls.append(args)
-                if args[:3] == ("shell", "pm", "list"):
-                    return _FakeResult(
-                        "package:io.github.nyzeep.orchestella.qa.fullpkg\n"
-                        "package:io.github.nyzeep.orchestella.qa.w304\n"
-                        "package:com.unrelated.other\n"
-                    )
+                if args[:3] == ("shell", "pm", "path"):
+                    pkg = args[3]
+                    if pkg in (
+                        "io.github.nyzeep.orchestella.qa.fullpkg",
+                        "io.github.nyzeep.orchestella.qa.w304",
+                        "io.github.nyzeep.orchestella",
+                    ):
+                        return _FakeResult(f"package:/data/app/{pkg}/base.apk\n")
+                    return _FakeResult("")
                 return _FakeResult("Success\n")
 
         fake_adb = _FakeAdb()
@@ -412,17 +417,17 @@ class TestIncrementalLedgerAndSummary(unittest.TestCase):
         self.assertEqual(
             removed,
             [
-                "io.github.nyzeep.orchestella.qa.fullpkg",
                 "io.github.nyzeep.orchestella.qa.w304",
             ],
         )
         self.assertEqual(
-            fake_adb.calls[1:],
+            [c for c in fake_adb.calls if c[0] == "uninstall"],
             [
-                ("uninstall", "io.github.nyzeep.orchestella.qa.fullpkg"),
                 ("uninstall", "io.github.nyzeep.orchestella.qa.w304"),
             ],
         )
+        with self.assertRaises(ValueError):
+            run_uml_matrix.clean_uninstall_orchestella_packages(fake_adb, "io.github.nyzeep.orchestella")
 
 
 if __name__ == "__main__":

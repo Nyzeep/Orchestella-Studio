@@ -20,6 +20,9 @@ import zipfile
 from pathlib import Path
 from typing import Any, Callable
 
+sys.path.insert(0, os.path.dirname(__file__))
+import qa_package_guard as qa_guard  # noqa: E402
+
 DISTRO = "alpine"
 DISTRO_VERSION = "3.22.2"
 ROOTFS_TAR = "alpine-minirootfs-3.22.2-aarch64.tar.gz"
@@ -174,19 +177,11 @@ def make_sample_id(host_page_size: int, bucket: str, pair_index: int, engine: st
 
 def clean_uninstall_orchestella_packages(
     adb: Any,
-    package_prefix: str = "io.github.nyzeep.orchestella",
+    package_name: str = DEFAULT_PACKAGE,
 ) -> list[str]:
-    listed = adb.run("shell", "pm", "list", "packages", package_prefix, check=False).stdout
-    removed: list[str] = []
-    for raw in listed.splitlines():
-        line = raw.strip()
-        if not line.startswith("package:"):
-            continue
-        pkg = line[len("package:"):].strip()
-        if pkg and pkg.startswith(package_prefix):
-            adb.run("uninstall", pkg, timeout=60, check=False)
-            removed.append(pkg)
-    return removed
+    """Uninstall ONLY the exact verified QA package and its ``.test`` package."""
+    result = qa_guard.clean_uninstall_qa_target(adb, package_name)
+    return result["removed"]
 
 
 def detect_compat_16kb_indicators(
@@ -2259,7 +2254,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--clean-install",
         action="store_true",
-        help="Uninstall any existing io.github.nyzeep.orchestella* packages before installing APKs",
+        help="Uninstall ONLY the exact target QA package and its .test package before installing APKs",
     )
     parser.add_argument(
         "--device-alias",
@@ -2391,10 +2386,14 @@ def main(argv: list[str] | None = None) -> int:
     adb = AdbClient(adb_path, args.serial)
     adb.discover_device()
 
-    if args.clean_install and not args.skip_install:
-        clean_uninstall_orchestella_packages(adb)
-
     if not args.skip_install:
+        qa_guard.resolve_qa_target(
+            package=args.package,
+            default_purpose="w305",
+            instrumentation_class="io.github.nyzeep.orchestella.W305PerfBenchProbe",
+        )
+        if args.clean_install:
+            clean_uninstall_orchestella_packages(adb, args.package)
         if args.apk:
             adb.run("install", "-r", "-t", args.apk, timeout=300)
         if args.test_apk:
