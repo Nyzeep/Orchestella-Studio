@@ -8,7 +8,9 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import android.net.Uri;
 import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
+import io.github.nyzeep.orchestella.runtime.capability.ExecutionStrategyAdmissionEvaluator;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeHandshake;
@@ -16,10 +18,13 @@ import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.contract.StorageContract;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlBootPlan;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlBridgeAdapter;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroCapabilityCatalog;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlEphemeralRootFixture;
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlInstanceBudget;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlInstanceRootfsProvisioner;
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlKernelPayloadContract;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlLaunchSpec;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlProcessFactory;
 import io.github.nyzeep.orchestella.runtime.engineuml.UmlProcessHandle;
@@ -41,6 +46,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -49,7 +55,9 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -1768,6 +1776,1078 @@ public final class UmlInstanceLauncherContractTest {
         } finally {
             InstanceLaunchGuard.end(debian.id(), launchGen);
         }
+    }
+
+    @Test(timeout = 20_000)
+    public void assembledDebianFullProfileRebootsWithoutSeedAfterCacheDeletion() throws Exception {
+        Path root = tmp.newFolder("debian-reboot-no-seed").toPath();
+        File filesDir = root.resolve("files").toFile();
+        File nativeDir = root.resolve("native").toFile();
+        assertTrue(new File(filesDir, "instances").mkdirs());
+        assertTrue(nativeDir.mkdirs());
+        Map<String, String> expectedFullPins = writeFullAndFastBinaries(nativeDir.toPath());
+        Map<String, String> manifestDigests = new LinkedHashMap<>(expectedFullPins);
+
+        Path storeDir = filesDir.toPath().resolve("instances");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(storeDir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, FIXED_CLOCK);
+        InstanceLifecycle.Instance debian = new IsolatedQaExecutionEntry(() -> true)
+                .ensurePersistentDebianInstance(store, controller, filesDir.toPath().resolve("qa-uml-roots"));
+        cleanupInstanceIds.add(debian.id());
+
+        byte[] fakeTarXz = "FAKE_DEBIAN_13_TAR_XZ_W0202".getBytes(StandardCharsets.UTF_8);
+        Path seedTar = Files.createDirectories(filesDir.toPath().resolve("distro-inputs"))
+                .resolve("debian-13-rootfs.tar.xz");
+        Files.write(seedTar, fakeTarXz);
+        String seedSha = sha256Hex(fakeTarXz);
+
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        AtomicInteger provisionSpawns = new AtomicInteger();
+        List<UmlLaunchSpec> bootSpecs = new ArrayList<>();
+        UmlProcessFactory sharedFactory = fakePersistentExt4Factory(provisionSpawns, bootSpecs, 6100L);
+        UmlInstanceRootfsProvisioner provisioner = new UmlInstanceRootfsProvisioner(
+                sharedFactory, registry, stubProvisionToolchain(), path -> 8L * 1024L * 1024L * 1024L, FIXED_CLOCK);
+
+        AtomicBoolean allowSeedLookup = new AtomicBoolean(true);
+        AtomicLong mono = new AtomicLong(1_000_000L);
+        UmlInstanceLauncher launcher = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir,
+                sharedFactory,
+                registry,
+                new UmlInstanceBudget(
+                        () -> new UmlInstanceBudget.HostMemorySnapshot(65536, 65536, false),
+                        () -> 0,
+                        UmlInstanceBudget.BudgetPolicy.defaults()),
+                new io.github.nyzeep.orchestella.runtime.network.LoopbackEndpointRegistry(),
+                provisioner,
+                (params, distroId) -> {
+                    if (!allowSeedLookup.get() || !Files.isRegularFile(seedTar)) {
+                        throw new AssertionError("seed supplier must not be invoked when rootfs cache is absent");
+                    }
+                    return new UmlInstanceRootfsProvisioner.SeedInput(
+                            "debian", "13", seedTar, null, null, seedSha, fakeTarXz.length);
+                },
+                store.stateMonitor(),
+                store,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L,
+                () -> true,
+                (profile, distroId, requireRootfsSeed) ->
+                        StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                                profile,
+                                distroId,
+                                16384,
+                                nativeDir,
+                                manifestDigests,
+                                expectedFullPins,
+                                Files.isRegularFile(seedTar),
+                                requireRootfsSeed,
+                                true));
+
+        InstanceLaunchCoordinator qaCoordinator = coordinator(
+                store, filesDir, true, launcher, new RecordingUmlFaceLane(), new RecordingUi());
+        InstanceLaunchCoordinator.LaunchOutcome boot1 = qaCoordinator.launch(debian);
+        assertTrue(boot1 instanceof InstanceLaunchCoordinator.LaunchOutcome.Launched);
+        awaitCondition(() -> isStopped(store, debian.id()) && !registry.isReserved(debian.rootVolume()),
+                5_000, "debian first provision did not complete cleanly");
+        assertEquals(1, provisionSpawns.get());
+        assertEquals(1, bootSpecs.size());
+        assertNotNull(store.load(debian.id()).provisioningEvidence());
+
+        // Delete the rootfs seed tarball and forbid seed lookup on reboot.
+        Files.deleteIfExists(seedTar);
+        allowSeedLookup.set(false);
+        byte[] ext4Header = readHeadBytes(debian.rootVolume(), 2048);
+
+        InstanceLifecycle.Instance reloadedDebian = store.load(debian.id());
+        InstanceLaunchCoordinator.LaunchOutcome boot2 = qaCoordinator.launch(reloadedDebian);
+        assertTrue("expected assembled Debian reboot without seed to succeed, got " + boot2,
+                boot2 instanceof InstanceLaunchCoordinator.LaunchOutcome.Launched);
+        awaitCondition(() -> isStopped(store, debian.id()) && !registry.isReserved(debian.rootVolume()),
+                5_000, "debian second boot did not complete cleanly");
+
+        assertEquals("must not reprovision assembled ext4 volume", 1, provisionSpawns.get());
+        assertEquals(2, bootSpecs.size());
+        UmlLaunchSpec secondBoot = bootSpecs.get(1);
+        assertTrue(secondBoot.kernelPath().endsWith("libuml_kernel_full.so"));
+        assertTrue(secondBoot.stubExePath().endsWith("libuml_stub_full.so"));
+        assertTrue(secondBoot.argv().contains("uminit=/sbin/init"));
+        assertTrue(secondBoot.argv().contains("umroot=/dev/ubda"));
+        assertEquals(
+                java.util.Arrays.toString(ext4Header),
+                java.util.Arrays.toString(readHeadBytes(debian.rootVolume(), 2048)));
+
+        // Direct launch with blank rootfsFileName ("") also resolves persisted Debian identity.
+        String blankRootfsGen = InstanceLaunchGuard.begin(debian.id());
+        assertNotNull(blankRootfsGen);
+        try {
+            ExecutionSession boot3Session = launcher.launch(withOverrides(
+                    fullDebianLaunchParams(filesDir, reloadedDebian),
+                    "",
+                    debian.rootVolume().toString(),
+                    null));
+            assertEquals(3, bootSpecs.size());
+            assertTrue(bootSpecs.get(2).argv().contains("uminit=/sbin/init"));
+            ((RuntimeOwnedSession) boot3Session).stopRuntime(200L);
+        } finally {
+            InstanceLaunchGuard.end(debian.id(), blankRootfsGen);
+        }
+    }
+
+    @Test(timeout = 20_000)
+    public void unassembledFullProfileWithMissingOrTamperedSeedRefusesCreation() throws Exception {
+        Path root = tmp.newFolder("debian-missing-tampered-seed").toPath();
+        File filesDir = root.resolve("files").toFile();
+        File nativeDir = root.resolve("native").toFile();
+        assertTrue(new File(filesDir, "instances").mkdirs());
+        assertTrue(nativeDir.mkdirs());
+        Map<String, String> expectedFullPins = writeFullAndFastBinaries(nativeDir.toPath());
+        Map<String, String> manifestDigests = new LinkedHashMap<>(expectedFullPins);
+
+        Path storeDir = filesDir.toPath().resolve("instances");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(storeDir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, FIXED_CLOCK);
+        InstanceLifecycle.Instance debian = new IsolatedQaExecutionEntry(() -> true)
+                .ensurePersistentDebianInstance(store, controller, filesDir.toPath().resolve("qa-uml-roots"));
+        cleanupInstanceIds.add(debian.id());
+
+        Path seedTar = filesDir.toPath().resolve("distro-inputs").resolve("debian-13-rootfs.tar.xz");
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        AtomicInteger provisionSpawns = new AtomicInteger();
+        List<UmlLaunchSpec> bootSpecs = new ArrayList<>();
+        UmlProcessFactory sharedFactory = fakePersistentExt4Factory(provisionSpawns, bootSpecs, 6200L);
+        UmlInstanceRootfsProvisioner provisioner = new UmlInstanceRootfsProvisioner(
+                sharedFactory, registry, stubProvisionToolchain(), path -> 8L * 1024L * 1024L * 1024L, FIXED_CLOCK);
+
+        AtomicLong mono = new AtomicLong(1_000_000L);
+        String expectedSeedSha = sha256Hex("EXPECTED_DEBIAN_13".getBytes(StandardCharsets.UTF_8));
+        UmlInstanceLauncher launcher = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir,
+                sharedFactory,
+                registry,
+                new UmlInstanceBudget(
+                        () -> new UmlInstanceBudget.HostMemorySnapshot(65536, 65536, false),
+                        () -> 0,
+                        UmlInstanceBudget.BudgetPolicy.defaults()),
+                new io.github.nyzeep.orchestella.runtime.network.LoopbackEndpointRegistry(),
+                provisioner,
+                (params, distroId) -> new UmlInstanceRootfsProvisioner.SeedInput(
+                        "debian", "13", seedTar, null, null,
+                        expectedSeedSha, 18L),
+                store.stateMonitor(),
+                store,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L,
+                () -> true,
+                (profile, distroId, requireRootfsSeed) ->
+                        StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                                profile,
+                                distroId,
+                                16384,
+                                nativeDir,
+                                manifestDigests,
+                                expectedFullPins,
+                                Files.isRegularFile(seedTar),
+                                requireRootfsSeed,
+                                true));
+
+        InstanceLaunchCoordinator qaCoordinator = coordinator(
+                store, filesDir, true, launcher, new RecordingUmlFaceLane(), new RecordingUi());
+        InstanceLaunchCoordinator.LaunchOutcome missingOutcome = qaCoordinator.launch(debian);
+        assertTrue(missingOutcome instanceof InstanceLaunchCoordinator.LaunchOutcome.Failed);
+        Throwable missingFailure = ((InstanceLaunchCoordinator.LaunchOutcome.Failed) missingOutcome).getFailure();
+        assertTrue(missingFailure instanceof UmlInstanceLauncher.UmlPayloadVerificationException);
+        assertTrue(missingFailure.getMessage(),
+                missingFailure.getMessage().contains(UmlKernelPayloadContract.FailureCode.MISSING_PAYLOAD.name()));
+        assertEquals(0, provisionSpawns.get());
+        assertEquals(0, bootSpecs.size());
+
+        // Present a tampered seed tarball -> provisioner rejects checksum/size mismatch cleanly.
+        Files.createDirectories(seedTar.getParent());
+        Files.write(seedTar, "TAMPERED_DEBIAN_13".getBytes(StandardCharsets.UTF_8));
+        InstanceLaunchCoordinator.LaunchOutcome tamperedOutcome = qaCoordinator.launch(store.load(debian.id()));
+        assertTrue(tamperedOutcome instanceof InstanceLaunchCoordinator.LaunchOutcome.Failed);
+        Throwable tamperedFailure = ((InstanceLaunchCoordinator.LaunchOutcome.Failed) tamperedOutcome).getFailure();
+        assertTrue(tamperedFailure instanceof UmlInstanceRootfsProvisioner.ProvisionException);
+        assertEquals(0, provisionSpawns.get());
+        assertEquals(0, bootSpecs.size());
+    }
+
+    @Test(timeout = 20_000)
+    public void missingOrEmptiedAssembledVolumeRefusesSilentReprovisionAndPreservesMetadata()
+            throws Exception {
+        Path root = tmp.newFolder("missing-assembled-vol").toPath();
+        File filesDir = root.resolve("files").toFile();
+        File nativeDir = root.resolve("native").toFile();
+        assertTrue(new File(filesDir, "instances").mkdirs());
+        assertTrue(nativeDir.mkdirs());
+        Map<String, String> expectedFullPins = writeFullAndFastBinaries(nativeDir.toPath());
+        Map<String, String> manifestDigests = new LinkedHashMap<>(expectedFullPins);
+
+        Path storeDir = filesDir.toPath().resolve("instances");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(storeDir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, FIXED_CLOCK);
+        InstanceLifecycle.Instance debian = new IsolatedQaExecutionEntry(() -> true)
+                .ensurePersistentDebianInstance(store, controller, filesDir.toPath().resolve("qa-uml-roots"));
+        cleanupInstanceIds.add(debian.id());
+        writeMinimalExt4Header(debian.rootVolume());
+        controller.recordProvisioning(
+                debian.id(),
+                new InstanceLifecycle.ProvisioningEvidence(
+                        InstanceLifecycle.PROVISIONING_MARKER_VERSION, "a".repeat(64), 1_789_000_000_000L));
+        InstanceLifecycle.Instance provisioned = store.load(debian.id());
+
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        AtomicLong mono = new AtomicLong(1_000_000L);
+        UmlInstanceLauncher launcher = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir,
+                (spec, cols, rows) -> new FakeUmlProcessHandle(6300L, new CountDownLatch(0), 0),
+                registry,
+                new UmlInstanceBudget(
+                        () -> new UmlInstanceBudget.HostMemorySnapshot(65536, 65536, false),
+                        () -> 0,
+                        UmlInstanceBudget.BudgetPolicy.defaults()),
+                new io.github.nyzeep.orchestella.runtime.network.LoopbackEndpointRegistry(),
+                new UmlInstanceRootfsProvisioner(
+                        (spec, cols, rows) -> {
+                            throw new AssertionError("must not reprovision lost assembled volume");
+                        },
+                        registry,
+                        stubProvisionToolchain(),
+                        path -> 8L * 1024L * 1024L * 1024L,
+                        FIXED_CLOCK),
+                (params, distroId) -> {
+                    throw new AssertionError("must not consult seed when assembled volume vanished");
+                },
+                store.stateMonitor(),
+                store,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L,
+                () -> true,
+                (profile, distroId, requireRootfsSeed) ->
+                        StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                                profile, distroId, 16384, nativeDir, manifestDigests, expectedFullPins,
+                                false, requireRootfsSeed, true));
+
+        InstanceStrategyLauncher.LaunchParameters params = fullDebianLaunchParams(filesDir, provisioned);
+
+        // 1. Deleted root volume -> recovery-required exception, metadata kept, no 0-byte stub created.
+        Files.deleteIfExists(provisioned.rootVolume());
+        try {
+            launcher.launch(params);
+            fail("expected UmlVolumeRecoveryException when assembled volume was deleted");
+        } catch (UmlInstanceLauncher.UmlVolumeRecoveryException expected) {
+            assertEquals(UmlBootPlan.RefusalCode.MISSING_ASSEMBLED_ROOT_VOLUME, expected.bootPlan().refusalCode());
+        }
+        assertFalse(Files.exists(provisioned.rootVolume()));
+        assertNotNull(store.load(debian.id()).provisioningEvidence());
+
+        // 2. Truncated/0-byte volume with provisioningEvidence -> same recovery refusal.
+        Files.createFile(provisioned.rootVolume());
+        try {
+            launcher.launch(params);
+            fail("expected UmlVolumeRecoveryException when assembled volume is empty");
+        } catch (UmlInstanceLauncher.UmlVolumeRecoveryException expected) {
+            assertEquals(UmlBootPlan.RefusalCode.MISSING_ASSEMBLED_ROOT_VOLUME, expected.bootPlan().refusalCode());
+        }
+        assertEquals(0L, Files.size(provisioned.rootVolume()));
+        assertNotNull(store.load(debian.id()).provisioningEvidence());
+    }
+
+    @Test(timeout = 20_000)
+    public void refusesBusyReservationCorruptVolumeAndConfigMismatchesPreservingDiskAndMetadata()
+            throws Exception {
+        Path root = tmp.newFolder("refusal-matrix").toPath();
+        File filesDir = root.resolve("files").toFile();
+        File nativeDir = root.resolve("native").toFile();
+        assertTrue(new File(filesDir, "instances").mkdirs());
+        assertTrue(nativeDir.mkdirs());
+        writeFullAndFastBinaries(nativeDir.toPath());
+
+        Path storeDir = filesDir.toPath().resolve("instances");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(storeDir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, FIXED_CLOCK);
+        InstanceLifecycle.Instance debian = new IsolatedQaExecutionEntry(() -> true)
+                .ensurePersistentDebianInstance(store, controller, filesDir.toPath().resolve("qa-uml-roots"));
+        cleanupInstanceIds.add(debian.id());
+
+        byte[] corruptSentinel = "CORRUPT_HEADER_DO_NOT_WIPE".getBytes(StandardCharsets.UTF_8);
+        Files.write(debian.rootVolume(), corruptSentinel);
+        controller.recordProvisioning(
+                debian.id(),
+                new InstanceLifecycle.ProvisioningEvidence(
+                        InstanceLifecycle.PROVISIONING_MARKER_VERSION, "b".repeat(64), 1_789_000_000_000L));
+
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        AtomicLong mono = new AtomicLong(1_000_000L);
+        UmlInstanceLauncher launcher = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir,
+                (spec, cols, rows) -> {
+                    throw new AssertionError("refused launches must never spawn UML");
+                },
+                registry,
+                new UmlInstanceRootfsProvisioner(
+                        (spec, cols, rows) -> new ImmediateConsoleProcess(0, ""),
+                        registry,
+                        stageDir -> {},
+                        path -> 8L * 1024L * 1024L * 1024L,
+                        FIXED_CLOCK),
+                (params, distroId) -> {
+                    throw new AssertionError("refused launches must never load seed");
+                },
+                store.stateMonitor(),
+                store,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L);
+
+        // 1. Busy root reservation.
+        UmlRootReservationRegistry.Reservation busyHold =
+                registry.acquire(debian.rootVolume(), "other-owner", "gen-busy");
+        try {
+            try {
+                launcher.launch(fullDebianLaunchParams(filesDir, debian));
+                fail("expected RootVolumeBusyException");
+            } catch (UmlRootReservationRegistry.RootVolumeBusyException ignored) {
+                // Expected.
+            }
+        } finally {
+            registry.release(busyHold);
+        }
+
+        // 2. Corrupt root volume header -> UmlVolumeRecoveryException(INVALID_ROOT_VOLUME), bytes kept.
+        try {
+            launcher.launch(fullDebianLaunchParams(filesDir, debian));
+            fail("expected UmlVolumeRecoveryException for corrupt header");
+        } catch (UmlInstanceLauncher.UmlVolumeRecoveryException expected) {
+            assertEquals(UmlBootPlan.RefusalCode.INVALID_ROOT_VOLUME, expected.bootPlan().refusalCode());
+        }
+        assertEquals("CORRUPT_HEADER_DO_NOT_WIPE",
+                new String(Files.readAllBytes(debian.rootVolume()), StandardCharsets.UTF_8));
+        assertNotNull(store.load(debian.id()).provisioningEvidence());
+
+        // Restore valid ext4 header for remaining config mismatch assertions.
+        writeMinimalExt4Header(debian.rootVolume());
+
+        // 3. Distro mismatch.
+        try {
+            launcher.launch(withOverrides(fullDebianLaunchParams(filesDir, debian),
+                    "alpine-minirootfs-3.24.1-aarch64.tar.gz", debian.rootVolume().toString(), debian.kernelProfile()));
+            fail("expected distro mismatch refusal");
+        } catch (UmlInstanceLauncher.UmlLaunchAdmissionException expected) {
+            assertEquals(UmlBootPlan.RefusalCode.CONFIG_MISMATCH, expected.bootPlan().refusalCode());
+        }
+
+        // 4. Root volume path mismatch.
+        Path wrongVolume = filesDir.toPath().resolve("qa-uml-roots").resolve("other.raw");
+        try {
+            launcher.launch(withOverrides(fullDebianLaunchParams(filesDir, debian),
+                    "debian-13-rootfs.tar.xz", wrongVolume.toString(), debian.kernelProfile()));
+            fail("expected rootVolume path mismatch refusal");
+        } catch (UmlInstanceLauncher.UmlLaunchAdmissionException expected) {
+            assertEquals(UmlBootPlan.RefusalCode.CONFIG_MISMATCH, expected.bootPlan().refusalCode());
+        }
+
+        // 5. Unknown kernelProfile on an unpersisted instance.
+        InstanceStrategyLauncher.LaunchParameters unknownProfileParams =
+                new InstanceStrategyLauncher.LaunchParameters(
+                        UUID.randomUUID().toString(),
+                        debian.bridgeToken(),
+                        "debian-13-rootfs.tar.xz",
+                        debian.rootVolume().toString(),
+                        filesDir.toPath().resolve("runtime").resolve("unknown-prof").toString(),
+                        filesDir.toPath().resolve("distro-inputs").toString(),
+                        null,
+                        debian.hardwareConfig(),
+                        null, null, null,
+                        debian.hostname(),
+                        debian.defaultUser(),
+                        false,
+                        null,
+                        "ultra-v99-arm64");
+        try {
+            launcher.launch(unknownProfileParams);
+            fail("expected unknown kernelProfile refusal");
+        } catch (UmlInstanceLauncher.UmlLaunchAdmissionException expected) {
+            assertEquals(UmlBootPlan.RefusalCode.UNKNOWN_KERNEL_PROFILE, expected.bootPlan().refusalCode());
+        }
+
+        // 6. Persisted non-UML strategy cannot be launched through UmlInstanceLauncher.
+        Path swVol = filesDir.toPath().resolve("sw-vol.raw");
+        writeMinimalExt4Header(swVol);
+        InstanceLifecycle.Instance swInstance = new IsolatedQaExecutionEntry(() -> true).createInstance(
+                controller,
+                new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
+                swVol,
+                VmHardwareConfig.defaultConfig(),
+                new InstanceUserConfig(
+                        InstanceUserConfig.DEFAULT_ROOT_USER,
+                        "orchestellaqa",
+                        false,
+                        "sw-test"),
+                FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
+                StorageContract.RootVolumeFormat.RAW_SPARSE,
+                UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64);
+        cleanupInstanceIds.add(swInstance.id());
+        try {
+            launcher.launch(new InstanceStrategyLauncher.LaunchParameters(
+                    swInstance.id(),
+                    swInstance.bridgeToken(),
+                    "alpine-minirootfs-3.24.1-aarch64.tar.gz",
+                    swVol.toString(),
+                    filesDir.toPath().resolve("runtime").resolve(swInstance.id()).toString(),
+                    filesDir.toPath().resolve("distro-inputs").toString(),
+                    null,
+                    swInstance.hardwareConfig(),
+                    null, null, null,
+                    swInstance.hostname(),
+                    swInstance.defaultUser(),
+                    false,
+                    null,
+                    null));
+            fail("expected non-UML strategy refusal");
+        } catch (UmlInstanceLauncher.UmlLaunchAdmissionException expected) {
+            assertEquals(UmlBootPlan.RefusalCode.CONFIG_MISMATCH, expected.bootPlan().refusalCode());
+        }
+    }
+
+    @Test(timeout = 20_000)
+    public void nonQaChannelRefusesFullProfileLaunchViaCoordinatorAndDirectLauncherWithoutFallbackOrMutation()
+            throws Exception {
+        Path root = tmp.newFolder("non-qa-refusal").toPath();
+        File filesDir = root.resolve("files").toFile();
+        File nativeDir = root.resolve("native").toFile();
+        assertTrue(new File(filesDir, "instances").mkdirs());
+        assertTrue(nativeDir.mkdirs());
+        Map<String, String> expectedFullPins = writeFullAndFastBinaries(nativeDir.toPath());
+        Map<String, String> manifestDigests = new LinkedHashMap<>(expectedFullPins);
+
+        Path storeDir = filesDir.toPath().resolve("instances");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(storeDir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, FIXED_CLOCK);
+        InstanceLifecycle.Instance debian = new IsolatedQaExecutionEntry(() -> true)
+                .ensurePersistentDebianInstance(store, controller, filesDir.toPath().resolve("qa-uml-roots"));
+        cleanupInstanceIds.add(debian.id());
+        writeMinimalExt4Header(debian.rootVolume());
+        controller.recordProvisioning(
+                debian.id(),
+                new InstanceLifecycle.ProvisioningEvidence(
+                        InstanceLifecycle.PROVISIONING_MARKER_VERSION, "c".repeat(64), 1_789_000_000_000L));
+        InstanceLifecycle.Instance provisioned = store.load(debian.id());
+        byte[] diskSentinelBefore = readHeadBytes(provisioned.rootVolume(), 2048);
+        long diskSizeBefore = Files.size(provisioned.rootVolume());
+
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        AtomicLong mono = new AtomicLong(1_000_000L);
+        UmlInstanceLauncher nonQaLauncher = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir,
+                (spec, cols, rows) -> {
+                    throw new AssertionError("non-QA full-profile launch must not spawn UML");
+                },
+                registry,
+                new UmlInstanceBudget(
+                        () -> new UmlInstanceBudget.HostMemorySnapshot(65536, 65536, false),
+                        () -> 0,
+                        UmlInstanceBudget.BudgetPolicy.defaults()),
+                new io.github.nyzeep.orchestella.runtime.network.LoopbackEndpointRegistry(),
+                new UmlInstanceRootfsProvisioner(
+                        (spec, cols, rows) -> new ImmediateConsoleProcess(0, ""),
+                        registry,
+                        stageDir -> {},
+                        path -> 8L * 1024L * 1024L * 1024L,
+                        FIXED_CLOCK),
+                (params, distroId) -> {
+                    throw new AssertionError("seed supplier must not run");
+                },
+                store.stateMonitor(),
+                store,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L,
+                () -> false,
+                (profile, distroId, requireRootfsSeed) ->
+                        StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                                profile, distroId, 16384, nativeDir, manifestDigests, expectedFullPins,
+                                false, requireRootfsSeed, false));
+
+        // 1. Coordinator with isolatedQaEnabled=false, explicitUmlLaunchAllowed=true, umlAtomicFallbackEnabled=true.
+        List<ExecutionPolicyContract.LaunchDiagnostic> diagnostics = new ArrayList<>();
+        AtomicBoolean qemuCalled = new AtomicBoolean(false);
+        InstanceLaunchCoordinator nonQaCoordinator = new InstanceLaunchCoordinator(
+                store,
+                new FakeSettings(),
+                new RecordingForeground(),
+                new RecordingUi(),
+                new StubCopy(),
+                new NoOpDiagnostics(),
+                UmlInstanceLauncher::takeLastCleanupResult,
+                filesDir,
+                () -> "64GB RAM",
+                () -> false,
+                params -> {
+                    throw new AssertionError("AVF must not run");
+                },
+                params -> {
+                    qemuCalled.set(true);
+                    throw new AssertionError("QEMU atomic fallback must not run for channel refusal");
+                },
+                instanceId -> {
+                    throw new UnsupportedOperationException();
+                },
+                instanceId -> {
+                    throw new UnsupportedOperationException();
+                },
+                unarmedFacts(),
+                Optional::empty,
+                event -> {},
+                LaneClock.system(),
+                FIXED_CLOCK,
+                () -> {},
+                new RecordingUmlFaceLane(),
+                () -> false,
+                nonQaLauncher,
+                diagnostics::add,
+                () -> true,
+                () -> true);
+
+        InstanceLaunchCoordinator.LaunchOutcome coordinatorOutcome = nonQaCoordinator.launch(provisioned);
+        assertTrue(coordinatorOutcome instanceof InstanceLaunchCoordinator.LaunchOutcome.Failed);
+        Throwable failure = ((InstanceLaunchCoordinator.LaunchOutcome.Failed) coordinatorOutcome).getFailure();
+        assertTrue("expected ExecutionPolicyRefusalException, got " + failure,
+                failure instanceof ExecutionPolicyContract.ExecutionPolicyRefusalException);
+        ExecutionPolicyContract.ExecutionPolicyRefusalException refusal =
+                (ExecutionPolicyContract.ExecutionPolicyRefusalException) failure;
+        assertEquals(ExecutionPolicyContract.PreflightCode.PROMOTION_GATE_LOCKED, refusal.verdict().code());
+        assertFalse(qemuCalled.get());
+        assertTrue(diagnostics.stream().anyMatch(d -> d.preflightVerdict().isRefused()));
+
+        // 2. Direct launcher invocation also refuses with CHANNEL_NOT_ALLOWED.
+        try {
+            nonQaLauncher.launch(fullDebianLaunchParams(filesDir, provisioned));
+            fail("expected UmlLaunchAdmissionException on non-QA direct launch");
+        } catch (UmlInstanceLauncher.UmlLaunchAdmissionException expected) {
+            assertEquals(UmlBootPlan.RefusalCode.CHANNEL_NOT_ALLOWED, expected.bootPlan().refusalCode());
+        }
+
+        // Disk and metadata must remain completely preserved.
+        assertEquals(diskSizeBefore, Files.size(provisioned.rootVolume()));
+        assertEquals(
+                java.util.Arrays.toString(diskSentinelBefore),
+                java.util.Arrays.toString(readHeadBytes(provisioned.rootVolume(), 2048)));
+        InstanceLifecycle.Instance after = store.load(debian.id());
+        assertEquals(provisioned.provisioningEvidence(), after.provisioningEvidence());
+        assertEquals("full-smp-arm64", after.kernelProfile());
+    }
+
+    @Test(timeout = 20_000)
+    public void missingOrTamperedFullBinaryOnAssembledVolumeRefusesExplicitlyWithoutFallback()
+            throws Exception {
+        Path root = tmp.newFolder("missing-tampered-bin").toPath();
+        File filesDir = root.resolve("files").toFile();
+        File nativeDir = root.resolve("native").toFile();
+        assertTrue(new File(filesDir, "instances").mkdirs());
+        assertTrue(nativeDir.mkdirs());
+        Map<String, String> expectedFullPins = writeFullAndFastBinaries(nativeDir.toPath());
+        Map<String, String> manifestDigests = new LinkedHashMap<>(expectedFullPins);
+
+        Path storeDir = filesDir.toPath().resolve("instances");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(storeDir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, FIXED_CLOCK);
+        InstanceLifecycle.Instance debian = new IsolatedQaExecutionEntry(() -> true)
+                .ensurePersistentDebianInstance(store, controller, filesDir.toPath().resolve("qa-uml-roots"));
+        cleanupInstanceIds.add(debian.id());
+        writeMinimalExt4Header(debian.rootVolume());
+        controller.recordProvisioning(
+                debian.id(),
+                new InstanceLifecycle.ProvisioningEvidence(
+                        InstanceLifecycle.PROVISIONING_MARKER_VERSION, "d".repeat(64), 1_789_000_000_000L));
+        InstanceLifecycle.Instance provisioned = store.load(debian.id());
+
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        AtomicBoolean umlSpawned = new AtomicBoolean(false);
+        AtomicBoolean qemuSpawned = new AtomicBoolean(false);
+        AtomicLong mono = new AtomicLong(1_000_000L);
+        UmlInstanceLauncher launcher = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir,
+                (spec, cols, rows) -> {
+                    umlSpawned.set(true);
+                    throw new AssertionError("must not spawn UML with missing/tampered full binary");
+                },
+                registry,
+                new UmlInstanceBudget(
+                        () -> new UmlInstanceBudget.HostMemorySnapshot(65536, 65536, false),
+                        () -> 0,
+                        UmlInstanceBudget.BudgetPolicy.defaults()),
+                new io.github.nyzeep.orchestella.runtime.network.LoopbackEndpointRegistry(),
+                new UmlInstanceRootfsProvisioner(
+                        (spec, cols, rows) -> new ImmediateConsoleProcess(0, ""),
+                        registry,
+                        stageDir -> {},
+                        path -> 8L * 1024L * 1024L * 1024L,
+                        FIXED_CLOCK),
+                (params, distroId) -> {
+                    throw new AssertionError("seed must not be requested");
+                },
+                store.stateMonitor(),
+                store,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L,
+                () -> true,
+                (profile, distroId, requireRootfsSeed) ->
+                        StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                                profile, distroId, 16384, nativeDir, manifestDigests, expectedFullPins,
+                                false, requireRootfsSeed, true));
+
+        InstanceLaunchCoordinator coordinatorWithFallback = new InstanceLaunchCoordinator(
+                store,
+                new FakeSettings(),
+                new RecordingForeground(),
+                new RecordingUi(),
+                new StubCopy(),
+                new NoOpDiagnostics(),
+                UmlInstanceLauncher::takeLastCleanupResult,
+                filesDir,
+                () -> "64GB RAM",
+                () -> false,
+                params -> {
+                    throw new AssertionError("AVF must not run");
+                },
+                params -> {
+                    qemuSpawned.set(true);
+                    throw new AssertionError("QEMU must not run");
+                },
+                instanceId -> {
+                    throw new UnsupportedOperationException();
+                },
+                instanceId -> {
+                    throw new UnsupportedOperationException();
+                },
+                unarmedFacts(),
+                Optional::empty,
+                event -> {},
+                LaneClock.system(),
+                FIXED_CLOCK,
+                () -> {},
+                new RecordingUmlFaceLane(),
+                () -> true,
+                launcher,
+                diagnostic -> {},
+                () -> true,
+                () -> true);
+
+        // 1. Delete libuml_kernel_full.so -> UmlPayloadVerificationException(MISSING_PAYLOAD/PROFILE_MISMATCH).
+        Path fullKernelPath = nativeDir.toPath().resolve("libuml_kernel_full.so");
+        byte[] savedKernel = Files.readAllBytes(fullKernelPath);
+        Files.delete(fullKernelPath);
+        InstanceLaunchCoordinator.LaunchOutcome missingKernel = coordinatorWithFallback.launch(provisioned);
+        assertTrue(missingKernel instanceof InstanceLaunchCoordinator.LaunchOutcome.Failed);
+        Throwable missingKernelFailure = ((InstanceLaunchCoordinator.LaunchOutcome.Failed) missingKernel).getFailure();
+        assertTrue(missingKernelFailure instanceof UmlInstanceLauncher.UmlPayloadVerificationException);
+        String missingMsg = missingKernelFailure.getMessage();
+        assertTrue(missingMsg, missingMsg.contains(UmlKernelPayloadContract.FailureCode.PROFILE_MISMATCH.name())
+                || missingMsg.contains(UmlKernelPayloadContract.FailureCode.MISSING_PAYLOAD.name()));
+        assertFalse(umlSpawned.get());
+
+        // 2. Replace libuml_kernel_full.so with tampered bytes -> UmlPayloadVerificationException(SHA256_MISMATCH).
+        Files.write(fullKernelPath, "TAMPERED_FULL_KERNEL".getBytes(StandardCharsets.UTF_8));
+        InstanceLaunchCoordinator.LaunchOutcome tamperedKernel = coordinatorWithFallback.launch(store.load(debian.id()));
+        assertTrue(tamperedKernel instanceof InstanceLaunchCoordinator.LaunchOutcome.Failed);
+        Throwable tamperedFailure = ((InstanceLaunchCoordinator.LaunchOutcome.Failed) tamperedKernel).getFailure();
+        assertTrue(tamperedFailure instanceof UmlInstanceLauncher.UmlPayloadVerificationException);
+        String tamperedMsg = tamperedFailure.getMessage();
+        assertTrue(tamperedMsg, tamperedMsg.contains(UmlKernelPayloadContract.FailureCode.SHA256_MISMATCH.name()));
+        assertFalse(umlSpawned.get());
+        Files.write(fullKernelPath, savedKernel);
+
+        // 3. Delete libuml_stub_full.so -> UmlPayloadVerificationException(MISSING_STUB).
+        Path fullStubPath = nativeDir.toPath().resolve("libuml_stub_full.so");
+        Files.delete(fullStubPath);
+        InstanceLaunchCoordinator.LaunchOutcome missingStub = coordinatorWithFallback.launch(store.load(debian.id()));
+        assertTrue(missingStub instanceof InstanceLaunchCoordinator.LaunchOutcome.Failed);
+        Throwable missingStubFailure = ((InstanceLaunchCoordinator.LaunchOutcome.Failed) missingStub).getFailure();
+        assertTrue(missingStubFailure instanceof UmlInstanceLauncher.UmlPayloadVerificationException);
+        String missingStubMsg = missingStubFailure.getMessage();
+        assertTrue(missingStubMsg, missingStubMsg.contains(UmlKernelPayloadContract.FailureCode.MISSING_STUB.name()));
+        assertFalse(umlSpawned.get());
+        assertFalse("missing/tampered full payload must not silently drop into QEMU", qemuSpawned.get());
+    }
+
+    @Test(timeout = 20_000)
+    public void isolatedQaReusableSelectionAndSafRoundTripBootWithoutSeedAndRefuseNonQa()
+            throws Exception {
+        Path root = tmp.newFolder("saf-roundtrip-full-uml").toPath();
+        File filesDir = root.resolve("files").toFile();
+        File nativeDir = root.resolve("native").toFile();
+        assertTrue(new File(filesDir, "instances").mkdirs());
+        assertTrue(nativeDir.mkdirs());
+        Map<String, String> expectedFullPins = writeFullAndFastBinaries(nativeDir.toPath());
+        Map<String, String> manifestDigests = new LinkedHashMap<>(expectedFullPins);
+
+        Path storeDir1 = filesDir.toPath().resolve("instances");
+        InstanceLifecycle.FileStore store1 = new InstanceLifecycle.FileStore(storeDir1);
+        InstanceLifecycle.Controller controller1 = new InstanceLifecycle.Controller(store1, FIXED_CLOCK);
+        IsolatedQaExecutionEntry qaEntry = new IsolatedQaExecutionEntry(() -> true);
+
+        InstanceLifecycle.Instance created = qaEntry.ensurePersistentDebianInstance(
+                store1, controller1, filesDir.toPath().resolve("qa-uml-roots"));
+        cleanupInstanceIds.add(created.id());
+        // Calling ensurePersistentDebianInstance again while stopped/unlaunched reuses same id + volume.
+        InstanceLifecycle.Instance reused1 = qaEntry.ensurePersistentDebianInstance(
+                store1, controller1, filesDir.toPath().resolve("qa-uml-roots"));
+        assertEquals(created.id(), reused1.id());
+        assertEquals(created.rootVolume(), reused1.rootVolume());
+
+        byte[] fakeTarXz = "FAKE_DEBIAN_13_SAF_TAR_XZ".getBytes(StandardCharsets.UTF_8);
+        Path seedTar = Files.createDirectories(filesDir.toPath().resolve("distro-inputs"))
+                .resolve("debian-13-rootfs.tar.xz");
+        Files.write(seedTar, fakeTarXz);
+        String seedSha = sha256Hex(fakeTarXz);
+
+        UmlRootReservationRegistry registry = new UmlRootReservationRegistry();
+        AtomicInteger provisionSpawns = new AtomicInteger();
+        List<UmlLaunchSpec> bootSpecs = new ArrayList<>();
+        UmlProcessFactory sharedFactory = fakePersistentExt4Factory(provisionSpawns, bootSpecs, 6400L);
+        UmlInstanceRootfsProvisioner provisioner = new UmlInstanceRootfsProvisioner(
+                sharedFactory, registry, stubProvisionToolchain(), path -> 8L * 1024L * 1024L * 1024L, FIXED_CLOCK);
+
+        AtomicLong mono = new AtomicLong(1_000_000L);
+        UmlInstanceLauncher launcher1 = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir,
+                sharedFactory,
+                registry,
+                new UmlInstanceBudget(
+                        () -> new UmlInstanceBudget.HostMemorySnapshot(65536, 65536, false),
+                        () -> 0,
+                        UmlInstanceBudget.BudgetPolicy.defaults()),
+                new io.github.nyzeep.orchestella.runtime.network.LoopbackEndpointRegistry(),
+                provisioner,
+                (params, distroId) -> new UmlInstanceRootfsProvisioner.SeedInput(
+                        "debian", "13", seedTar, null, null, seedSha, fakeTarXz.length),
+                store1.stateMonitor(),
+                store1,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L,
+                () -> true,
+                (profile, distroId, requireRootfsSeed) ->
+                        StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                                profile, distroId, 16384, nativeDir, manifestDigests, expectedFullPins,
+                                Files.isRegularFile(seedTar), requireRootfsSeed, true));
+
+        InstanceLaunchCoordinator coord1 = coordinator(
+                store1, filesDir, true, launcher1, new RecordingUmlFaceLane(), new RecordingUi());
+        assertTrue(coord1.launch(created) instanceof InstanceLaunchCoordinator.LaunchOutcome.Launched);
+        awaitCondition(() -> isStopped(store1, created.id()) && !registry.isReserved(created.rootVolume()),
+                5_000, "first boot before export did not finish");
+
+        // ensurePersistentDebianInstance on already provisioned/stopped instance also reuses it.
+        InstanceLifecycle.Instance reusedAfterProvision = qaEntry.ensurePersistentDebianInstance(
+                store1, controller1, filesDir.toPath().resolve("qa-uml-roots"));
+        assertEquals(created.id(), reusedAfterProvision.id());
+
+        // Export via SAF (using a compact 1 MiB ext4 volume so pure-JVM test avoids 4 GiB disk I/O)
+        // and import into a second store (simulating fresh install / restore without seed cache).
+        Path safSourceVolume = filesDir.toPath().resolve("qa-uml-roots").resolve("saf-debian-src.raw");
+        writeMinimalExt4Header(safSourceVolume, 1024L * 1024L);
+        InstanceLifecycle.Instance safSource = qaEntry.createInstance(
+                controller1,
+                new InstanceLifecycle.DistroReference("debian", "13"),
+                safSourceVolume,
+                reusedAfterProvision.hardwareConfig(),
+                new InstanceUserConfig(
+                        InstanceUserConfig.DEFAULT_ROOT_USER,
+                        "orchestellaqa",
+                        false,
+                        "qa-uml-debian"),
+                FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                StorageContract.RootVolumeFormat.RAW_SPARSE,
+                UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64);
+        cleanupInstanceIds.add(safSource.id());
+        controller1.beginProvisioning(safSource.id());
+        controller1.completeProvisioning(safSource.id());
+        controller1.recordProvisioning(
+                safSource.id(),
+                new InstanceLifecycle.ProvisioningEvidence(
+                        InstanceLifecycle.PROVISIONING_MARKER_VERSION, seedSha, 1_789_000_000_000L));
+        ByteArrayOutputStream exportedZip = new ByteArrayOutputStream();
+        AndroidSafExportAdapter exportAdapter = new AndroidSafExportAdapter(uri -> exportedZip, FIXED_CLOCK);
+        exportAdapter.exportToDocumentUri(
+                store1.load(safSource.id()),
+                android.net.TestUri.create("content://saf/export-debian.zip"));
+
+        File filesDir2 = root.resolve("files2").toFile();
+        Path storeDir2 = filesDir2.toPath().resolve("instances");
+        Files.createDirectories(storeDir2);
+        InstanceLifecycle.FileStore store2 = new InstanceLifecycle.FileStore(storeDir2);
+        InstanceLifecycle.Controller controller2 = new InstanceLifecycle.Controller(store2, FIXED_CLOCK);
+        Path restoredVolume = filesDir2.toPath().resolve("qa-uml-roots").resolve("restored-debian.raw");
+        AndroidSafImportAdapter importAdapter = new AndroidSafImportAdapter(
+                uri -> new ByteArrayInputStream(exportedZip.toByteArray()), FIXED_CLOCK);
+        InstanceLifecycle.Instance imported = importAdapter.importFromDocumentUri(
+                android.net.TestUri.create("content://saf/export-debian.zip"), restoredVolume, controller2);
+        cleanupInstanceIds.add(imported.id());
+
+        assertNotNull(imported.provisioningEvidence());
+        assertEquals("full-smp-arm64", imported.kernelProfile());
+        assertEquals(FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL,
+                imported.executionIdentity().strategy().strategy());
+
+        Files.deleteIfExists(seedTar);
+        UmlInstanceLauncher qaImportedLauncher = new UmlInstanceLauncher(
+                nativeDir,
+                filesDir2,
+                sharedFactory,
+                registry,
+                new UmlInstanceBudget(
+                        () -> new UmlInstanceBudget.HostMemorySnapshot(65536, 65536, false),
+                        () -> 0,
+                        UmlInstanceBudget.BudgetPolicy.defaults()),
+                new io.github.nyzeep.orchestella.runtime.network.LoopbackEndpointRegistry(),
+                new UmlInstanceRootfsProvisioner(
+                        (spec, cols, rows) -> {
+                            throw new AssertionError("SAF imported volume must not re-provision");
+                        },
+                        registry,
+                        stubProvisionToolchain(),
+                        path -> 8L * 1024L * 1024L * 1024L,
+                        FIXED_CLOCK),
+                (params, distroId) -> {
+                    throw new AssertionError("SAF imported volume must not request seed");
+                },
+                store2.stateMonitor(),
+                store2,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L,
+                () -> true,
+                (profile, distroId, requireRootfsSeed) ->
+                        StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                                profile, distroId, 16384, nativeDir, manifestDigests, expectedFullPins,
+                                false, requireRootfsSeed, true));
+
+        InstanceLaunchCoordinator qaCoord2 = coordinator(
+                store2, filesDir2, true, qaImportedLauncher, new RecordingUmlFaceLane(), new RecordingUi());
+        InstanceLaunchCoordinator.LaunchOutcome importedBoot = qaCoord2.launch(imported);
+        assertTrue("imported Debian full-profile instance must reboot without seed",
+                importedBoot instanceof InstanceLaunchCoordinator.LaunchOutcome.Launched);
+        awaitCondition(() -> isStopped(store2, imported.id()) && !registry.isReserved(imported.rootVolume()),
+                5_000, "imported Debian boot did not finish");
+        assertEquals(2, bootSpecs.size());
+        assertTrue(bootSpecs.get(1).kernelPath().endsWith("libuml_kernel_full.so"));
+        assertTrue(bootSpecs.get(1).argv().contains("uminit=/sbin/init"));
+
+        // Same SAF-imported instance is refused by non-QA channel coordinator without fallback.
+        UmlInstanceLauncher nonQaImportedLauncher = new UmlInstanceLauncher(
+                nativeDir, filesDir2,
+                (spec, cols, rows) -> {
+                    throw new AssertionError("non-QA channel must not spawn imported full-profile UML");
+                },
+                registry,
+                new UmlInstanceBudget(
+                        () -> new UmlInstanceBudget.HostMemorySnapshot(65536, 65536, false),
+                        () -> 0,
+                        UmlInstanceBudget.BudgetPolicy.defaults()),
+                new io.github.nyzeep.orchestella.runtime.network.LoopbackEndpointRegistry(),
+                provisioner,
+                (params, distroId) -> {
+                    throw new AssertionError("seed must not run");
+                },
+                store2.stateMonitor(),
+                store2,
+                FIXED_CLOCK,
+                () -> mono.addAndGet(1_000_000L),
+                200L,
+                200L,
+                200L,
+                () -> false,
+                (profile, distroId, requireRootfsSeed) ->
+                        StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                                profile, distroId, 16384, nativeDir, manifestDigests, expectedFullPins,
+                                false, requireRootfsSeed, false));
+        InstanceLaunchCoordinator nonQaCoord = new InstanceLaunchCoordinator(
+                store2,
+                new FakeSettings(),
+                new RecordingForeground(),
+                new RecordingUi(),
+                new StubCopy(),
+                new NoOpDiagnostics(),
+                UmlInstanceLauncher::takeLastCleanupResult,
+                filesDir2,
+                () -> "64GB RAM",
+                () -> false,
+                params -> { throw new AssertionError("AVF must not run"); },
+                params -> { throw new AssertionError("QEMU must not run"); },
+                id -> { throw new UnsupportedOperationException(); },
+                id -> { throw new UnsupportedOperationException(); },
+                unarmedFacts(),
+                Optional::empty,
+                event -> {},
+                LaneClock.system(),
+                FIXED_CLOCK,
+                () -> {},
+                new RecordingUmlFaceLane(),
+                () -> false,
+                nonQaImportedLauncher,
+                diagnostic -> {},
+                () -> true,
+                () -> true);
+        InstanceLaunchCoordinator.LaunchOutcome nonQaOutcome = nonQaCoord.launch(store2.load(imported.id()));
+        assertTrue(nonQaOutcome instanceof InstanceLaunchCoordinator.LaunchOutcome.Failed);
+        assertTrue(((InstanceLaunchCoordinator.LaunchOutcome.Failed) nonQaOutcome).getFailure()
+                instanceof ExecutionPolicyContract.ExecutionPolicyRefusalException);
+    }
+
+    private static Map<String, String> writeFullAndFastBinaries(Path nativeDir) throws IOException {
+        Files.write(nativeDir.resolve("libuml_kernel.so"), "fast-k".getBytes(StandardCharsets.UTF_8));
+        Files.write(nativeDir.resolve("libuml_stub.so"), "fast-s".getBytes(StandardCharsets.UTF_8));
+        Path fullKernel = nativeDir.resolve("libuml_kernel_full.so");
+        Path fullStub = nativeDir.resolve("libuml_stub_full.so");
+        Files.write(fullKernel, "full-k-w0202".getBytes(StandardCharsets.UTF_8));
+        Files.write(fullStub, "full-s-w0202".getBytes(StandardCharsets.UTF_8));
+        Map<String, String> pins = new LinkedHashMap<>();
+        pins.put("libuml_kernel_full.so", UmlKernelAssets.sha256Hex(fullKernel.toFile()));
+        pins.put("libuml_stub_full.so", UmlKernelAssets.sha256Hex(fullStub.toFile()));
+        return pins;
+    }
+
+    private static UmlProcessFactory fakePersistentExt4Factory(
+            AtomicInteger provisionSpawns, List<UmlLaunchSpec> bootSpecs, long basePid) {
+        return fakePersistentExt4Factory(
+                provisionSpawns, bootSpecs, basePid, StorageContract.MIN_ROOT_VOLUME_BYTES);
+    }
+
+    private static UmlProcessFactory fakePersistentExt4Factory(
+            AtomicInteger provisionSpawns,
+            List<UmlLaunchSpec> bootSpecs,
+            long basePid,
+            long volumeBytes) {
+        return (spec, cols, rows) -> {
+            if (spec.rootMode() == UmlLaunchSpec.RootMode.HOSTFS) {
+                provisionSpawns.incrementAndGet();
+                String script = new String(
+                        Files.readAllBytes(spec.ephemeralRootDir().resolve("um-command.sh")),
+                        StandardCharsets.UTF_8);
+                String okLine = extractSuccessMarker(script);
+                writeMinimalExt4Header(spec.ubd0Path(), volumeBytes);
+                return new ImmediateConsoleProcess(0, okLine + "\n");
+            }
+            bootSpecs.add(spec);
+            return new FakeUmlProcessHandle(basePid + bootSpecs.size(), new CountDownLatch(0), 0);
+        };
+    }
+
+    private static UmlInstanceRootfsProvisioner.ToolchainStager stubProvisionToolchain() {
+        return stageDir -> {
+            Files.createDirectories(stageDir.resolve("sbin"));
+            Files.createDirectories(stageDir.resolve("etc"));
+            Files.createDirectories(stageDir.resolve("bin"));
+            Files.createDirectories(stageDir.resolve("opt/droidlayer"));
+            Files.write(stageDir.resolve("sbin/mkfs.ext4"), "mkfs".getBytes(StandardCharsets.UTF_8));
+            Files.write(stageDir.resolve("etc/mke2fs.conf"), "[defaults]\n".getBytes(StandardCharsets.UTF_8));
+            Files.write(stageDir.resolve("bin/busybox"), "bb".getBytes(StandardCharsets.UTF_8));
+            Files.write(stageDir.resolve("opt/droidlayer/guest-agent"), "agent".getBytes(StandardCharsets.UTF_8));
+        };
+    }
+
+    private static void writeMinimalExt4Header(Path volume) throws IOException {
+        writeMinimalExt4Header(volume, StorageContract.MIN_ROOT_VOLUME_BYTES);
+    }
+
+    private static void writeMinimalExt4Header(Path volume, long volumeBytes) throws IOException {
+        if (volume.getParent() != null) {
+            Files.createDirectories(volume.getParent());
+        }
+        try (var ch = Files.newByteChannel(
+                volume,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.WRITE)) {
+            ch.position(0x438);
+            ch.write(java.nio.ByteBuffer.wrap(new byte[] {0x53, (byte) 0xEF}));
+            ch.position(volumeBytes - 1L);
+            ch.write(java.nio.ByteBuffer.wrap(new byte[] {0}));
+        }
+    }
+
+    private static byte[] readHeadBytes(Path volume, int length) throws IOException {
+        byte[] buf = new byte[length];
+        try (RandomAccessFile raf = new RandomAccessFile(volume.toFile(), "r")) {
+            raf.readFully(buf);
+        }
+        return buf;
+    }
+
+    private static InstanceStrategyLauncher.LaunchParameters fullDebianLaunchParams(
+            File filesDir, InstanceLifecycle.Instance debian) {
+        return withOverrides(
+                new InstanceStrategyLauncher.LaunchParameters(
+                        debian.id(),
+                        debian.bridgeToken(),
+                        "debian-13-rootfs.tar.xz",
+                        debian.rootVolume().toString(),
+                        filesDir.toPath().resolve("runtime").resolve(debian.id()).toString(),
+                        filesDir.toPath().resolve("distro-inputs").toString(),
+                        null,
+                        debian.hardwareConfig(),
+                        null, null, null,
+                        debian.hostname(),
+                        debian.defaultUser(),
+                        false,
+                        null,
+                        debian.kernelProfile()),
+                "debian-13-rootfs.tar.xz",
+                debian.rootVolume().toString(),
+                debian.kernelProfile());
+    }
+
+    private static InstanceStrategyLauncher.LaunchParameters withOverrides(
+            InstanceStrategyLauncher.LaunchParameters base,
+            String rootfsFileName,
+            String rootVolume,
+            String kernelProfile) {
+        return new InstanceStrategyLauncher.LaunchParameters(
+                base.instanceId,
+                base.bridgeToken,
+                rootfsFileName,
+                rootVolume,
+                base.runtimeDirectory,
+                base.distroInputsDirectory,
+                base.guestPassword,
+                base.hardwareConfig,
+                base.mirrorConfigFileName,
+                base.mirrorConfigFileContent,
+                base.firstBootScript,
+                base.hostname,
+                base.guestUser,
+                base.hasSudo,
+                base.sharedDirectory,
+                kernelProfile);
     }
 
     private static InstanceLaunchCoordinator.FactsSource unarmedFacts() {

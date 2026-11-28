@@ -62,16 +62,25 @@ public final class StandaloneUmlPreflightProbe {
         return forAndroid(context, profile, null);
     }
 
-    /** Creates a profile- and distro-scoped Android preflight probe. */
+    /** Creates a profile- and distro-scoped Android preflight probe requiring rootfs seed validation. */
     public static StandaloneUmlPreflightProbe forAndroid(
             Context context, UmlDistroCapabilityCatalog.KernelProfile profile, String distroId) {
+        return forAndroid(context, profile, distroId, true);
+    }
+
+    /** Creates a profile- and distro-scoped Android preflight probe with explicit seed requirement. */
+    public static StandaloneUmlPreflightProbe forAndroid(
+            Context context,
+            UmlDistroCapabilityCatalog.KernelProfile profile,
+            String distroId,
+            boolean requireRootfsSeed) {
         Context appContext = Objects.requireNonNull(context, "context").getApplicationContext();
         Objects.requireNonNull(profile, "profile");
         long timeoutMs = profile == UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64
                 ? FULL_PROFILE_TIMEOUT_MS
                 : DEFAULT_TIMEOUT_MS;
         return new StandaloneUmlPreflightProbe(
-                () -> probeAndroid(appContext, profile, distroId),
+                () -> probeAndroid(appContext, profile, distroId, requireRootfsSeed),
                 timeoutMs,
                 android.os.SystemClock::elapsedRealtimeNanos);
     }
@@ -137,7 +146,10 @@ public final class StandaloneUmlPreflightProbe {
     }
 
     private static ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight probeAndroid(
-            Context appContext, UmlDistroCapabilityCatalog.KernelProfile profile, String distroId)
+            Context appContext,
+            UmlDistroCapabilityCatalog.KernelProfile profile,
+            String distroId,
+            boolean requireRootfsSeed)
             throws java.io.IOException {
         int pageSize;
         try {
@@ -157,6 +169,16 @@ public final class StandaloneUmlPreflightProbe {
                     0L,
                     "不支持的宿主页大小：" + pageSize + " B");
         }
+        io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroRuntimeProfile runtimeProfile =
+                UmlDistroCapabilityCatalog.resolveRuntimeProfile(distroId, profile);
+        if (runtimeProfile.requiresIsolatedQaChannel() && !BuildConfig.IS_ISOLATED_QA_BUILD) {
+            return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
+                    ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.UNAVAILABLE,
+                    pageSize,
+                    0L,
+                    "[" + UmlKernelPayloadContract.FailureCode.PROFILE_MISMATCH
+                            + "] 完整档 UML 内核仅允许在隔离 QA 通道运行");
+        }
         String nativeDir = appContext.getApplicationInfo().nativeLibraryDir;
         if (nativeDir == null || nativeDir.isBlank()) {
             return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
@@ -170,18 +192,8 @@ public final class StandaloneUmlPreflightProbe {
             UmlKernelPayloadContract.ProfileDescriptor desc =
                     UmlKernelPayloadContract.descriptorFor(profile);
             Map<String, String> manifestDigests = readAssetManifest(appContext, desc.manifestAssetName());
-            String normalizedDistro = distroId != null
-                    ? distroId.trim().toLowerCase(java.util.Locale.ROOT)
-                    : "";
-            boolean hasRootfsSeed;
-            if ("debian".equals(normalizedDistro)) {
-                hasRootfsSeed = hasStagedDebianRootfs(appContext);
-            } else if ("alpine".equals(normalizedDistro)) {
-                hasRootfsSeed = hasBundledOrStagedAlpineRootfs(appContext);
-            } else {
-                hasRootfsSeed =
-                        hasBundledOrStagedAlpineRootfs(appContext) || hasStagedDebianRootfs(appContext);
-            }
+            boolean hasRootfsSeed = !requireRootfsSeed
+                    || hasSeedForProfile(appContext, runtimeProfile);
             ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight profileCheck =
                     evaluateProfilePreflight(
                             profile,
@@ -189,7 +201,9 @@ public final class StandaloneUmlPreflightProbe {
                             libDir,
                             manifestDigests,
                             UmlKernelAssets.FullProfile.packagedPins(),
-                            hasRootfsSeed);
+                            hasRootfsSeed,
+                            requireRootfsSeed,
+                            BuildConfig.IS_ISOLATED_QA_BUILD);
             if (profileCheck.status() != ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.READY) {
                 return profileCheck;
             }
@@ -215,7 +229,7 @@ public final class StandaloneUmlPreflightProbe {
                         "缺少独立 UML 原生载荷：" + lib);
             }
         }
-        if (!hasBundledOrStagedAlpineRootfs(appContext)) {
+        if (requireRootfsSeed && !hasBundledOrStagedAlpineRootfs(appContext)) {
             return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
                     ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.ASSETS_MISSING,
                     pageSize,
@@ -229,27 +243,18 @@ public final class StandaloneUmlPreflightProbe {
                 "独立 UML 载荷与 " + (pageSize / 1024) + " KB 宿主页预检通过");
     }
 
-    private static boolean hasBundledOrStagedAlpineRootfs(Context appContext)
+    private static boolean hasSeedForProfile(
+            Context appContext,
+            io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroRuntimeProfile runtimeProfile)
             throws java.io.IOException {
-        try (InputStream in = PackagedAssetStreams.openResource(
-                appContext, UmlKernelAssets.FastProfile.ROOTFS_TAR)) {
-            if (in != null) {
-                return true;
-            }
-        } catch (Exception ignored) {
-            // Fall through to staged rootfs cache check.
+        if ("alpine".equals(runtimeProfile.distroId())) {
+            return hasBundledOrStagedAlpineRootfs(appContext);
         }
-        UmlRootfsProvisioner.ReadinessReport staged = UmlRootfsProvisioner.readiness(
-                UmlKernelAssets.RootfsDownload.Entry.alpineMinirootfsAarch64(),
-                appContext.getFilesDir().toPath(),
-                BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED);
-        return staged.ready();
+        return hasPackagedOrStagedDistroRootfs(appContext, runtimeProfile.verdict());
     }
 
-    static boolean hasStagedDebianRootfs(Context appContext) {
-        UmlDistroCapabilityCatalog.DistroGateVerdict verdict =
-                UmlDistroCapabilityCatalog.evaluate(
-                        "debian", UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64);
+    private static boolean hasPackagedOrStagedDistroRootfs(
+            Context appContext, UmlDistroCapabilityCatalog.DistroGateVerdict verdict) {
         String fileName = verdict.expectedFileName();
         String expectedSha = verdict.expectedSha256();
         if (fileName == null || fileName.isBlank() || expectedSha == null || expectedSha.isBlank()) {
@@ -272,6 +277,30 @@ public final class StandaloneUmlPreflightProbe {
         }
     }
 
+    private static boolean hasBundledOrStagedAlpineRootfs(Context appContext)
+            throws java.io.IOException {
+        try (InputStream in = PackagedAssetStreams.openResource(
+                appContext, UmlKernelAssets.FastProfile.ROOTFS_TAR)) {
+            if (in != null) {
+                return true;
+            }
+        } catch (Exception ignored) {
+            // Fall through to staged rootfs cache check.
+        }
+        UmlRootfsProvisioner.ReadinessReport staged = UmlRootfsProvisioner.readiness(
+                UmlKernelAssets.RootfsDownload.Entry.alpineMinirootfsAarch64(),
+                appContext.getFilesDir().toPath(),
+                BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED);
+        return staged.ready();
+    }
+
+    static boolean hasStagedDebianRootfs(Context appContext) {
+        return hasPackagedOrStagedDistroRootfs(
+                appContext,
+                UmlDistroCapabilityCatalog.evaluate(
+                        "debian", UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64));
+    }
+
     /** Pure-JVM distro + profile preflight check returning explicit failure codes without fallback. */
     public static ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight evaluateDistroProfilePreflight(
             UmlDistroCapabilityCatalog.KernelProfile profile,
@@ -281,7 +310,43 @@ public final class StandaloneUmlPreflightProbe {
             Map<String, String> manifestDigests,
             Map<String, String> expectedPins,
             boolean hasRootfsSeed) {
+        return evaluateDistroProfilePreflight(
+                profile,
+                distroId,
+                hostPageSize,
+                nativeLibDir,
+                manifestDigests,
+                expectedPins,
+                hasRootfsSeed,
+                true,
+                true);
+    }
+
+    /**
+     * Pure-JVM distro + profile preflight check decoupling assembled-volume reboot (seed optional)
+     * from first-time provisioning (seed required) while enforcing isolated QA channel gates.
+     */
+    public static ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight evaluateDistroProfilePreflight(
+            UmlDistroCapabilityCatalog.KernelProfile profile,
+            String distroId,
+            int hostPageSize,
+            File nativeLibDir,
+            Map<String, String> manifestDigests,
+            Map<String, String> expectedPins,
+            boolean hasRootfsSeed,
+            boolean requireRootfsSeed,
+            boolean isolatedQaChannelAllowed) {
         Objects.requireNonNull(profile, "profile");
+        io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroRuntimeProfile runtimeProfile =
+                UmlDistroCapabilityCatalog.resolveRuntimeProfile(distroId, profile);
+        if (runtimeProfile.requiresIsolatedQaChannel() && !isolatedQaChannelAllowed) {
+            return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
+                    ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.UNAVAILABLE,
+                    hostPageSize,
+                    0L,
+                    "[" + UmlKernelPayloadContract.FailureCode.PROFILE_MISMATCH
+                            + "] 完整档 UML 内核仅允许在隔离 QA 通道运行");
+        }
         try {
             UmlDistroCapabilityCatalog.requireCreatable(distroId, profile);
         } catch (UmlDistroCapabilityCatalog.DistroNotCreatableException refused) {
@@ -293,7 +358,14 @@ public final class StandaloneUmlPreflightProbe {
                             + refused.getMessage());
         }
         return evaluateProfilePreflight(
-                profile, hostPageSize, nativeLibDir, manifestDigests, expectedPins, hasRootfsSeed);
+                profile,
+                hostPageSize,
+                nativeLibDir,
+                manifestDigests,
+                expectedPins,
+                hasRootfsSeed,
+                requireRootfsSeed,
+                isolatedQaChannelAllowed);
     }
 
     /** Pure-JVM profile preflight check returning explicit failure codes without fallback. */
@@ -304,7 +376,37 @@ public final class StandaloneUmlPreflightProbe {
             Map<String, String> manifestDigests,
             Map<String, String> expectedPins,
             boolean hasRootfsSeed) {
+        return evaluateProfilePreflight(
+                profile,
+                hostPageSize,
+                nativeLibDir,
+                manifestDigests,
+                expectedPins,
+                hasRootfsSeed,
+                true,
+                true);
+    }
+
+    /** Pure-JVM profile preflight check with explicit seed requirement and channel gate. */
+    public static ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight evaluateProfilePreflight(
+            UmlDistroCapabilityCatalog.KernelProfile profile,
+            int hostPageSize,
+            File nativeLibDir,
+            Map<String, String> manifestDigests,
+            Map<String, String> expectedPins,
+            boolean hasRootfsSeed,
+            boolean requireRootfsSeed,
+            boolean isolatedQaChannelAllowed) {
         Objects.requireNonNull(profile, "profile");
+        if (profile == UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64
+                && !isolatedQaChannelAllowed) {
+            return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
+                    ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.UNAVAILABLE,
+                    hostPageSize,
+                    0L,
+                    "[" + UmlKernelPayloadContract.FailureCode.PROFILE_MISMATCH
+                            + "] 完整档 UML 内核仅允许在隔离 QA 通道运行");
+        }
         if (hostPageSize != 4096 && hostPageSize != 16384) {
             return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
                     ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.UNSUPPORTED_HOST_PAGE_SIZE,
@@ -321,7 +423,7 @@ public final class StandaloneUmlPreflightProbe {
                     0L,
                     "[" + result.failureCode() + "] " + result.detail());
         }
-        if (!hasRootfsSeed) {
+        if (requireRootfsSeed && !hasRootfsSeed) {
             return new ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight(
                     ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.ASSETS_MISSING,
                     hostPageSize,

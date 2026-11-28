@@ -1006,12 +1006,19 @@ def _passed_paired_indices(
 
 def _default_payload_gate_runner(repo_root: Path, app_apk: Path) -> tuple[bool, dict[str, Any], dict[str, Any]]:
     payload_tool = repo_root / "tools/release/check_uml_payload.py"
+    pin_source = repo_root / "app/src/main/java/io/github/nyzeep/orchestella/UmlKernelAssets.java"
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         qa_path = Path(tmp) / "gate-uml-qa-full-profile.json"
         fullpkg_path = Path(tmp) / "gate-uml-fullpkg.json"
-        qa_proc = _run_cmd([sys.executable, str(payload_tool), "--apk", str(app_apk), "--qa-full-profile", "--json", str(qa_path)], check=False)
-        fullpkg_proc = _run_cmd([sys.executable, str(payload_tool), "--apk", str(app_apk), "--fullpkg", "--json", str(fullpkg_path)], check=False)
+        qa_proc = _run_cmd(
+            [sys.executable, str(payload_tool), "--apk", str(app_apk), "--qa-full-profile", "--pin-source", str(pin_source), "--json", str(qa_path)],
+            check=False,
+        )
+        fullpkg_proc = _run_cmd(
+            [sys.executable, str(payload_tool), "--apk", str(app_apk), "--fullpkg", "--require-full-profile", "--pin-source", str(pin_source), "--json", str(fullpkg_path)],
+            check=False,
+        )
         qa_gate = json.loads(qa_path.read_text(encoding="utf-8")) if qa_path.is_file() else {"status": "error"}
         fullpkg_gate = json.loads(fullpkg_path.read_text(encoding="utf-8")) if fullpkg_path.is_file() else {"status": "error"}
     for gate_obj in (qa_gate, fullpkg_gate):

@@ -201,4 +201,73 @@ public final class UmlDistroCapabilityCatalog {
                 verdicts.get("debian"),
                 verdicts.get("arch"));
     }
+
+    private record DistroRuntimeSpec(
+            UmlDistroRuntimeProfile.ArchiveFormat archiveFormat,
+            String nativeInitPath,
+            boolean usesNativeSystemdInit,
+            boolean requiresGuestAgent,
+            int provisionMemMb,
+            long provisionTimeoutMs) {}
+
+    private static final DistroRuntimeSpec DEFAULT_RUNTIME_SPEC = new DistroRuntimeSpec(
+            UmlDistroRuntimeProfile.ArchiveFormat.TAR_GZ,
+            null,
+            false,
+            false,
+            UmlLaunchSpec.DEFAULT_MEMORY_MB,
+            UmlInstanceRootfsProvisioner.DEFAULT_PROVISION_TIMEOUT_MS);
+
+    private static final Map<String, DistroRuntimeSpec> DISTRO_RUNTIME_SPECS = Map.of(
+            "alpine",
+            new DistroRuntimeSpec(
+                    UmlDistroRuntimeProfile.ArchiveFormat.TAR_GZ,
+                    null,
+                    false,
+                    false,
+                    UmlLaunchSpec.DEFAULT_MEMORY_MB,
+                    UmlInstanceRootfsProvisioner.DEFAULT_PROVISION_TIMEOUT_MS),
+            "debian",
+            new DistroRuntimeSpec(
+                    UmlDistroRuntimeProfile.ArchiveFormat.TAR_XZ,
+                    "/sbin/init",
+                    true,
+                    true,
+                    768,
+                    UmlInstanceRootfsProvisioner.DEFAULT_DEBIAN_PROVISION_TIMEOUT_MS),
+            "arch",
+            new DistroRuntimeSpec(
+                    UmlDistroRuntimeProfile.ArchiveFormat.TAR_GZ,
+                    "/sbin/init",
+                    true,
+                    true,
+                    UmlLaunchSpec.DEFAULT_MEMORY_MB,
+                    UmlInstanceRootfsProvisioner.DEFAULT_PROVISION_TIMEOUT_MS));
+
+    /**
+     * Resolves the converged runtime profile (rootfs archive format, native init path, provisioning
+     * budget, and QA channel boundary) for a distribution and kernel profile pair.
+     */
+    public static UmlDistroRuntimeProfile resolveRuntimeProfile(
+            String distroId, KernelProfile profile) {
+        Objects.requireNonNull(profile, "profile");
+        DistroGateVerdict verdict = evaluate(distroId, profile);
+        String id = verdict.distroId();
+        DistroRuntimeSpec spec = DISTRO_RUNTIME_SPECS.getOrDefault(id, DEFAULT_RUNTIME_SPEC);
+        String defaultHostname = "qa-uml-" + ("unknown".equals(id) ? "linux" : id);
+        return new UmlDistroRuntimeProfile(
+                id,
+                verdict.version(),
+                "aarch64",
+                UmlKernelPayloadContract.descriptorFor(profile),
+                verdict,
+                spec.archiveFormat(),
+                spec.nativeInitPath(),
+                spec.usesNativeSystemdInit(),
+                spec.requiresGuestAgent(),
+                defaultHostname,
+                spec.provisionMemMb(),
+                spec.provisionTimeoutMs(),
+                profile == KernelProfile.FULL_SMP_ARM64);
+    }
 }

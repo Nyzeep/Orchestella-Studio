@@ -153,4 +153,49 @@ public final class UmlDistroCapabilityCatalogTest {
                 List.of(UmlDistroCapabilityCatalog.KernelRequirementGap.UNVERIFIED_ON_PROFILE),
                 arch.missingRequirements());
     }
+
+    @Test
+    public void resolveRuntimeProfileConvergesInitArchiveResourcesAndQaChannelRules() {
+        UmlDistroRuntimeProfile alpineFast =
+                UmlDistroCapabilityCatalog.resolveRuntimeProfile(
+                        "alpine", UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64);
+        assertEquals("alpine", alpineFast.distroId());
+        assertEquals("3.22.2", alpineFast.version());
+        assertEquals("aarch64", alpineFast.architecture());
+        assertEquals("fast-up-arm64", alpineFast.profileDescriptor().profileId());
+        assertEquals(UmlDistroRuntimeProfile.ArchiveFormat.TAR_GZ, alpineFast.archiveFormat());
+        assertTrue(alpineFast.archiveFormat().matchesFileName("alpine-minirootfs-3.22.2-aarch64.tar.gz"));
+        assertFalse(alpineFast.usesNativeSystemdInit());
+        assertEquals(null, alpineFast.nativeInitPath());
+        assertEquals("qa-uml-alpine", alpineFast.defaultQaHostname());
+        assertEquals(UmlLaunchSpec.DEFAULT_MEMORY_MB, alpineFast.provisionMemMb());
+        assertEquals(UmlInstanceRootfsProvisioner.DEFAULT_PROVISION_TIMEOUT_MS, alpineFast.provisionTimeoutMs());
+        assertFalse(alpineFast.requiresIsolatedQaChannel());
+        assertTrue(alpineFast.verdict().isCreatable());
+
+        UmlDistroRuntimeProfile debianFull =
+                UmlDistroCapabilityCatalog.resolveRuntimeProfile(
+                        "debian", UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64);
+        assertEquals("debian", debianFull.distroId());
+        assertEquals("13", debianFull.version());
+        assertEquals("aarch64", debianFull.architecture());
+        assertEquals("full-smp-arm64", debianFull.profileDescriptor().profileId());
+        assertEquals(UmlDistroRuntimeProfile.ArchiveFormat.TAR_XZ, debianFull.archiveFormat());
+        assertTrue(debianFull.archiveFormat().matchesFileName("debian-13-rootfs.tar.xz"));
+        assertTrue(debianFull.usesNativeSystemdInit());
+        assertEquals("/sbin/init", debianFull.nativeInitPath());
+        assertEquals("qa-uml-debian", debianFull.defaultQaHostname());
+        assertEquals(768, debianFull.provisionMemMb());
+        assertEquals(
+                UmlInstanceRootfsProvisioner.DEFAULT_DEBIAN_PROVISION_TIMEOUT_MS,
+                debianFull.provisionTimeoutMs());
+        assertTrue(debianFull.requiresIsolatedQaChannel());
+        assertTrue(debianFull.verdict().isCreatable());
+
+        UmlDistroRuntimeProfile debianFast =
+                UmlDistroCapabilityCatalog.resolveRuntimeProfile(
+                        "debian", UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64);
+        assertFalse(debianFast.verdict().isCreatable());
+        assertEquals("/sbin/init", debianFast.nativeInitPath());
+    }
 }

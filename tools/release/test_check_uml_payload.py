@@ -928,6 +928,127 @@ class FullProfilePayloadGateTest(unittest.TestCase):
         self.assertEqual("ok", payload["status"])
         self.assertEqual(17, len(payload["verified"]))
 
+    def test_standard_fullpkg_rejects_leaked_full_profile_entries(self) -> None:
+        base = FullpkgSmokeTest()
+        base.setUp()
+        try:
+            entries = base._fullpkg_entries()
+        finally:
+            base.tearDown()
+        entries[KERNEL_ENTRY] = self.fast_kernel
+        entries[STUB_ENTRY] = self.fast_stub
+        entries[ROOTFS_ENTRY] = self.rootfs
+        entries[NET_ENTRY] = self.umnet
+        entries[PASST_ENTRY] = self.passt
+        entries[FAST_MANIFEST] = self._fast_manifest()
+        entries[NET_MANIFEST] = self._net_manifest()
+        entries[LIB + "libuml_kernel_full.so"] = self.full_kernel
+        entries[LIB + "libuml_stub_full.so"] = self.full_stub
+        entries["assets/uml-full-profile-v1.sha256"] = self._full_manifest()
+        entries[NOTICE_UML_ENTRY] = self._dual_notice()
+
+        apk = self._apk("leaked_full_in_release.apk", entries)
+        out = self.root / "leaked_fullpkg.json"
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = gate.main(["--apk", str(apk), "--fullpkg", "--json", str(out)])
+        self.assertEqual(1, code)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual("fail", payload["status"])
+        self.assertIn("FULL_PROFILE_FORBIDDEN", payload["failure_codes"])
+
+    def test_standard_auto_and_require_payload_reject_stray_full_profile(self) -> None:
+        # Even without fast/net manifests, stray full-profile assets must fail rather than skip.
+        for label, entries in (
+            ("stray_kernel", {LIB + "libuml_kernel_full.so": self.full_kernel}),
+            ("stray_stub", {LIB + "libuml_stub_full.so": self.full_stub}),
+            ("stray_manifest", {"assets/uml-full-profile-v1.sha256": self._full_manifest()}),
+        ):
+            apk = self._apk(f"auto_{label}.apk", entries)
+            out = self.root / f"auto_{label}.json"
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                code = gate.main(["--apk", str(apk), "--json", str(out)])
+            self.assertEqual(1, code, label)
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            self.assertIn("FULL_PROFILE_FORBIDDEN", payload["failure_codes"], label)
+
+        req_apk = self._apk("req_with_full.apk", {
+            KERNEL_ENTRY: self.fast_kernel,
+            STUB_ENTRY: self.fast_stub,
+            NET_ENTRY: self.umnet,
+            PASST_ENTRY: self.passt,
+            FAST_MANIFEST: self._fast_manifest(),
+            NET_MANIFEST: self._net_manifest(),
+            LIB + "libuml_kernel_full.so": self.full_kernel,
+            LIB + "libuml_stub_full.so": self.full_stub,
+            "assets/uml-full-profile-v1.sha256": self._full_manifest(),
+        })
+        out_req = self.root / "req_with_full.json"
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = gate.main(["--apk", str(req_apk), "--require-payload", "--json", str(out_req)])
+        self.assertEqual(1, code)
+        self.assertIn("FULL_PROFILE_FORBIDDEN", json.loads(out_req.read_text(encoding="utf-8"))["failure_codes"])
+
+    def test_qa_full_profile_rejects_fake_manifest_and_pin_drift(self) -> None:
+        # 1. Wrong # profile= header or unexpected extra entry in full manifest must fail.
+        wrong_header = self._qa_full_entries()
+        wrong_header["assets/uml-full-profile-v1.sha256"] = (
+            "# profile=fast-up-arm64\n"
+            f"{_sha(self.full_kernel)}  libuml_kernel_full.so\n"
+            f"{_sha(self.full_stub)}  libuml_stub_full.so\n"
+        ).encode("utf-8")
+        out_hdr = self.root / "wrong_hdr.json"
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = gate.main([
+                "--apk", str(self._apk("wrong_hdr.apk", wrong_header)),
+                "--qa-full-profile", "--json", str(out_hdr),
+            ])
+        self.assertEqual(1, code)
+        self.assertIn("MANIFEST_APK_MISMATCH", json.loads(out_hdr.read_text(encoding="utf-8"))["failure_codes"])
+
+        # 1b. Missing # profile= header must also fail.
+        missing_header = self._qa_full_entries()
+        missing_header["assets/uml-full-profile-v1.sha256"] = (
+            f"{_sha(self.full_kernel)}  libuml_kernel_full.so\n"
+            f"{_sha(self.full_stub)}  libuml_stub_full.so\n"
+        ).encode("utf-8")
+        out_missing_hdr = self.root / "missing_hdr.json"
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = gate.main([
+                "--apk", str(self._apk("missing_hdr.apk", missing_header)),
+                "--qa-full-profile", "--json", str(out_missing_hdr),
+            ])
+        self.assertEqual(1, code)
+        self.assertIn("MANIFEST_APK_MISMATCH", json.loads(out_missing_hdr.read_text(encoding="utf-8"))["failure_codes"])
+
+        extra_entry = self._qa_full_entries()
+        extra_entry["assets/uml-full-profile-v1.sha256"] = (
+            "# profile=full-smp-arm64\n"
+            f"{_sha(self.full_kernel)}  libuml_kernel_full.so\n"
+            f"{_sha(self.full_stub)}  libuml_stub_full.so\n"
+            f"{_sha(self.fast_kernel)}  libuml_kernel.so\n"
+        ).encode("utf-8")
+        out_extra = self.root / "extra_entry.json"
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = gate.main([
+                "--apk", str(self._apk("extra_entry.apk", extra_entry)),
+                "--qa-full-profile", "--json", str(out_extra),
+            ])
+        self.assertEqual(1, code)
+        self.assertIn("MANIFEST_APK_MISMATCH", json.loads(out_extra.read_text(encoding="utf-8"))["failure_codes"])
+
+        # 2. Self-consistent fake binaries + fake manifest must fail when --pin-source checks real pins.
+        pin_source = REPO_ROOT / "app" / "src" / "main" / "java" / "io" / "github" / "nyzeep" / "orchestella" / "UmlKernelAssets.java"
+        out_pin = self.root / "fake_pins.json"
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = gate.main([
+                "--apk", str(self._apk("fake_pins.apk", self._qa_full_entries())),
+                "--qa-full-profile",
+                "--pin-source", str(pin_source),
+                "--json", str(out_pin),
+            ])
+        self.assertEqual(1, code)
+        self.assertIn("MANIFEST_APK_MISMATCH", json.loads(out_pin.read_text(encoding="utf-8"))["failure_codes"])
+
 
 if __name__ == "__main__":
     unittest.main()

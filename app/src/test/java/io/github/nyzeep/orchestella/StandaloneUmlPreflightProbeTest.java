@@ -188,4 +188,94 @@ public final class StandaloneUmlPreflightProbeTest {
                 ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.READY,
                 fullDebian.status());
     }
+
+    @Test
+    public void assembledExistingVolumePreflightSucceedsWithoutRootfsSeed() throws IOException {
+        File libDir = tmp.newFolder("preflight-assembled-no-seed");
+        File fullKernel = new File(libDir, "libuml_kernel_full.so");
+        File fullStub = new File(libDir, "libuml_stub_full.so");
+        Files.write(fullKernel.toPath(), "full-k".getBytes(StandardCharsets.UTF_8));
+        Files.write(fullStub.toPath(), "full-s".getBytes(StandardCharsets.UTF_8));
+        assertTrue(fullKernel.setExecutable(true));
+        assertTrue(fullStub.setExecutable(true));
+        Map<String, String> pins = Map.of(
+                "libuml_kernel_full.so", UmlKernelAssets.sha256Hex(fullKernel),
+                "libuml_stub_full.so", UmlKernelAssets.sha256Hex(fullStub));
+
+        ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight result =
+                StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                        UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64,
+                        "debian",
+                        4096,
+                        libDir,
+                        pins,
+                        pins,
+                        false,
+                        false,
+                        true);
+        assertEquals(
+                ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.READY,
+                result.status());
+    }
+
+    @Test
+    public void fullProfilePreflightRefusesOutsideIsolatedQaChannel() throws IOException {
+        File libDir = tmp.newFolder("preflight-non-qa");
+        File fullKernel = new File(libDir, "libuml_kernel_full.so");
+        File fullStub = new File(libDir, "libuml_stub_full.so");
+        Files.write(fullKernel.toPath(), "full-k".getBytes(StandardCharsets.UTF_8));
+        Files.write(fullStub.toPath(), "full-s".getBytes(StandardCharsets.UTF_8));
+        assertTrue(fullKernel.setExecutable(true));
+        assertTrue(fullStub.setExecutable(true));
+        Map<String, String> pins = Map.of(
+                "libuml_kernel_full.so", UmlKernelAssets.sha256Hex(fullKernel),
+                "libuml_stub_full.so", UmlKernelAssets.sha256Hex(fullStub));
+
+        ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight result =
+                StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                        UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64,
+                        "debian",
+                        4096,
+                        libDir,
+                        pins,
+                        pins,
+                        true,
+                        false,
+                        false);
+        assertEquals(
+                ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.UNAVAILABLE,
+                result.status());
+        assertTrue(result.detail().contains("QA"));
+    }
+
+    @Test
+    public void assembledExistingVolumeStillRefusesMissingOrTamperedFullKernelOrStub()
+            throws IOException {
+        File libDir = tmp.newFolder("preflight-assembled-tampered");
+        File fullKernel = new File(libDir, "libuml_kernel_full.so");
+        File fullStub = new File(libDir, "libuml_stub_full.so");
+        Files.write(fullKernel.toPath(), "full-k".getBytes(StandardCharsets.UTF_8));
+        Files.write(fullStub.toPath(), "tampered-stub".getBytes(StandardCharsets.UTF_8));
+        assertTrue(fullKernel.setExecutable(true));
+        assertTrue(fullStub.setExecutable(true));
+        Map<String, String> pins = Map.of(
+                "libuml_kernel_full.so", UmlKernelAssets.sha256Hex(fullKernel),
+                "libuml_stub_full.so", "b".repeat(64));
+
+        ExecutionStrategyAdmissionEvaluator.StandaloneUmlPreflight badStub =
+                StandaloneUmlPreflightProbe.evaluateDistroProfilePreflight(
+                        UmlDistroCapabilityCatalog.KernelProfile.FULL_SMP_ARM64,
+                        "debian",
+                        4096,
+                        libDir,
+                        pins,
+                        pins,
+                        false,
+                        false,
+                        true);
+        assertEquals(
+                ExecutionStrategyAdmissionEvaluator.StandalonePreflightStatus.ASSETS_MISSING,
+                badStub.status());
+        assertTrue(badStub.detail().contains("STUB_CONFIG_MISMATCH"));
+    }
 }

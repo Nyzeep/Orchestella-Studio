@@ -184,7 +184,10 @@ class IsolatedQaExecutionEntry(
                 hostname == candidate.hostname()
         }
         if (reusable != null) {
-            if (reusable.rootVolume() != null && Files.notExists(reusable.rootVolume())) {
+            if (reusable.rootVolume() != null
+                && reusable.provisioningEvidence() == null
+                && Files.notExists(reusable.rootVolume())
+            ) {
                 reusable.rootVolume().parent?.let { Files.createDirectories(it) }
                 Files.createFile(reusable.rootVolume())
             }
@@ -340,11 +343,10 @@ class IsolatedQaExecutionEntry(
                 io.github.nyzeep.orchestella.runtime.engineuml.UmlKernelPayloadContract
                     .fromProfileId(instance.kernelProfile())
             }
-            val provisionTimeoutMs = if ("debian".equals(instance.distro().id(), ignoreCase = true)) {
-                UmlInstanceRootfsProvisioner.DEFAULT_DEBIAN_PROVISION_TIMEOUT_MS
-            } else {
-                UmlInstanceRootfsProvisioner.DEFAULT_PROVISION_TIMEOUT_MS
-            }
+            val provisionTimeoutMs = UmlDistroCapabilityCatalog.resolveRuntimeProfile(
+                instance.distro().id(),
+                profile,
+            ).provisionTimeoutMs()
             val request = UmlInstanceRootfsProvisioner.ProvisionRequest(
                 instanceId,
                 generation,

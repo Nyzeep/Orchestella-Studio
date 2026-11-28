@@ -3,6 +3,8 @@ package io.github.nyzeep.orchestella
 import io.github.nyzeep.orchestella.runtime.contract.ExecutionPolicyContract
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroCapabilityCatalog
+import io.github.nyzeep.orchestella.runtime.engineuml.UmlKernelPayloadContract
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorFactProvider
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.CompileBackend
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.PvmCompilerManifest
@@ -295,6 +297,56 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
             if (preflight.preflightVerdict().isRefused) {
                 throw ExecutionPolicyContract.ExecutionPolicyRefusalException(preflight)
             }
+            var resolvedUmlRuntimeProfile:
+                io.github.nyzeep.orchestella.runtime.engineuml.UmlDistroRuntimeProfile? = null
+            if (preflight.resolvedStrategy() == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL) {
+                val requestedProfileId = instance.kernelProfile()
+                val profile = if (requestedProfileId.isNullOrBlank()) {
+                    UmlDistroCapabilityCatalog.KernelProfile.FAST_UP_ARM64
+                } else {
+                    try {
+                        UmlKernelPayloadContract.fromProfileId(requestedProfileId)
+                    } catch (unknown: IllegalArgumentException) {
+                        val profileRefusal = ExecutionPolicyContract.LaunchDiagnostic(
+                            instance.executionIdentity(),
+                            null,
+                            ExecutionPolicyContract.PreflightVerdict(
+                                ExecutionPolicyContract.PreflightStatus.REFUSED,
+                                ExecutionPolicyContract.PreflightCode.CAPABILITY_INTERSECTION_UNSATISFIED,
+                                unknown.message ?: "unknown UML kernel profileId: $requestedProfileId",
+                            ),
+                            ExecutionPolicyContract.FallbackReason.NONE,
+                            null,
+                            clock.millis(),
+                            "实例配置了当前版本不支持的内核档位（$requestedProfileId），已保留元数据与原盘。",
+                        )
+                        recordDiagnostic(instance.id(), profileRefusal)
+                        throw ExecutionPolicyContract.ExecutionPolicyRefusalException(profileRefusal)
+                    }
+                }
+                val runtimeProfile = UmlDistroCapabilityCatalog.resolveRuntimeProfile(
+                    instance.distro().id(),
+                    profile,
+                )
+                if (runtimeProfile.requiresIsolatedQaChannel() && !isolatedQaEnabled.asBoolean) {
+                    val channelRefusal = ExecutionPolicyContract.LaunchDiagnostic(
+                        instance.executionIdentity(),
+                        null,
+                        ExecutionPolicyContract.PreflightVerdict(
+                            ExecutionPolicyContract.PreflightStatus.REFUSED,
+                            ExecutionPolicyContract.PreflightCode.PROMOTION_GATE_LOCKED,
+                            "kernel profile ${runtimeProfile.profileDescriptor().profileId()} is restricted to isolated QA builds",
+                        ),
+                        ExecutionPolicyContract.FallbackReason.NONE,
+                        null,
+                        clock.millis(),
+                        "完整档内核仅允许在隔离 QA 通道运行，已保留实例元数据与原盘。",
+                    )
+                    recordDiagnostic(instance.id(), channelRefusal)
+                    throw ExecutionPolicyContract.ExecutionPolicyRefusalException(channelRefusal)
+                }
+                resolvedUmlRuntimeProfile = runtimeProfile
+            }
             if (preflight.resolvedStrategy() == FullLinuxContract.ExecutionStrategy.USER_MODE_KERNEL
                 && DistroCatalogRegistry.getInstance().get(instance.distro().id()) == null
             ) {
@@ -333,7 +385,10 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
             }
             settings.setLastActiveInstanceId(instance.id())
             foreground.start(instance.id(), distroTitle, badge, settings.batteryPolicy(), launchGeneration)
-            val rootfsFileName = DistroCatalogRegistry.getInstance().get(instance.distro().id())?.rootfsFileName()
+            val rootfsFileName = resolvedUmlRuntimeProfile
+                ?.verdict()
+                ?.expectedFileName()
+                ?: DistroCatalogRegistry.getInstance().get(instance.distro().id())?.rootfsFileName()
                 ?: if (instance.distro().id() == "alpine") "alpine-minirootfs-3.24.1-aarch64.tar.gz"
                 else "${instance.distro().id()}-rootfs.tar.xz"
             val mirrorConfigFile = filesDir.resolve("instances").resolve("${instance.id()}.mirror")
@@ -628,6 +683,10 @@ class InstanceLaunchCoordinator @JvmOverloads constructor(
                     )
                 } catch (umlFailure: Throwable) {
                     if (umlFailure is io.github.nyzeep.orchestella.runtime.engineuml.UmlInstanceBudget.BudgetRefusalException ||
+                        umlFailure is UmlInstanceLauncher.UmlLaunchAdmissionException ||
+                        umlFailure is UmlInstanceLauncher.UmlVolumeRecoveryException ||
+                        umlFailure is UmlInstanceLauncher.UmlPayloadVerificationException ||
+                        umlFailure is UmlDistroCapabilityCatalog.DistroNotCreatableException ||
                         !umlAtomicFallbackEnabled.asBoolean
                     ) {
                         throw umlFailure

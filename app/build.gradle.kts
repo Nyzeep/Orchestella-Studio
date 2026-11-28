@@ -2,6 +2,17 @@ import java.nio.file.Files
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.Properties
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // Optional QEMU payload roots (Ticket 26 C gate): all three Gradle properties
@@ -220,6 +231,13 @@ val umlFullProfileDir: String? = providers.gradleProperty("orchestella.uml.fullP
     .orNull
     ?.trim()
     ?.ifEmpty { null }
+if (umlFullProfileDir != null) {
+    require(buildChannel == "qa") {
+        "orchestella.uml.fullProfileDir is restricted to isolated QA builds " +
+            "(-Porchestella.buildChannel=qa -Porchestella.buildPurpose=<purpose>); " +
+            "current buildChannel='$buildChannel'"
+    }
+}
 
 plugins {
     alias(libs.plugins.android.application)
@@ -270,7 +288,7 @@ android {
         // these into UmlKernelAssets.verifyBundledFastProfile / the RootfsDownload
         // gate; off answers a disabled report / closed gate with zero side effects.
         buildConfigField("boolean", "UML_BUNDLED_FAST_PROFILE", umlBundledFastProfile.toString())
-        buildConfigField("boolean", "UML_BUNDLED_FULL_PROFILE", (umlFullProfileDir != null).toString())
+        buildConfigField("boolean", "UML_BUNDLED_FULL_PROFILE", "false")
         buildConfigField("boolean", "UML_ROOTFS_DOWNLOAD_ENABLED", umlRootfsDownload.toString())
         // UML fast-profile launch shape (research/uml-fastboot README §4);
         // consumed by UmlFaceLauncher.FastProfile.currentBuild() through the
@@ -512,6 +530,11 @@ android {
 
     buildTypes {
         debug {
+            buildConfigField(
+                "boolean",
+                "UML_BUNDLED_FULL_PROFILE",
+                (buildChannel == "qa" && umlFullProfileDir != null).toString(),
+            )
             if (buildChannel != "release") {
                 // Internal channels always use the debug key, even when a release
                 // keystore is configured for this machine.
@@ -535,6 +558,7 @@ android {
             }
         }
         release {
+            buildConfigField("boolean", "UML_BUNDLED_FULL_PROFILE", "false")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -836,7 +860,13 @@ if (pvmRepackEnabled) {
     }
     // The renameChannelApk dependency on this chain is registered next to the
     // renameChannelApk task itself (buildChannel != "release" block), where the
-    // task is declared.
+    // task is declared. Standard/release-default debug builds also finalize
+    // assembleDebug with verifyFullpkgSignature so fullpkg never stays stale.
+    if (buildChannel == "release") {
+        tasks.matching { it.name == "assembleDebug" }.configureEach {
+            finalizedBy(verifyFullpkgSignature)
+        }
+    }
 }
 
 val channelApkName: String? = internalVersionSuffix?.let {
@@ -1529,18 +1559,61 @@ if (umlCompileBridge || umlNetHelperDir != null) {
     tasks.named("preBuild") { dependsOn(stageUmlNetHelper) }
 }
 
-// W01-02: optional full-smp-arm64 UML payload staging for isolated QA builds.
-// When -Porchestella.uml.fullProfileDir is omitted, no task is scheduled and
-// existing builds (including CI and release gates) remain untouched. When
-// provided, staging is fail-closed against UmlKernelAssets.FullProfile.PIN_MANIFEST.
-val stageUmlFullProfile = tasks.register("stageUmlFullProfile") {
-    group = "verification"
-    description = "Stages full-smp-arm64 UML kernel and 16 KB stub artifacts with sha accounting."
-    onlyIf { umlFullProfileDir != null }
-    doLast {
-        val dirPath = umlFullProfileDir ?: return@doLast
-        val repoRoot = projectDir
-        val relative: (File) -> String = { it.relativeToOrSelf(repoRoot).invariantSeparatorsPath }
+// W02-02: variant-isolated full-smp-arm64 UML payload staging for approved QA builds.
+// Always attaches variant-specific generated jniLibs/assets directories on debug variants so
+// switching QA -> Standard without `clean` empties those directories and evicts QA payloads;
+// never touches app/src/main/** and refuses non-QA / release variants fail-closed.
+abstract class StageUmlFullProfileTask : DefaultTask() {
+    @get:Input
+    abstract val fullProfileEnabled: Property<Boolean>
+
+    @get:Input
+    @get:Optional
+    abstract val sourceDirPath: Property<String>
+
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sourceInputs: ConfigurableFileCollection
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val kernelAssetsSourceFile: RegularFileProperty
+
+    @get:Input
+    @get:Optional
+    abstract val qaBuildPurpose: Property<String>
+
+    @get:OutputDirectory
+    abstract val jniLibsOutputDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val assetsOutputDir: DirectoryProperty
+
+    @TaskAction
+    fun stage() {
+        val jniOut = jniLibsOutputDir.get().asFile
+        val assetsOut = assetsOutputDir.get().asFile
+        jniOut.deleteRecursively()
+        assetsOut.deleteRecursively()
+        jniOut.mkdirs()
+        assetsOut.mkdirs()
+
+        if (!fullProfileEnabled.get()) {
+            logger.lifecycle(
+                "stageUmlFullProfile: full-smp-arm64 disabled for this build; cleared variant generated dirs."
+            )
+            return
+        }
+
+        val profileRoot = File(sourceDirPath.get())
+        if (!profileRoot.isDirectory || Files.isSymbolicLink(profileRoot.toPath())) {
+            throw GradleException(
+                "stageUmlFullProfile: orchestella.uml.fullProfileDir must be an existing non-symlink directory: " +
+                    profileRoot.name
+            )
+        }
+
         fun sha256Of(file: File): String {
             val digest = MessageDigest.getInstance("SHA-256")
             file.inputStream().use { input ->
@@ -1561,11 +1634,9 @@ val stageUmlFullProfile = tasks.register("stageUmlFullProfile") {
             "initramfs-full.cpio.gz",
             "kernel-full.config",
         )
-        val kernelAssetsSource = file(
-            "src/main/java/io/github/nyzeep/orchestella/UmlKernelAssets.java")
         val pinPattern = Regex("\"([0-9a-f]{64})  ([A-Za-z0-9._\\-]+)\"")
         val pins = linkedMapOf<String, String>()
-        kernelAssetsSource.readLines().forEach { line ->
+        kernelAssetsSourceFile.get().asFile.readLines().forEach { line ->
             pinPattern.find(line)?.let {
                 val artifactName = it.groupValues[2]
                 if (artifactName in fullArtifactKeys) {
@@ -1577,24 +1648,13 @@ val stageUmlFullProfile = tasks.register("stageUmlFullProfile") {
             "stageUmlFullProfile: could not parse full-profile pins from UmlKernelAssets.java FullProfile.PIN_MANIFEST"
         }
 
-        val profileRoot = rootProject.file(dirPath)
-        if (!profileRoot.isDirectory) {
-            throw GradleException(
-                "stageUmlFullProfile: orchestella.uml.fullProfileDir is not an existing directory: " +
-                    relative(profileRoot)
-            )
-        }
-
         val kernelSource = File(profileRoot, "linux-full")
         val stubSource = File(profileRoot, "stub_exe_full").takeIf { it.isFile }
             ?: File(profileRoot, "stub_exe")
-        val kernelTarget = file("src/main/jniLibs/arm64-v8a/libuml_kernel_full.so")
-        val stubTarget = file("src/main/jniLibs/arm64-v8a/libuml_stub_full.so")
 
-        // Verify source existence and digests before mutating jniLibs so a failure leaves zero partial files.
         val problems = mutableListOf<String>()
-        if (!kernelSource.isFile) {
-            problems += "  - missing artifact: linux-full (${relative(kernelSource)})"
+        if (!kernelSource.isFile || Files.isSymbolicLink(kernelSource.toPath())) {
+            problems += "  - missing or symlinked artifact: linux-full"
         } else {
             val actual = sha256Of(kernelSource)
             val expected = pins["linux-full"]!!
@@ -1602,8 +1662,8 @@ val stageUmlFullProfile = tasks.register("stageUmlFullProfile") {
                 problems += "  - sha256 mismatch: linux-full expected=$expected actual=$actual"
             }
         }
-        if (!stubSource.isFile) {
-            problems += "  - missing artifact: stub_exe_full/stub_exe (${relative(stubSource)})"
+        if (!stubSource.isFile || Files.isSymbolicLink(stubSource.toPath())) {
+            problems += "  - missing or symlinked artifact: stub_exe_full/stub_exe"
         } else {
             val actual = sha256Of(stubSource)
             val expected = pins["stub_exe_full"]!!
@@ -1620,27 +1680,116 @@ val stageUmlFullProfile = tasks.register("stageUmlFullProfile") {
             )
         }
 
+        val jniOutResolved = jniLibsOutputDir.get().asFile
+        val assetsOutResolved = assetsOutputDir.get().asFile
+        val kernelTarget = File(jniOutResolved, "arm64-v8a/libuml_kernel_full.so")
+        val stubTarget = File(jniOutResolved, "arm64-v8a/libuml_stub_full.so")
         kernelTarget.parentFile.mkdirs()
-        stubTarget.parentFile.mkdirs()
         kernelSource.copyTo(kernelTarget, overwrite = true)
         stubSource.copyTo(stubTarget, overwrite = true)
 
-        val accounting = file("src/main/assets/uml-full-profile-v1.sha256")
+        val accounting = File(assetsOutResolved, "uml-full-profile-v1.sha256")
         accounting.parentFile.mkdirs()
         accounting.writeText(
             "# profile=full-smp-arm64\n" +
+                "# qa_purpose=${qaBuildPurpose.get()}\n" +
                 "# initramfs=initramfs-full.cpio.gz sha256=" + (pins["initramfs-full.cpio.gz"] ?: "unknown") + "\n" +
                 pins["linux-full"] + "  libuml_kernel_full.so\n" +
                 pins["stub_exe_full"] + "  libuml_stub_full.so\n"
         )
         logger.lifecycle(
-            "stageUmlFullProfile: staged full-smp-arm64 kernel and 16 KB stub with matching pins; " +
-                "accounting manifest at " + relative(accounting) + "."
+            "stageUmlFullProfile: staged full-smp-arm64 kernel and 16 KB stub into variant " +
+                "generated directory (purpose=${qaBuildPurpose.get()})."
         )
     }
 }
-if (umlFullProfileDir != null) {
-    tasks.named("preBuild") { dependsOn(stageUmlFullProfile) }
+
+val verifyNoLegacyFullProfileInMainSources = tasks.register("verifyNoLegacyFullProfileInMainSources") {
+    group = "verification"
+    description = "Fails closed without deleting user files if legacy full-profile payloads remain in app/src/main."
+    doLast {
+        val repoRoot = rootProject.projectDir
+        val relative: (File) -> String = { it.relativeToOrSelf(repoRoot).invariantSeparatorsPath }
+        val offenders = mutableListOf<File>()
+        val legacyManifest = file("src/main/assets/uml-full-profile-v1.sha256")
+        if (legacyManifest.exists() || Files.isSymbolicLink(legacyManifest.toPath())) {
+            offenders += legacyManifest
+        }
+        val jniRoot = file("src/main/jniLibs")
+        if (jniRoot.isDirectory) {
+            jniRoot.walkTopDown()
+                .filter { it.isFile || Files.isSymbolicLink(it.toPath()) }
+                .filter { it.name.startsWith("libuml_") && it.name.endsWith("_full.so") }
+                .forEach { offenders += it }
+        }
+        if (offenders.isNotEmpty()) {
+            val paths = offenders.sortedBy { relative(it) }.joinToString("\n") { "  - ${relative(it)}" }
+            throw GradleException(
+                "Legacy full-smp-arm64 QA artifacts detected under app/src/main/ (shared by all variants):\n" +
+                    paths + "\n" +
+                    "Gradle preserved these files without deleting them. Move or remove them from app/src/main/ " +
+                    "so standard/release builds cannot inherit QA payloads; approved QA builds stage into " +
+                    "app/build/generated/umlFullProfile/<variant>/ via -Porchestella.buildChannel=qa " +
+                    "-Porchestella.buildPurpose=<purpose> -Porchestella.uml.fullProfileDir=<dir>."
+            )
+        }
+    }
+}
+
+val verifyNoQaFullProfileInRelease = tasks.register("verifyNoQaFullProfileInRelease") {
+    group = "verification"
+    description = "Blocks release packaging when QA channel or full-profile staging properties are active."
+    doLast {
+        if (buildChannel == "qa" || umlFullProfileDir != null) {
+            throw GradleException(
+                "Release tasks forbid QA channel or full-smp-arm64 payload staging " +
+                    "(buildChannel=$buildChannel, fullProfileDirPresent=${umlFullProfileDir != null})."
+            )
+        }
+    }
+}
+
+tasks.matching {
+    it.name in setOf("assembleRelease", "bundleRelease", "installRelease", "packageRelease", "preReleaseBuild")
+}.configureEach {
+    dependsOn(verifyNoQaFullProfileInRelease)
+}
+
+tasks.matching {
+    it.name in setOf("preBuild", "mergeDebugJniLibFolders", "mergeReleaseJniLibFolders", "mergeDebugAssets", "mergeReleaseAssets")
+}.configureEach {
+    dependsOn(verifyNoLegacyFullProfileInMainSources)
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        val fullEnabled = buildChannel == "qa" && umlFullProfileDir != null
+        val capName = variant.name.replaceFirstChar { it.uppercaseChar() }
+        val stageTask = tasks.register<StageUmlFullProfileTask>("stageUmlFullProfile$capName") {
+            group = "verification"
+            description = "Stages (or clears) full-smp-arm64 UML kernel and 16 KB stub in ${variant.name} generated dirs."
+            fullProfileEnabled.set(fullEnabled)
+            kernelAssetsSourceFile.set(
+                layout.projectDirectory.file("src/main/java/io/github/nyzeep/orchestella/UmlKernelAssets.java")
+            )
+            if (fullEnabled) {
+                val resolvedDir = rootProject.file(umlFullProfileDir!!)
+                sourceDirPath.set(resolvedDir.absolutePath)
+                sourceInputs.from(fileTree(resolvedDir))
+                qaBuildPurpose.set(buildPurpose!!)
+            }
+            jniLibsOutputDir.set(layout.buildDirectory.dir("generated/umlFullProfile/${variant.name}/jniLibs"))
+            assetsOutputDir.set(layout.buildDirectory.dir("generated/umlFullProfile/${variant.name}/assets"))
+        }
+        variant.sources.jniLibs?.addGeneratedSourceDirectory(
+            stageTask,
+            StageUmlFullProfileTask::jniLibsOutputDir,
+        )
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            stageTask,
+            StageUmlFullProfileTask::assetsOutputDir,
+        )
+    }
 }
 
 tasks.register<Copy>("packageOrchestellaRelease") {

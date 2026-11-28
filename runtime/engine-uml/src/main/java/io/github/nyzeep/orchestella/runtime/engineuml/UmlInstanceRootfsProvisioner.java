@@ -477,7 +477,9 @@ public final class UmlInstanceRootfsProvisioner {
             throw new ProvisionException(
                     REASON_PARTIAL_INPUT, "refusing unverified .part download file: " + tarName);
         }
-        if (!isSupportedArchiveName(seed.distroId(), tarName)) {
+        UmlDistroRuntimeProfile runtimeProfile =
+                UmlDistroCapabilityCatalog.resolveRuntimeProfile(seed.distroId(), request.kernelProfile());
+        if (!runtimeProfile.archiveFormat().matchesFileName(tarName)) {
             throw new ProvisionException(
                     REASON_UNSUPPORTED_ARCHIVE_FORMAT,
                     "unsupported rootfs archive format: " + tarName);
@@ -534,9 +536,11 @@ public final class UmlInstanceRootfsProvisioner {
         Files.createDirectories(stageDir);
         applyModeBestEffort(stageDir, 0755);
         toolchainStager.stageInto(stageDir);
-        String distroId = request.seedInput().distroId().trim().toLowerCase(Locale.ROOT);
-        boolean isDebian = "debian".equals(distroId);
-        List<String> requiredTools = isDebian
+        UmlDistroRuntimeProfile runtimeProfile = UmlDistroCapabilityCatalog.resolveRuntimeProfile(
+                request.seedInput().distroId(), request.kernelProfile());
+        String distroId = runtimeProfile.distroId();
+        boolean usesSystemd = runtimeProfile.usesNativeSystemdInit();
+        List<String> requiredTools = runtimeProfile.requiresGuestAgent()
                 ? List.of("sbin/mkfs.ext4", "etc/mke2fs.conf", "bin/busybox", "opt/droidlayer/guest-agent")
                 : List.of("sbin/mkfs.ext4", "etc/mke2fs.conf", "bin/busybox");
         for (String required : requiredTools) {
@@ -555,7 +559,7 @@ public final class UmlInstanceRootfsProvisioner {
         applyModeBestEffort(guestAssets.resolve("etc"), 0755);
         applyModeBestEffort(etcOrch, 0755);
 
-        if (isDebian) {
+        if (usesSystemd) {
             Path usrLibOrch = guestAssets.resolve("usr/lib/orchestella");
             Path profileD = guestAssets.resolve("etc/profile.d");
             Path systemdSystem = guestAssets.resolve("etc/systemd/system");
@@ -690,9 +694,9 @@ public final class UmlInstanceRootfsProvisioner {
             String volumeId,
             UmlRootReservationRegistry.Reservation reservation)
             throws IOException {
-        int provisionMemMb = "debian".equalsIgnoreCase(request.seedInput().distroId().trim())
-                ? 768
-                : UmlLaunchSpec.DEFAULT_MEMORY_MB;
+        UmlDistroRuntimeProfile runtimeProfile = UmlDistroCapabilityCatalog.resolveRuntimeProfile(
+                request.seedInput().distroId(), request.kernelProfile());
+        int provisionMemMb = runtimeProfile.provisionMemMb();
         UmlLaunchSpec spec = UmlLaunchSpec.builder()
                 .kernelPath(request.kernelPath())
                 .stubExePath(request.stubExePath())
@@ -724,10 +728,7 @@ public final class UmlInstanceRootfsProvisioner {
 
         boolean timedOut = false;
         try {
-            long defaultTimeoutMs = "debian".equalsIgnoreCase(
-                    request.seedInput().distroId().trim())
-                    ? DEFAULT_DEBIAN_PROVISION_TIMEOUT_MS
-                    : DEFAULT_PROVISION_TIMEOUT_MS;
+            long defaultTimeoutMs = runtimeProfile.provisionTimeoutMs();
             long timeoutMs = request.guestTimeoutMs() > 0L
                     ? request.guestTimeoutMs()
                     : defaultTimeoutMs;
@@ -776,24 +777,6 @@ public final class UmlInstanceRootfsProvisioner {
                     "provision guest did not emit verified OK marker (exitCode="
                             + stopEvidence.exitCode() + "): " + lastNonEmptyLine(consoleLog));
         }
-    }
-
-    private static boolean isDebianDistro(String distroId) {
-        return distroId != null && "debian".equals(distroId.trim().toLowerCase(Locale.ROOT));
-    }
-
-    private static boolean isSupportedArchiveName(String distroId, String fileName) {
-        String lower = fileName.toLowerCase(Locale.ROOT);
-        if (isDebianDistro(distroId)) {
-            return lower.endsWith(".tar.xz")
-                    || lower.endsWith(".txz")
-                    || lower.endsWith(".tar.gz")
-                    || lower.endsWith(".tgz")
-                    || lower.endsWith(".tar");
-        }
-        return lower.endsWith(".tar.gz")
-                || lower.endsWith(".tgz")
-                || lower.endsWith(".tar");
     }
 
     private static String buildProvisionGuestScript(
@@ -982,14 +965,15 @@ public final class UmlInstanceRootfsProvisioner {
     }
 
     private static String formatProvisionMarker(ProvisionRequest request, String volumeId) {
-        boolean isDebian = "debian".equalsIgnoreCase(request.seedInput().distroId().trim());
+        UmlDistroRuntimeProfile runtimeProfile = UmlDistroCapabilityCatalog.resolveRuntimeProfile(
+                request.seedInput().distroId(), request.kernelProfile());
         return "marker_version=" + PROVISION_MARKER_VERSION + "\n"
                 + "instance_id=" + request.instanceId() + "\n"
-                + "distro_id=" + request.seedInput().distroId().trim().toLowerCase(Locale.ROOT) + "\n"
+                + "distro_id=" + runtimeProfile.distroId() + "\n"
                 + "distro_version=" + request.seedInput().distroVersion() + "\n"
                 + "rootfs_sha256=" + request.seedInput().expectedSha256().toLowerCase(Locale.ROOT) + "\n"
-                + "kernel_profile=" + UmlKernelPayloadContract.descriptorFor(request.kernelProfile()).profileId() + "\n"
-                + "init_path=" + (isDebian ? "/sbin/init" : "/um-command.sh") + "\n"
+                + "kernel_profile=" + runtimeProfile.profileDescriptor().profileId() + "\n"
+                + "init_path=" + runtimeProfile.markerInitPath() + "\n"
                 + "volume_id=" + volumeId + "\n"
                 + "format=RAW_SPARSE_EXT4\n";
     }

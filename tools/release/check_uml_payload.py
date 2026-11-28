@@ -131,6 +131,9 @@ UML_RELEASE_ATTRIBUTION_ENTRIES: tuple[str, ...] = (
 # Shipped UML native libraries are exactly the APK entries matching
 # lib/<abi>/libuml_*; every one of them must be declared by the notice.
 _APK_UML_LIB_ENTRY = re.compile(r"lib/[^/]+/libuml_")
+_FULL_PROFILE_LIB_ENTRY = re.compile(r"^lib/[^/]+/libuml_.*_full\.so$")
+_PIN_SOURCE_LINE_RE = re.compile(r'"([0-9a-f]{64})  ([A-Za-z0-9._\-]+)"')
+_FULL_PROFILE_HEADER_RE = re.compile(r"^#\s*profile\s*=\s*(\S+)\s*$")
 # The declaration grammar NOTICE.UML actually uses (pinned by the tests
 # against the real asset): path tokens `lib/<abi>/libuml_*.so`, bare packaged
 # names `libuml_*.so` in running text, and the declared `.tar.gz` baseline.
@@ -577,6 +580,91 @@ def _classify_manifest_problems(problems: list[Problem]) -> list[Problem]:
     return classified
 
 
+def _detect_forbidden_full_profile_entries(names: set[str]) -> list[Problem]:
+    """Standard/release builds must never carry full-smp-arm64 QA artifacts."""
+    forbidden: list[Problem] = []
+    if FULL_MANIFEST_ENTRY in names:
+        forbidden.append(Problem(
+            FULL_MANIFEST_ENTRY,
+            "full-smp-arm64 accounting manifest is restricted to isolated QA builds "
+            "(rebuild in a clean workspace without -Porchestella.uml.fullProfileDir)",
+            code="FULL_PROFILE_FORBIDDEN",
+        ))
+    for entry in sorted(names):
+        if _FULL_PROFILE_LIB_ENTRY.match(entry):
+            forbidden.append(Problem(
+                entry,
+                "full-smp-arm64 native payload is restricted to isolated QA builds",
+                code="FULL_PROFILE_FORBIDDEN",
+            ))
+    return forbidden
+
+
+def _parse_full_profile_pins_from_source(pin_source: Path) -> dict[str, str]:
+    text = pin_source.read_text(encoding="utf-8")
+    raw_pins: dict[str, str] = {}
+    for match in _PIN_SOURCE_LINE_RE.finditer(text):
+        raw_pins[match.group(2)] = match.group(1).lower()
+    mapping = {
+        "linux-full": "libuml_kernel_full.so",
+        "stub_exe_full": "libuml_stub_full.so",
+    }
+    resolved: dict[str, str] = {}
+    for src_key, packaged_name in mapping.items():
+        if src_key not in raw_pins:
+            raise ValueError(f"pin source {pin_source} is missing full-profile pin for {src_key!r}")
+        resolved[packaged_name] = raw_pins[src_key]
+    return resolved
+
+
+def _check_full_profile_manifest_hygiene(
+    archive: zipfile.ZipFile,
+    names: set[str],
+    pin_source: Path | None,
+) -> list[Problem]:
+    if FULL_MANIFEST_ENTRY not in names:
+        return []
+    problems: list[Problem] = []
+    try:
+        text = archive.read(FULL_MANIFEST_ENTRY).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return [Problem(FULL_MANIFEST_ENTRY, f"unreadable manifest: {exc}", code="MANIFEST_APK_MISMATCH")]
+
+    profile_headers: list[str] = []
+    for raw in text.splitlines():
+        header_match = _FULL_PROFILE_HEADER_RE.match(raw.strip())
+        if header_match:
+            profile_headers.append(header_match.group(1))
+    if profile_headers != ["full-smp-arm64"]:
+        problems.append(Problem(
+            FULL_MANIFEST_ENTRY,
+            f"expected exactly one '# profile=full-smp-arm64' header in {FULL_MANIFEST_ENTRY}; got {profile_headers!r}",
+            code="MANIFEST_APK_MISMATCH",
+        ))
+
+    digests, _ = parse_manifest(text, FULL_MANIFEST_ENTRY)
+    allowed_names = set(REQUIRED_FULL_NAMES)
+    for name in sorted(set(digests) - allowed_names):
+        problems.append(Problem(
+            name,
+            f"unexpected entry {name!r} inside {FULL_MANIFEST_ENTRY} (only {REQUIRED_FULL_NAMES} allowed)",
+            code="MANIFEST_APK_MISMATCH",
+        ))
+
+    if pin_source is not None:
+        expected_pins = _parse_full_profile_pins_from_source(pin_source)
+        for name, expected_pin in expected_pins.items():
+            actual_manifest_pin = digests.get(name)
+            if actual_manifest_pin is None or actual_manifest_pin != expected_pin:
+                problems.append(Problem(
+                    FULL_MANIFEST_ENTRY,
+                    f"manifest pin for {name!r} ({actual_manifest_pin}) does not match "
+                    f"source pin ({expected_pin})",
+                    code="MANIFEST_APK_MISMATCH",
+                ))
+    return problems
+
+
 def _missing_full_manifest_problem(fast_present: bool, names: set[str]) -> Problem:
     has_fast = fast_present or ((LIB_DIR + "libuml_kernel.so") in names)
     return Problem(
@@ -591,6 +679,7 @@ def _check_qa_full_profile(
     archive: zipfile.ZipFile,
     names: set[str],
     require_attribution_closed: bool,
+    pin_source: Path | None = None,
 ) -> Result:
     problems: list[Problem] = []
     verified: list[Verified] = []
@@ -600,6 +689,7 @@ def _check_qa_full_profile(
         archive, NET_HELPER_MANIFEST_ENTRY, REQUIRED_NET_HELPER_NAMES)
     problems.extend(_classify_manifest_problems(full_problems))
     problems.extend(_classify_manifest_problems(net_problems))
+    problems.extend(_check_full_profile_manifest_hygiene(archive, names, pin_source))
     verified.extend(full_verified)
     verified.extend(net_verified)
     fast_present = FAST_MANIFEST_ENTRY in names
@@ -634,6 +724,7 @@ def check_apk(
     require_attribution_closed: bool = False,
     require_full_profile: bool = False,
     qa_full_profile: bool = False,
+    pin_source: Path | None = None,
 ) -> Result:
     """The artifact-level verdict: ok / skip / fail (error is the caller's)."""
     problems: list[Problem] = []
@@ -642,7 +733,8 @@ def check_apk(
     with zipfile.ZipFile(apk) as archive:
         names = set(archive.namelist())
         if qa_full_profile:
-            return _check_qa_full_profile(archive, names, require_attribution_closed)
+            return _check_qa_full_profile(
+                archive, names, require_attribution_closed, pin_source=pin_source)
 
         fast_problems, fast_verified, fast_present = reconcile_manifest(
             archive, FAST_MANIFEST_ENTRY, REQUIRED_FAST_NAMES)
@@ -654,13 +746,16 @@ def check_apk(
         verified.extend(net_verified)
 
         full_present = False
-        if require_full_profile or FULL_MANIFEST_ENTRY in names:
+        if require_full_profile:
             full_problems, full_verified, full_present = reconcile_manifest(
                 archive, FULL_MANIFEST_ENTRY, REQUIRED_FULL_NAMES)
             problems.extend(_classify_manifest_problems(full_problems))
+            problems.extend(_check_full_profile_manifest_hygiene(archive, names, pin_source))
             verified.extend(full_verified)
-            if require_full_profile and not full_present:
+            if not full_present:
                 problems.append(_missing_full_manifest_problem(fast_present, names))
+        else:
+            problems.extend(_detect_forbidden_full_profile_entries(names))
 
         if fullpkg:
             pvm_problems, pvm_verified = check_pvm_manifest(archive)
@@ -697,7 +792,7 @@ def check_apk(
                         LIB_DIR + name, "fast-profile entry missing from the APK",
                         code="MISSING_STUB" if name == "libuml_stub.so" else "MISSING_PAYLOAD",
                     ))
-            if require_full_profile or full_present:
+            if require_full_profile:
                 for name in REQUIRED_FULL_NAMES:
                     if LIB_DIR + name not in names:
                         problems.append(Problem(
@@ -706,7 +801,7 @@ def check_apk(
                         ))
             problems.extend(check_notice_uml_consistency(
                 archive,
-                include_full_profile=(require_full_profile or full_present),
+                include_full_profile=require_full_profile,
                 qa_full_only=False,
             ))
             notice_open_items = _read_notice_uml_open_items(archive)
@@ -742,7 +837,14 @@ def check_apk(
                 failure_codes=sorted({p.code for p in all_problems if p.code}),
                 verified_scope="fullpkg" if fullpkg else "uml-payload",
             )
-    if not fast_present and not net_present and not full_present and not require_full_profile and not require_attribution_closed:
+    if (
+        not fast_present
+        and not net_present
+        and not full_present
+        and not require_full_profile
+        and not require_attribution_closed
+        and not problems
+    ):
         return Result(
             status="skip",
             reason=(
@@ -756,8 +858,8 @@ def check_apk(
         )
 
     scope = (
-        "fullpkg+full-profile" if (fullpkg and (require_full_profile or full_present))
-        else ("fullpkg" if fullpkg else ("uml-full-profile" if (require_full_profile or full_present) else "uml-payload"))
+        "fullpkg+full-profile" if (fullpkg and require_full_profile)
+        else ("fullpkg" if fullpkg else ("uml-full-profile" if require_full_profile else "uml-payload"))
     )
     failure_codes = sorted({p.code for p in problems if p.code})
     if problems:
@@ -1235,6 +1337,42 @@ def run_selftest() -> int:
             }), "--require-full-profile"],
             "1", "PROFILE_MISMATCH",
         ))
+        # W02-02 isolation selftest cases: standard/release modes reject full-profile;
+        # QA mode rejects forged profile header.
+        leaked_full_entries = _fullpkg_entries(
+            kernel, stub, rootfs, umnet, passt, llvm, cppshared, clang, payload, compiler, qemu_lib
+        )
+        leaked_full_entries[LIB_DIR + "libuml_kernel_full.so"] = full_kernel
+        leaked_full_entries[LIB_DIR + "libuml_stub_full.so"] = full_stub
+        leaked_full_entries[FULL_MANIFEST_ENTRY] = full_profile_manifest
+        leaked_full_entries[NOTICE_UML_ENTRY] = qa_full_notice
+        cases.append((
+            "fail-fullpkg-forbids-full-profile",
+            ["--apk", apk("leaked_fullpkg.apk", leaked_full_entries), "--fullpkg"],
+            "1", "FULL_PROFILE_FORBIDDEN",
+        ))
+        cases.append((
+            "fail-auto-forbids-stray-full-profile",
+            ["--apk", apk("stray_full.apk", {LIB_DIR + "libuml_kernel_full.so": full_kernel})],
+            "1", "FULL_PROFILE_FORBIDDEN",
+        ))
+        cases.append((
+            "fail-qa-full-profile-fake-header",
+            ["--apk", apk("qa_fake_hdr.apk", {
+                LIB_DIR + "libuml_kernel_full.so": full_kernel,
+                LIB_DIR + "libuml_stub_full.so": full_stub,
+                net_entry: umnet,
+                passt_entry: passt,
+                FULL_MANIFEST_ENTRY: (
+                    "# profile=fast-up-arm64\n"
+                    f"{hashlib.sha256(full_kernel).hexdigest()}  libuml_kernel_full.so\n"
+                    f"{hashlib.sha256(full_stub).hexdigest()}  libuml_stub_full.so\n"
+                ).encode("utf-8"),
+                NET_HELPER_MANIFEST_ENTRY: net_manifest.encode(),
+                NOTICE_UML_ENTRY: qa_full_notice,
+            }), "--qa-full-profile"],
+            "1", "MANIFEST_APK_MISMATCH",
+        ))
 
         # Usage error: not a zip at all.
         not_zip = root / "not-a-zip.apk"
@@ -1301,6 +1439,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--qa-full-profile", action="store_true",
                         help="isolated QA check for full-smp-arm64 + net-helper + NOTICE.UML "
                              "without requiring QEMU/pVM fullpkg entries")
+    parser.add_argument("--pin-source", type=Path,
+                        help="optional UmlKernelAssets.java source file to verify full-profile "
+                             "pins against fake accounting manifests in QA mode")
     parser.add_argument("--json", type=Path, help="write a machine-readable result")
     parser.add_argument("--selftest", action="store_true",
                         help="run the built-in synthetic fixture cases and exit")
@@ -1314,6 +1455,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--require-release-attribution-closed requires --fullpkg")
     if args.qa_full_profile and args.fullpkg:
         parser.error("--qa-full-profile cannot be combined with --fullpkg")
+    if args.pin_source is not None and not (args.qa_full_profile or args.require_full_profile):
+        parser.error("--pin-source requires --qa-full-profile or --require-full-profile")
+    if args.pin_source is not None and not args.pin_source.is_file():
+        print(f"UML_PAYLOAD_GATE_ERROR pin source not found: {args.pin_source}", file=sys.stderr)
+        return 2
     require_payload = args.require_payload or args.fullpkg
 
     if not args.apk.is_file():
@@ -1328,9 +1474,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             require_attribution_closed=args.require_release_attribution_closed,
             require_full_profile=args.require_full_profile,
             qa_full_profile=args.qa_full_profile,
+            pin_source=args.pin_source,
         )
-    except zipfile.BadZipFile as exc:
-        result = Result(status="error", reason=f"not a zip/apk: {exc}")
+    except (zipfile.BadZipFile, ValueError) as exc:
+        result = Result(status="error", reason=f"invalid input: {exc}")
         print(f"UML_PAYLOAD_GATE_ERROR {result.reason}", file=sys.stderr)
         _write_json(args.json, args, result)
         return 2
